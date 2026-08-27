@@ -2,7 +2,6 @@ package com.danila.hacustomwidgets.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -19,18 +18,15 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
-import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
-import androidx.glance.layout.defaultWeight
 import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
-import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.danila.hacustomwidgets.R
 import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.data.WidgetConfig
 import java.text.DateFormat
@@ -47,17 +43,16 @@ class EntityStateWidget : GlanceAppWidget() {
 
 @Composable
 private fun WidgetContent(config: WidgetConfig?, appWidgetId: Int) {
-    val dayBackground = Color(0xFFF7F9FC)
-    val nightBackground = Color(0xFF17212B)
-    val dayPrimary = Color(0xFF102A43)
-    val nightPrimary = Color(0xFFF5F7FA)
-    val daySecondary = Color(0xFF52606D)
-    val nightSecondary = Color(0xFFBCCCDC)
+    val background = ColorProvider(R.color.widget_background)
+    val primary = ColorProvider(R.color.widget_primary)
+    val secondary = ColorProvider(R.color.widget_secondary)
+    val accent = ColorProvider(R.color.widget_accent)
+    val error = ColorProvider(R.color.widget_error)
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(ColorProvider(dayBackground, nightBackground))
+            .background(background)
             .cornerRadius(20.dp)
             .padding(16.dp)
             .clickable(
@@ -70,46 +65,32 @@ private fun WidgetContent(config: WidgetConfig?, appWidgetId: Int) {
         if (config == null) {
             Text(
                 "Настройте виджет",
-                style = TextStyle(color = ColorProvider(dayPrimary, nightPrimary), fontSize = 16.sp),
+                style = TextStyle(color = primary, fontSize = 16.sp),
             )
             return@Column
         }
 
-        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = GlanceModifier.defaultWeight()) {
-                Text(
-                    config.title,
-                    maxLines = 1,
-                    style = TextStyle(color = ColorProvider(daySecondary, nightSecondary), fontSize = 13.sp),
-                )
-                Spacer(GlanceModifier.height(4.dp))
-                Text(
-                    config.state,
-                    maxLines = 1,
-                    style = TextStyle(
-                        color = ColorProvider(dayPrimary, nightPrimary),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                )
-            }
-            Spacer(GlanceModifier.width(12.dp))
-            Text(
-                "↻",
-                style = TextStyle(color = ColorProvider(Color(0xFF008ACB), Color(0xFF47C9FF)), fontSize = 24.sp),
-            )
-        }
+        Text(
+            config.title,
+            maxLines = 1,
+            style = TextStyle(color = secondary, fontSize = 13.sp),
+        )
+        Spacer(GlanceModifier.height(4.dp))
+        Text(
+            config.state,
+            maxLines = 1,
+            style = TextStyle(color = primary, fontSize = 24.sp, fontWeight = FontWeight.Bold),
+        )
         Spacer(GlanceModifier.height(5.dp))
         val footer = config.error?.let { "Ошибка обновления" }
             ?: config.lastUpdatedMillis.takeIf { it > 0 }?.let {
                 "Обновлено ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it))}"
             }.orEmpty()
         Text(
-            footer,
+            "↻  $footer",
             maxLines = 1,
             style = TextStyle(
-                color = if (config.error == null) ColorProvider(daySecondary, nightSecondary)
-                else ColorProvider(Color(0xFFBA1A1A), Color(0xFFFFB4AB)),
+                color = if (config.error == null) accent else error,
                 fontSize = 11.sp,
             ),
         )

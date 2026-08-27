@@ -1,0 +1,7 @@
+<resources>
+    <color name="widget_background">#F7F9FC</color>
+    <color name="widget_primary">#102A43</color>
+    <color name="widget_secondary">#52606D</color>
+    <color name="widget_accent">#008ACB</color>
+    <color name="widget_error">#BA1A1A</color>
+</resources>
