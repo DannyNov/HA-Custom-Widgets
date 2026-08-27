@@ -9,7 +9,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      HA_DEBUG_KEYSTORE_PATH: ${{ runner.temp }}/ha-custom-widgets-debug.jks
       HA_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.HA_DEBUG_KEYSTORE_PASSWORD }}
       HA_DEBUG_KEY_ALIAS: ${{ secrets.HA_DEBUG_KEY_ALIAS }}
       HA_DEBUG_KEY_PASSWORD: ${{ secrets.HA_DEBUG_KEY_PASSWORD }}
@@ -31,12 +30,14 @@ jobs:
           test -n "$HA_DEBUG_KEYSTORE_PASSWORD"
           test -n "$HA_DEBUG_KEY_ALIAS"
           test -n "$HA_DEBUG_KEY_PASSWORD"
-          printf '%s' "$HA_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HA_DEBUG_KEYSTORE_PATH"
-          chmod 600 "$HA_DEBUG_KEYSTORE_PATH"
+          keystore_path="$RUNNER_TEMP/ha-custom-widgets-debug.jks"
+          printf '%s' "$HA_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
           keytool -list \
-            -keystore "$HA_DEBUG_KEYSTORE_PATH" \
+            -keystore "$keystore_path" \
             -storepass "$HA_DEBUG_KEYSTORE_PASSWORD" \
             -alias "$HA_DEBUG_KEY_ALIAS" > /dev/null
+          printf 'HA_DEBUG_KEYSTORE_PATH=%s\n' "$keystore_path" >> "$GITHUB_ENV"
       - name: Compile and test
         run: gradle testDebugUnitTest assembleDebug --stacktrace
       - name: Verify APK signature
