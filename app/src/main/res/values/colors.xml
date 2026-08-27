@@ -4,4 +4,6 @@
     <color name="widget_secondary">#52606D</color>
     <color name="widget_accent">#008ACB</color>
     <color name="widget_error">#BA1A1A</color>
+    <color name="widget_tile">#E7EEF5</color>
+    <color name="app_surface">#F7F9FC</color>
 </resources>

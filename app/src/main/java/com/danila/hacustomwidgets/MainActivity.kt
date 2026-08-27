@@ -14,8 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.danila.hacustomwidgets.data.security.HomeAssistantConnection
+import com.danila.hacustomwidgets.ui.HaCustomWidgetsTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -37,7 +38,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val container = (application as HaWidgetApplication).container
         setContent {
-            MaterialTheme {
+            HaCustomWidgetsTheme {
                 ConnectionScreen(
                     initialUrl = container.connectionStore.load()?.baseUrl.orEmpty(),
                     hasStoredToken = container.connectionStore.load() != null,

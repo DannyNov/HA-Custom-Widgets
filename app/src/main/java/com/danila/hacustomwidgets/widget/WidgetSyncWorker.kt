@@ -18,8 +18,10 @@ class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val connection = container.connectionStore.load() ?: return Result.success()
         var transientFailure = false
         container.widgets.all().forEach { config ->
-            runCatching { container.client.getEntity(connection, config.entityId) }
-                .onSuccess { container.widgets.save(config.appWidgetId, it) }
+            runCatching {
+                container.client.getEntities(connection, config.metrics.map { it.entityId })
+            }
+                .onSuccess { container.widgets.updateStates(config.appWidgetId, it) }
                 .onFailure {
                     transientFailure = true
                     container.widgets.saveError(config.appWidgetId, it.message ?: "Ошибка сети")

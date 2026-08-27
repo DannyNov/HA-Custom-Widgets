@@ -16,8 +16,10 @@ class RefreshEntityAction : ActionCallback {
         if (connection == null) {
             container.widgets.saveError(appWidgetId, "Подключение не настроено")
         } else {
-            runCatching { container.client.getEntity(connection, config.entityId) }
-                .onSuccess { container.widgets.save(appWidgetId, it) }
+            runCatching {
+                container.client.getEntities(connection, config.metrics.map { it.entityId })
+            }
+                .onSuccess { container.widgets.updateStates(appWidgetId, it) }
                 .onFailure { container.widgets.saveError(appWidgetId, it.message ?: "Ошибка сети") }
         }
         EntityStateWidget().updateAll(context)

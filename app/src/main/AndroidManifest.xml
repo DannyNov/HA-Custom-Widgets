@@ -42,5 +42,13 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/entity_state_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".widget.ThemeChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
