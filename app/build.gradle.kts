@@ -4,6 +4,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val ciKeystorePath = providers.environmentVariable("HA_DEBUG_KEYSTORE_PATH").orNull
+val ciKeystorePassword = providers.environmentVariable("HA_DEBUG_KEYSTORE_PASSWORD").orNull
+val ciKeyAlias = providers.environmentVariable("HA_DEBUG_KEY_ALIAS").orNull
+val ciKeyPassword = providers.environmentVariable("HA_DEBUG_KEY_PASSWORD").orNull
+val ciSigningEnabled = listOf(
+    ciKeystorePath,
+    ciKeystorePassword,
+    ciKeyAlias,
+    ciKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.danila.hacustomwidgets"
     compileSdk = 35
@@ -19,7 +30,21 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    signingConfigs {
+        if (ciSigningEnabled) {
+            create("ciDebug") {
+                storeFile = file(requireNotNull(ciKeystorePath))
+                storePassword = ciKeystorePassword
+                keyAlias = ciKeyAlias
+                keyPassword = ciKeyPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (ciSigningEnabled) signingConfig = signingConfigs.getByName("ciDebug")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(

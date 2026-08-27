@@ -42,6 +42,19 @@ gradle testDebugUnitTest assembleDebug
 APK появится в `app/build/outputs/apk/debug/app-debug.apk`. Workflow в
 `.github/workflows/android.yml` выполняет ту же проверку и публикует APK как артефакт.
 
+### Постоянная подпись debug APK
+
+CI получает постоянный тестовый signing key только через GitHub Actions Secrets:
+
+- `HA_DEBUG_KEYSTORE_BASE64`;
+- `HA_DEBUG_KEYSTORE_PASSWORD`;
+- `HA_DEBUG_KEY_ALIAS`;
+- `HA_DEBUG_KEY_PASSWORD`.
+
+Keystore декодируется только во временный каталог runner'а и не хранится в Git.
+Сборка останавливается, если хотя бы один secret отсутствует или ключ не открывается.
+После сборки `apksigner` проверяет APK и выводит публичный SHA-256 сертификата.
+
 Контрольная версия 0.1 зафиксирована в `docs/V0.1_BASELINE.md`.
 
 ## Архитектура и расширение
