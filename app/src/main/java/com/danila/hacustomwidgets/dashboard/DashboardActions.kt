@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
-import androidx.glance.appwidget.update
 import com.danila.hacustomwidgets.HaWidgetApplication
 
 val DashboardWidgetIdKey = ActionParameters.Key<Int>("dashboard_widget_id")
