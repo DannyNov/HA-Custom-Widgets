@@ -5,5 +5,11 @@
     <color name="widget_accent">#47C9FF</color>
     <color name="widget_error">#FFB4AB</color>
     <color name="widget_tile">#263442</color>
+    <color name="widget_tile_muted">#202A34</color>
+    <color name="widget_problem">#FFB4AB</color>
+    <color name="widget_light_on">#FFD966</color>
+    <color name="widget_switch_on">#73DC8C</color>
+    <color name="widget_light_surface">#4B421E</color>
+    <color name="widget_active_surface">#173D26</color>
     <color name="app_surface">#101820</color>
 </resources>

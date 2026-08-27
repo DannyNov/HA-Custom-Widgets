@@ -10,6 +10,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.danila.hacustomwidgets.HaWidgetApplication
+import com.danila.hacustomwidgets.dashboard.DashboardWidget
 import java.util.concurrent.TimeUnit
 
 class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -27,7 +28,22 @@ class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     container.widgets.saveError(config.appWidgetId, it.message ?: "Ошибка сети")
                 }
         }
+        if (container.dashboards.all().isNotEmpty()) {
+            runCatching { container.client.getCatalog(connection) }
+                .onSuccess { catalog ->
+                    container.dashboards.all().forEach { config ->
+                        container.dashboards.updateFromCatalog(config.appWidgetId, catalog)
+                    }
+                }
+                .onFailure {
+                    transientFailure = true
+                    container.dashboards.all().forEach { config ->
+                        container.dashboards.saveError(config.appWidgetId, it.message ?: "Ошибка сети")
+                    }
+                }
+        }
         EntityStateWidget().updateAll(applicationContext)
+        DashboardWidget().updateAll(applicationContext)
         return if (transientFailure) Result.retry() else Result.success()
     }
 

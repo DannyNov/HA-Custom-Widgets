@@ -124,7 +124,7 @@ private fun ConnectionScreen(
             }
             Spacer(Modifier.height(4.dp))
             Text("Как добавить виджет", style = MaterialTheme.typography.titleMedium)
-            Text("1. Удерживайте пустое место на домашнем экране.\n2. Откройте «Виджеты».\n3. Найдите HA Custom Widgets.\n4. Перетащите «Состояние сущности HA» и выберите сущность.")
+            Text("1. Удерживайте пустое место на домашнем экране.\n2. Откройте «Виджеты».\n3. Найдите HA Custom Widgets.\n4. Выберите большой «HA Dashboard» или компактный виджет устройства.")
             Text(
                 "Для безопасности предпочтителен HTTPS. HTTP оставлен доступным для локальных адресов Home Assistant.",
                 style = MaterialTheme.typography.bodySmall,

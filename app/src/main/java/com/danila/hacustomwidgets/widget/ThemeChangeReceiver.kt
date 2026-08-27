@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.glance.appwidget.updateAll
+import com.danila.hacustomwidgets.dashboard.DashboardWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +17,7 @@ class ThemeChangeReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
                 EntityStateWidget().updateAll(context.applicationContext)
+                DashboardWidget().updateAll(context.applicationContext)
             } finally {
                 pendingResult.finish()
             }
