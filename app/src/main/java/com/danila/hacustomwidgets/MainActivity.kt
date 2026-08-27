@@ -28,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.danila.hacustomwidgets.data.security.HomeAssistantConnection
 import com.danila.hacustomwidgets.ui.HaCustomWidgetsTheme
@@ -127,6 +128,14 @@ private fun ConnectionScreen(
             Text(
                 "Для безопасности предпочтителен HTTPS. HTTP оставлен доступным для локальных адресов Home Assistant.",
                 style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Версия ${BuildConfig.VERSION_NAME}",
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
             )
         }
     }
