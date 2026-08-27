@@ -361,8 +361,12 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
                 modifier = GlanceModifier.width(cellWidth.dp).padding(end = 3.dp),
                 maxLines = 1,
                 style = TextStyle(
-                    color = if (metric.rawState == "unavailable") ColorProvider(R.color.widget_problem)
-                    else ColorProvider(R.color.widget_primary),
+                    color = when {
+                        metric.rawState == "unavailable" -> ColorProvider(R.color.widget_problem)
+                        batteryHealth(metric) == BatteryHealth.CRITICAL -> ColorProvider(R.color.widget_problem)
+                        batteryHealth(metric) == BatteryHealth.LOW -> ColorProvider(R.color.widget_warning)
+                        else -> ColorProvider(R.color.widget_primary)
+                    },
                     fontSize = if (compact) 11.sp else 12.sp,
                 ),
             )

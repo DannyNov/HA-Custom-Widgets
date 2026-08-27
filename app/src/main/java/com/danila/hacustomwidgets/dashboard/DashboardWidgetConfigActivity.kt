@@ -362,7 +362,9 @@ private fun EntityOrderScreen(
     selectedOrder: List<String>,
     onChange: (List<String>) -> Unit,
 ) {
-    val sorted = defaultMetricOrder(group.entities)
+    val byId = group.entities.associateBy { it.entityId }
+    val sorted = selectedOrder.mapNotNull(byId::get) +
+        defaultMetricOrder(group.entities.filter { it.entityId !in selectedOrder })
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Выберите параметры. Стрелки меняют их порядок; батарея по умолчанию располагается последней.")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp)) {

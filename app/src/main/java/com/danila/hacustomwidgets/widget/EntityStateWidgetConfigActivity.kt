@@ -46,6 +46,7 @@ import com.danila.hacustomwidgets.data.WidgetConfig
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
+import com.danila.hacustomwidgets.dashboard.defaultMetricOrder
 import com.danila.hacustomwidgets.ui.HaCustomWidgetsTheme
 import kotlinx.coroutines.launch
 
@@ -100,7 +101,7 @@ private fun WidgetConfigurator(
 ) {
     var catalog by remember { mutableStateOf<HaCatalog?>(null) }
     var selectedGroup by remember { mutableStateOf<HaDeviceGroup?>(null) }
-    var selectedIds by remember { mutableStateOf(existing?.metrics?.map { it.entityId }?.toSet().orEmpty()) }
+    var selectedIds by remember { mutableStateOf(existing?.metrics?.map { it.entityId }.orEmpty()) }
     var showLastUpdated by remember { mutableStateOf(existing?.showLastUpdated ?: true) }
     var query by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("Загружаю устройства и сущности…") }
@@ -166,7 +167,7 @@ private fun WidgetConfigurator(
                         if (existing?.deviceId != group.device?.id &&
                             selectedIds.none { id -> group.entities.any { it.entityId == id } }
                         ) {
-                            selectedIds = emptySet()
+                            selectedIds = emptyList()
                         }
                         query = ""
                     },
@@ -181,9 +182,10 @@ private fun WidgetConfigurator(
                     onToggle = { entityId ->
                         selectedIds = if (entityId in selectedIds) selectedIds - entityId else selectedIds + entityId
                     },
+                    onMove = { entityId, delta -> selectedIds = selectedIds.move(entityId, delta) },
                     onShowUpdatedChanged = { showLastUpdated = it },
                     onSave = {
-                        val selected = group.entities.filter { it.entityId in selectedIds }
+                        val selected = selectedIds.mapNotNull { id -> group.entities.firstOrNull { it.entityId == id } }
                         scope.launch { onSave(group, selected, showLastUpdated) }
                     },
                 )
@@ -235,14 +237,18 @@ private fun DeviceList(groups: List<HaDeviceGroup>, query: String, onOpen: (HaDe
 private fun ColumnScope.EntitySelection(
     group: HaDeviceGroup,
     query: String,
-    selectedIds: Set<String>,
+    selectedIds: List<String>,
     showLastUpdated: Boolean,
     onToggle: (String) -> Unit,
+    onMove: (String, Int) -> Unit,
     onShowUpdatedChanged: (Boolean) -> Unit,
     onSave: () -> Unit,
 ) {
-    val filtered = remember(group, query) {
-        if (query.isBlank()) group.entities else group.entities.filter { it.matches(query) }
+    val filtered = remember(group, query, selectedIds) {
+        val available = if (query.isBlank()) group.entities else group.entities.filter { it.matches(query) }
+        val byId = available.associateBy { it.entityId }
+        selectedIds.mapNotNull(byId::get) +
+            defaultMetricOrder(available.filter { it.entityId !in selectedIds })
     }
     Text("Отметьте несколько показателей одного устройства. Порядок соответствует списку.")
     LazyColumn(
@@ -261,6 +267,10 @@ private fun ColumnScope.EntitySelection(
                 Column(Modifier.weight(1f)) {
                     Text(entity.friendlyName, style = MaterialTheme.typography.titleSmall)
                     Text("${entity.displayState} · ${entity.entityId}", style = MaterialTheme.typography.bodySmall)
+                }
+                if (entity.entityId in selectedIds) {
+                    TextButton(onClick = { onMove(entity.entityId, -1) }) { Text("↑") }
+                    TextButton(onClick = { onMove(entity.entityId, 1) }) { Text("↓") }
                 }
             }
         }
@@ -301,3 +311,11 @@ private fun HaEntity.matches(query: String): Boolean =
     friendlyName.contains(query, ignoreCase = true) ||
         entityId.contains(query, ignoreCase = true) ||
         displayState.contains(query, ignoreCase = true)
+
+private fun <T> List<T>.move(item: T, delta: Int): List<T> {
+    val from = indexOf(item)
+    if (from < 0) return this
+    val to = (from + delta).coerceIn(0, lastIndex)
+    if (from == to) return this
+    return toMutableList().apply { removeAt(from); add(to, item) }
+}

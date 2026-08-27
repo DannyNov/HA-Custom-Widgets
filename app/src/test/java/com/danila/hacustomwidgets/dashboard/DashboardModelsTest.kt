@@ -64,6 +64,16 @@ class DashboardModelsTest {
         assertTrue(metricIcon(DashboardMetric("sensor.x", "Влажность", "42 %", "42", "sensor", "humidity")) == "💧")
     }
 
+    @Test
+    fun batteryThresholdsDistinguishLowAndCritical() {
+        fun battery(value: String) = DashboardMetric(
+            "sensor.battery", "Батарея", "$value %", value, "sensor", "battery",
+        )
+        assertEquals(BatteryHealth.NORMAL, batteryHealth(battery("75")))
+        assertEquals(BatteryHealth.LOW, batteryHealth(battery("20")))
+        assertEquals(BatteryHealth.CRITICAL, batteryHealth(battery("10")))
+    }
+
     private fun entity(id: String, name: String, deviceClass: String?) = HaEntity(
         entityId = id,
         state = "1",
