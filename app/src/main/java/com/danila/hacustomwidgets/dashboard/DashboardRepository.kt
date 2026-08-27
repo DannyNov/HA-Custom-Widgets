@@ -56,12 +56,24 @@ class DashboardRepository(context: Context) {
         .flatMap { card -> card.metrics.map { it.entityId } + card.controls.map { it.entityId } }
         .distinct()
 
+    fun requiresCatalogRefresh(appWidgetId: Int): Boolean {
+        val cache = prefs.getString(key(appWidgetId, "cache"), null)?.let {
+            runCatching { JSONObject(it) }.getOrNull()
+        } ?: return true
+        return cache.optInt("schema", 0) < CACHE_SCHEMA_VERSION
+    }
+
     fun updateFromCatalog(appWidgetId: Int, catalog: HaCatalog) {
-        val config = getConfig(appWidgetId) ?: return
+        val storedConfig = getConfig(appWidgetId) ?: return
+        val config = migrateLegacyUnassigned(storedConfig, catalog)
+        if (config != storedConfig) {
+            prefs.edit().putString(key(appWidgetId, "config"), config.toJson().toString()).apply()
+        }
         val spaces = catalog.spaces().map { DashboardSpace(it.id, it.name, it.areaIds) }
         val areaNames = catalog.areas.associate { it.id to it.name }
         val cards = catalog.groups.map { group -> group.toDashboardCard(config, areaNames) }
         val json = JSONObject()
+            .put("schema", CACHE_SCHEMA_VERSION)
             .put("spaces", spacesJson(spaces))
             .put("cards", cardsJson(cards))
             .put("updated", System.currentTimeMillis())
@@ -167,6 +179,24 @@ class DashboardRepository(context: Context) {
         )
     }
 
+    private fun migrateLegacyUnassigned(config: DashboardConfig, catalog: HaCatalog): DashboardConfig {
+        val legacyKey = HaDeviceGroup.UNASSIGNED_DEVICE_ID
+        val replacementKeys = catalog.groups.filter { it.device == null }.map { it.key }
+        if (replacementKeys.isEmpty()) return config
+        fun replaceLegacy(items: List<String>) = items.flatMap { key ->
+            if (key == legacyKey) replacementKeys else listOf(key)
+        }.distinct()
+        val hasLegacy = legacyKey in config.favoriteDeviceKeys ||
+            config.cardOrderBySpace.values.any { legacyKey in it } ||
+            legacyKey in config.entityOrderByDevice
+        if (!hasLegacy) return config
+        return config.copy(
+            favoriteDeviceKeys = replaceLegacy(config.favoriteDeviceKeys),
+            entityOrderByDevice = config.entityOrderByDevice - legacyKey,
+            cardOrderBySpace = config.cardOrderBySpace.mapValues { replaceLegacy(it.value) },
+        )
+    }
+
     private fun writeCache(
         appWidgetId: Int,
         spaces: List<DashboardSpace>,
@@ -175,6 +205,7 @@ class DashboardRepository(context: Context) {
         error: String?,
     ) {
         val json = JSONObject()
+            .put("schema", CACHE_SCHEMA_VERSION)
             .put("spaces", spacesJson(spaces))
             .put("cards", cardsJson(cards))
             .put("updated", updated)
@@ -311,6 +342,7 @@ class DashboardRepository(context: Context) {
 
     companion object {
         private const val KEY_IDS = "configured_dashboard_ids"
+        private const val CACHE_SCHEMA_VERSION = 2
         private const val DEFAULT_METRIC_LIMIT = 5
         private const val ACTION_TIMEOUT_MS = 10_000L
     }

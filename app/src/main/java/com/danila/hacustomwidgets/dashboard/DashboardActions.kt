@@ -24,7 +24,7 @@ class DashboardRefreshAction : ActionCallback {
             container.dashboards.saveError(appWidgetId, "Подключение не настроено")
         } else {
             val entityIds = container.dashboards.entityIds(appWidgetId)
-            if (entityIds.isEmpty()) {
+            if (entityIds.isEmpty() || container.dashboards.requiresCatalogRefresh(appWidgetId)) {
                 runCatching { container.client.getCatalog(connection) }
                     .onSuccess { container.dashboards.updateFromCatalog(appWidgetId, it) }
                     .onFailure { container.dashboards.saveError(appWidgetId, it.message ?: "Ошибка сети") }
