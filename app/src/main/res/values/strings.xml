@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">HA Custom Widgets</string>
+    <string name="widget_entity_state">Состояние сущности HA</string>
+    <string name="widget_description">Показывает актуальное состояние выбранной сущности Home Assistant</string>
+</resources>
