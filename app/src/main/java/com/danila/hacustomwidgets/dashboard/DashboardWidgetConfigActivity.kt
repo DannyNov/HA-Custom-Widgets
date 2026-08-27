@@ -281,7 +281,7 @@ private fun DashboardOverview(
         Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Настроить ★ Главное и параметры") }
         SettingSwitch("Показывать время обновления", showUpdated, onShowUpdated)
         SettingSwitch("Компактная плотность карточек", compact, onCompact)
-        Button(onClick = onSave, enabled = visibleSpaces.isNotEmpty(), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+        Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
             Text("Сохранить Dashboard")
         }
     }

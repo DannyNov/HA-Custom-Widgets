@@ -113,7 +113,7 @@ private fun DashboardContent(
                                 appWidgetId = appWidgetId,
                                 widthDp = width,
                                 compact = state.config.compactDensity,
-                                inFlight = card.key in state.inFlightDeviceKeys,
+                                inFlightKeys = state.inFlightDeviceKeys,
                             )
                             Spacer(GlanceModifier.height(if (state.config.compactDensity) 5.dp else 8.dp))
                         }
@@ -271,20 +271,24 @@ private fun DashboardDeviceCard(
     appWidgetId: Int,
     widthDp: Int,
     compact: Boolean,
-    inFlight: Boolean,
+    inFlightKeys: Set<String>,
 ) {
-    val unavailable = card.metrics.any { it.rawState == "unavailable" } || card.controlState == "unavailable"
-    val unknown = !unavailable && (card.metrics.any { it.rawState == "unknown" } || card.controlState == "unknown")
-    val active = card.controlState in ACTIVE_STATES
+    val primaryControl = card.controls.firstOrNull()
+    val unavailable = card.metrics.any { it.rawState == "unavailable" } ||
+        card.controls.any { it.state == "unavailable" }
+    val unknown = !unavailable && (
+        card.metrics.any { it.rawState == "unknown" } || card.controls.any { it.state == "unknown" }
+    )
+    val active = card.controls.any { it.state in ACTIVE_STATES }
     val semantic = when {
         unavailable -> ColorProvider(R.color.widget_problem)
-        card.controlDomain == "light" && active -> ColorProvider(R.color.widget_light_on)
+        primaryControl?.domain == "light" && active -> ColorProvider(R.color.widget_light_on)
         active -> ColorProvider(R.color.widget_switch_on)
         else -> ColorProvider(R.color.widget_secondary)
     }
     val surface = when {
         unavailable || unknown -> ColorProvider(R.color.widget_tile_muted)
-        card.controlDomain == "light" && active -> ColorProvider(R.color.widget_light_surface)
+        primaryControl?.domain == "light" && active -> ColorProvider(R.color.widget_light_surface)
         active -> ColorProvider(R.color.widget_active_surface)
         else -> ColorProvider(R.color.widget_tile)
     }
@@ -313,21 +317,59 @@ private fun DashboardDeviceCard(
                     Text("⚠ Недоступно", style = TextStyle(color = semantic, fontSize = 10.sp))
                 } else if (unknown) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
-                } else if (card.controlEntityId != null) {
+                } else if (card.controls.size == 1) {
+                    val control = card.controls.first()
                     Text(
-                        controlLabel(card, inFlight),
+                        controlLabel(control, control.entityId in inFlightKeys),
                         modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
                             actionRunCallback<DashboardControlAction>(
                                 actionParametersOf(
                                     DashboardWidgetIdKey to appWidgetId,
                                     DashboardDeviceKey to card.key,
-                                    DashboardEntityKey to card.controlEntityId,
-                                    DashboardDomainKey to card.controlDomain.orEmpty(),
+                                    DashboardEntityKey to control.entityId,
+                                    DashboardDomainKey to control.domain,
                                 ),
                             ),
                         ),
                         style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
                     )
+                }
+            }
+            if (card.controls.size > 1 && !unavailable) {
+                Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
+                val controlColumns = if (widthDp >= 320) 3 else 2
+                val controlWidth = ((widthDp - 36) / controlColumns).coerceAtLeast(76)
+                card.controls.chunked(controlColumns).forEachIndexed { index, controls ->
+                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        controls.forEach { control ->
+                            val controlActive = control.state in ACTIVE_STATES
+                            val controlColor = when {
+                                control.domain == "light" && controlActive -> ColorProvider(R.color.widget_light_on)
+                                controlActive -> ColorProvider(R.color.widget_switch_on)
+                                else -> ColorProvider(R.color.widget_secondary)
+                            }
+                            Text(
+                                "${control.label} ${controlLabel(control, control.entityId in inFlightKeys)}",
+                                modifier = GlanceModifier.width(controlWidth.dp)
+                                    .padding(horizontal = 4.dp, vertical = 5.dp)
+                                    .clickable(
+                                        actionRunCallback<DashboardControlAction>(
+                                            actionParametersOf(
+                                                DashboardWidgetIdKey to appWidgetId,
+                                                DashboardDeviceKey to card.key,
+                                                DashboardEntityKey to control.entityId,
+                                                DashboardDomainKey to control.domain,
+                                            ),
+                                        ),
+                                    ),
+                                maxLines = 1,
+                                style = TextStyle(color = controlColor, fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                            )
+                        }
+                    }
+                    if (index < card.controls.chunked(controlColumns).lastIndex) {
+                        Spacer(GlanceModifier.height(2.dp))
+                    }
                 }
             }
             if (card.metrics.isNotEmpty()) {
@@ -412,12 +454,12 @@ private fun List<DashboardCard>.orderedBy(order: List<String>?): List<DashboardC
     return sortedWith(compareBy<DashboardCard> { rank[it.key] ?: Int.MAX_VALUE }.thenBy { it.title.lowercase() })
 }
 
-private fun controlLabel(card: DashboardCard, inFlight: Boolean): String = when {
+private fun controlLabel(control: DashboardControl, inFlight: Boolean): String = when {
     inFlight -> "…"
-    card.controlDomain in setOf("button", "script", "scene") -> "▶"
-    card.controlDomain == "timer" && card.controlState == "active" -> "Ⅱ"
-    card.controlDomain == "timer" -> "▶"
-    card.controlState in ACTIVE_STATES -> "ВКЛ"
+    control.domain in setOf("button", "script", "scene") -> "▶"
+    control.domain == "timer" && control.state == "active" -> "Ⅱ"
+    control.domain == "timer" -> "▶"
+    control.state in ACTIVE_STATES -> "ВКЛ"
     else -> "ВЫКЛ"
 }
 

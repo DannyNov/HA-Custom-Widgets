@@ -52,6 +52,10 @@ class DashboardRepository(context: Context) {
 
     fun all(): List<DashboardConfig> = configuredIds().mapNotNull { it.toIntOrNull()?.let(::getConfig) }
 
+    fun entityIds(appWidgetId: Int): List<String> = get(appWidgetId)?.cards.orEmpty()
+        .flatMap { card -> card.metrics.map { it.entityId } + card.controls.map { it.entityId } }
+        .distinct()
+
     fun updateFromCatalog(appWidgetId: Int, catalog: HaCatalog) {
         val config = getConfig(appWidgetId) ?: return
         val spaces = catalog.spaces().map { DashboardSpace(it.id, it.name, it.areaIds) }
@@ -71,8 +75,10 @@ class DashboardRepository(context: Context) {
             val metrics = card.metrics.map { metric ->
                 byId[metric.entityId]?.let { metric.copy(state = it.displayState, rawState = it.state) } ?: metric
             }
-            val controlState = card.controlEntityId?.let { byId[it]?.state } ?: card.controlState
-            card.copy(metrics = metrics, controlState = controlState)
+            val controls = card.controls.map { control ->
+                byId[control.entityId]?.let { control.copy(state = it.state) } ?: control
+            }
+            card.copy(metrics = metrics, controls = controls)
         }
         writeCache(appWidgetId, state.spaces, cards, System.currentTimeMillis(), null)
     }
@@ -131,8 +137,16 @@ class DashboardRepository(context: Context) {
         } else {
             requested.mapNotNull { id -> entities.firstOrNull { it.entityId == id } }
         }
-        val control = ordered.firstOrNull { serviceAction(it) != null }
-            ?: entities.firstOrNull { serviceAction(it) != null }
+        val controls = entities.mapNotNull { entity ->
+            serviceAction(entity)?.let {
+                DashboardControl(
+                    entityId = entity.entityId,
+                    label = WidgetRepository.compactMetricName(title, entity.friendlyName),
+                    domain = entity.domain,
+                    state = entity.state,
+                )
+            }
+        }
         return DashboardCard(
             key = key,
             title = title,
@@ -149,9 +163,7 @@ class DashboardRepository(context: Context) {
                     deviceClass = entity.deviceClass,
                 )
             },
-            controlEntityId = control?.entityId,
-            controlDomain = control?.domain,
-            controlState = control?.state,
+            controls = controls,
         )
     }
 
@@ -208,8 +220,14 @@ class DashboardRepository(context: Context) {
                 JSONObject()
                     .put("key", card.key).put("title", card.title).put("area", card.areaId)
                     .put("room", card.roomName).put("category", card.category.name)
-                    .put("control_entity", card.controlEntityId).put("control_domain", card.controlDomain)
-                    .put("control_state", card.controlState)
+                    .put("controls", JSONArray().also { controls ->
+                        card.controls.forEach { control ->
+                            controls.put(
+                                JSONObject().put("id", control.entityId).put("label", control.label)
+                                    .put("domain", control.domain).put("state", control.state),
+                            )
+                        }
+                    })
                     .put("metrics", JSONArray().also { metrics ->
                         card.metrics.forEach { metric ->
                             metrics.put(
@@ -236,13 +254,36 @@ class DashboardRepository(context: Context) {
                     )
                 }
             }
+            val controls = buildList {
+                val source = item.optJSONArray("controls")
+                if (source != null) {
+                    for (c in 0 until source.length()) source.getJSONObject(c).let { control ->
+                        add(
+                            DashboardControl(
+                                control.getString("id"), control.optString("label"),
+                                control.optString("domain"), control.optString("state"),
+                            ),
+                        )
+                    }
+                } else {
+                    val legacyId = item.optNullable("control_entity")
+                    val legacyDomain = item.optNullable("control_domain")
+                    if (legacyId != null && legacyDomain != null) {
+                        add(
+                            DashboardControl(
+                                legacyId, item.optString("title"), legacyDomain,
+                                item.optNullable("control_state").orEmpty(),
+                            ),
+                        )
+                    }
+                }
+            }
             add(
                 DashboardCard(
                     item.getString("key"), item.optString("title"), item.optNullable("area"),
                     item.optNullable("room"),
                     runCatching { DeviceCategory.valueOf(item.optString("category")) }.getOrDefault(DeviceCategory.OTHER),
-                    metrics, item.optNullable("control_entity"), item.optNullable("control_domain"),
-                    item.optNullable("control_state"),
+                    metrics, controls,
                 ),
             )
         }

@@ -21,13 +21,17 @@ data class ServiceAction(val domain: String, val service: String)
 
 enum class BatteryHealth { NORMAL, LOW, CRITICAL, NOT_BATTERY }
 
-fun serviceAction(entity: HaEntity): ServiceAction? = when (entity.domain) {
-    "light", "switch", "input_boolean" -> ServiceAction(entity.domain, "toggle")
-    "button" -> ServiceAction("button", "press")
-    "script" -> ServiceAction("script", "turn_on")
-    "scene" -> ServiceAction("scene", "turn_on")
-    "timer" -> ServiceAction("timer", if (entity.state == "active") "pause" else "start")
-    else -> null
+fun serviceAction(entity: HaEntity): ServiceAction? {
+    if (entity.hiddenBy != null || entity.disabledBy != null) return null
+    return when (entity.domain) {
+        "light", "switch", "input_boolean" ->
+            ServiceAction(entity.domain, if (entity.state == "on") "turn_off" else "turn_on")
+        "button" -> ServiceAction("button", "press")
+        "script" -> ServiceAction("script", "turn_on")
+        "scene" -> ServiceAction("scene", "turn_on")
+        "timer" -> ServiceAction("timer", if (entity.state == "active") "pause" else "start")
+        else -> null
+    }
 }
 
 fun deviceCategory(group: HaDeviceGroup): DeviceCategory {
@@ -62,7 +66,7 @@ fun semanticMetricRank(entity: HaEntity): Int {
 }
 
 fun defaultMetricOrder(entities: List<HaEntity>): List<HaEntity> = entities
-    .filterNot { it.entityCategory == "config" }
+    .filterNot { it.entityCategory == "config" || it.hiddenBy != null || it.disabledBy != null }
     .sortedWith(compareBy<HaEntity>(::semanticMetricRank).thenBy { it.friendlyName.lowercase() })
 
 fun metricIcon(metric: DashboardMetric): String {
@@ -101,6 +105,13 @@ data class DashboardMetric(
     val deviceClass: String?,
 )
 
+data class DashboardControl(
+    val entityId: String,
+    val label: String,
+    val domain: String,
+    val state: String,
+)
+
 data class DashboardCard(
     val key: String,
     val title: String,
@@ -108,9 +119,7 @@ data class DashboardCard(
     val roomName: String?,
     val category: DeviceCategory,
     val metrics: List<DashboardMetric>,
-    val controlEntityId: String?,
-    val controlDomain: String?,
-    val controlState: String?,
+    val controls: List<DashboardControl>,
 )
 
 data class DashboardSpace(

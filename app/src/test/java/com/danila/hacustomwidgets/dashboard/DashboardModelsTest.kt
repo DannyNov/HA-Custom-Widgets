@@ -49,9 +49,34 @@ class DashboardModelsTest {
     }
 
     @Test
-    fun unavailableEntityDoesNotChangeActionMapping() {
-        val light = entity("light.hall", "Свет", null).copy(state = "unavailable")
-        assertEquals(ServiceAction("light", "toggle"), serviceAction(light))
+    fun stateAwareActionsAvoidUnsafeToggleCalls() {
+        val lightOn = entity("light.hall", "Свет", null).copy(state = "on")
+        val lightOff = lightOn.copy(state = "off")
+        assertEquals(ServiceAction("light", "turn_off"), serviceAction(lightOn))
+        assertEquals(ServiceAction("light", "turn_on"), serviceAction(lightOff))
+    }
+
+    @Test
+    fun hiddenEntityCannotBecomeAControl() {
+        val hidden = entity("switch.hidden", "Скрытый выключатель", null).copy(hiddenBy = "user")
+        assertEquals(null, serviceAction(hidden))
+    }
+
+    @Test
+    fun entityAreaOverridesDeviceArea() {
+        val group = HaDeviceGroup(
+            HaDevice("device", "Датчик", areaId = "device_area"),
+            listOf(entity("sensor.temperature", "Температура", "temperature").copy(areaId = "entity_area")),
+        )
+        assertEquals("entity_area", group.effectiveAreaId)
+    }
+
+    @Test
+    fun syntheticUnassignedGroupsHaveIndependentKeys() {
+        val first = HaDeviceGroup(null, listOf(entity("script.one", "Первый", null)), "entity:script.one", "Первый")
+        val second = HaDeviceGroup(null, listOf(entity("script.two", "Второй", null)), "entity:script.two", "Второй")
+        assertTrue(first.key != second.key)
+        assertEquals("Первый", first.title)
     }
 
     @Test

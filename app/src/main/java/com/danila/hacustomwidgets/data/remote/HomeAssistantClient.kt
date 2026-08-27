@@ -75,12 +75,15 @@ class HomeAssistantClient(
         val registries = registriesDeferred.await()
         val devices = registries.devices.associateBy { it.id }
         val grouped = states
-            .map { entity ->
+            .mapNotNull { entity ->
                 val registry = registries.entities[entity.entityId]
+                if (registry?.disabledBy != null) return@mapNotNull null
                 entity.copy(
                     deviceId = registry?.deviceId,
                     areaId = registry?.areaId,
                     entityCategory = registry?.entityCategory,
+                    hiddenBy = registry?.hiddenBy,
+                    disabledBy = registry?.disabledBy,
                 )
             }
             .groupBy { it.deviceId }
@@ -94,13 +97,18 @@ class HomeAssistantClient(
                 )
             }
             .sortedBy { it.title.lowercase() }
-        val unassigned = grouped[null].orEmpty()
+        val unassignedGroups = grouped[null].orEmpty()
+            .sortedBy { it.friendlyName.lowercase() }
+            .map { entity ->
+                HaDeviceGroup(
+                    device = null,
+                    entities = listOf(entity),
+                    syntheticKey = "entity:${entity.entityId}",
+                    syntheticTitle = entity.friendlyName,
+                )
+            }
         HaCatalog(
-            groups = deviceGroups + listOfNotNull(
-                unassigned.takeIf { it.isNotEmpty() }?.let {
-                    HaDeviceGroup(null, it.sortedBy { item -> item.friendlyName.lowercase() })
-                },
-            ),
+            groups = deviceGroups + unassignedGroups,
             areas = registries.areas,
             floors = registries.floors,
         )
@@ -213,16 +221,16 @@ class HomeAssistantClient(
     private fun parseEntities(array: JSONArray): Map<String, RegistryEntity> = buildMap {
         for (index in 0 until array.length()) {
             val item = array.getJSONObject(index)
-            if (item.optNullableString("disabled_by") == null) {
-                put(
-                    item.getString("entity_id"),
-                    RegistryEntity(
-                        deviceId = item.optNullableString("device_id"),
-                        areaId = item.optNullableString("area_id"),
-                        entityCategory = item.optNullableString("entity_category"),
-                    ),
-                )
-            }
+            put(
+                item.getString("entity_id"),
+                RegistryEntity(
+                    deviceId = item.optNullableString("device_id"),
+                    areaId = item.optNullableString("area_id"),
+                    entityCategory = item.optNullableString("entity_category"),
+                    hiddenBy = item.optNullableString("hidden_by"),
+                    disabledBy = item.optNullableString("disabled_by"),
+                ),
+            )
         }
     }
 
@@ -314,6 +322,8 @@ class HomeAssistantClient(
         val deviceId: String?,
         val areaId: String?,
         val entityCategory: String?,
+        val hiddenBy: String?,
+        val disabledBy: String?,
     )
 
     private companion object {

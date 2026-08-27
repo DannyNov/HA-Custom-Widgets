@@ -11,6 +11,8 @@ data class HaEntity(
     val deviceClass: String? = null,
     val icon: String? = null,
     val entityCategory: String? = null,
+    val hiddenBy: String? = null,
+    val disabledBy: String? = null,
 ) {
     val domain: String get() = entityId.substringBefore('.')
     val displayState: String
@@ -45,15 +47,18 @@ data class HaSpace(
 data class HaDeviceGroup(
     val device: HaDevice?,
     val entities: List<HaEntity>,
+    val syntheticKey: String? = null,
+    val syntheticTitle: String? = null,
 ) {
-    val key: String get() = device?.id ?: UNASSIGNED_DEVICE_ID
-    val title: String get() = device?.name ?: "Без устройства"
+    val key: String get() = device?.id ?: syntheticKey ?: UNASSIGNED_DEVICE_ID
+    val title: String get() = device?.name ?: syntheticTitle ?: "Без устройства"
     val effectiveAreaId: String?
-        get() = device?.areaId ?: entities.mapNotNull { it.areaId }
+        get() = entities.mapNotNull { it.areaId }
             .groupingBy { it }
             .eachCount()
             .maxByOrNull { it.value }
             ?.key
+            ?: device?.areaId
 
     companion object { const val UNASSIGNED_DEVICE_ID = "__unassigned__" }
 }

@@ -28,19 +28,16 @@ class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     container.widgets.saveError(config.appWidgetId, it.message ?: "Ошибка сети")
                 }
         }
-        if (container.dashboards.all().isNotEmpty()) {
-            runCatching { container.client.getCatalog(connection) }
-                .onSuccess { catalog ->
-                    container.dashboards.all().forEach { config ->
-                        container.dashboards.updateFromCatalog(config.appWidgetId, catalog)
-                    }
-                }
-                .onFailure {
-                    transientFailure = true
-                    container.dashboards.all().forEach { config ->
+        container.dashboards.all().forEach { config ->
+            val entityIds = container.dashboards.entityIds(config.appWidgetId)
+            if (entityIds.isNotEmpty()) {
+                runCatching { container.client.getEntities(connection, entityIds) }
+                    .onSuccess { container.dashboards.updateEntityStates(config.appWidgetId, it) }
+                    .onFailure {
+                        transientFailure = true
                         container.dashboards.saveError(config.appWidgetId, it.message ?: "Ошибка сети")
                     }
-                }
+            }
         }
         EntityStateWidget().updateAll(applicationContext)
         DashboardWidget().updateAll(applicationContext)
