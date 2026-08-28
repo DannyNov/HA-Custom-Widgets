@@ -125,6 +125,7 @@ class DashboardRepository(context: Context) {
         val after = commitAndRequestRender(appWidgetId, source.name) { before ->
             val stateMap = before.entities.toMutableMap()
             val operationMap = before.operations.toMutableMap()
+            val confirmations = mutableListOf<Pair<String, String>>()
             var revision = before.committedRevision
             entities.forEach { entity ->
                 val existing = stateMap[entity.entityId]
@@ -150,25 +151,27 @@ class DashboardRepository(context: Context) {
                     optimisticOverlay = existing?.optimisticOverlay,
                     optimisticOperationId = existing?.optimisticOperationId,
                 )
-                stateMap[entity.entityId] = if (decision.confirmsOperation && operation != null) {
-                    operationMap[entity.entityId] = operation.copy(
-                        status = DashboardOperationStatus.CONFIRMED,
-                        completedAt = System.currentTimeMillis(),
-                        error = null,
-                    )
-                    Log.i(TAG, "OPERATION_TERMINAL operationId=${operation.operationId} entityId=${entity.entityId} status=CONFIRMED reason=ha-truth")
-                    updated.copy(optimisticOverlay = null, optimisticOperationId = null)
-                } else {
-                    updated
+                stateMap[entity.entityId] = updated
+                if (decision.confirmsOperation && operation != null) {
+                    confirmations += entity.entityId to operation.operationId
                 }
                 Log.d(TAG, "CONFIRMED_STATE_COMMIT widgetId=$appWidgetId entityId=${entity.entityId} confirmed=${entity.state} revision=$revision")
             }
-            if (accepted == 0) before else before.copy(
+            if (accepted == 0) return@commitAndRequestRender before
+            var result = before.copy(
                 entities = stateMap,
                 operations = operationMap,
                 committedRevision = revision,
                 requestedRenderRevision = maxOf(before.requestedRenderRevision, revision),
             )
+            confirmations.forEach { (entityId, operationId) ->
+                result = DashboardTerminalStateMachine.finish(
+                    result, entityId, operationId, DashboardOperationStatus.CONFIRMED,
+                    System.currentTimeMillis(), null,
+                )
+                Log.i(TAG, "OPERATION_TERMINAL operationId=$operationId entityId=$entityId status=CONFIRMED reason=ha-truth")
+            }
+            result
         }
         if (accepted > 0) {
             configPrefs.edit().putLong(key(appWidgetId, "updated"), System.currentTimeMillis())

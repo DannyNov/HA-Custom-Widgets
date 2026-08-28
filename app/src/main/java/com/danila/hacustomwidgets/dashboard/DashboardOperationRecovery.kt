@@ -13,9 +13,12 @@ import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.data.remote.HomeAssistantClient
 import com.danila.hacustomwidgets.data.security.SecureConnectionStore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class DashboardStartupCoordinator(
@@ -86,6 +89,27 @@ class DashboardOperationDeadlineWorker(context: Context, params: WorkerParameter
             enqueue(applicationContext, widgetId, operation)
             return Result.success()
         }
+        finishAtDeadline(applicationContext, widgetId, entityId, operationId)
+        return Result.success()
+    }
+
+    companion object {
+        private const val TAG = "HAWidgetDeadline"
+        private const val KEY_WIDGET_ID = "widget_id"
+        private const val KEY_ENTITY_ID = "entity_id"
+        private const val KEY_OPERATION_ID = "operation_id"
+        private val timerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val timers = ConcurrentHashMap<String, Job>()
+
+        private suspend fun finishAtDeadline(
+            context: Context,
+            widgetId: Int,
+            entityId: String,
+            operationId: String,
+        ) {
+            val container = (context.applicationContext as HaWidgetApplication).container
+            val operation = container.dashboards.getOperation(widgetId, entityId)
+                ?.takeIf { it.operationId == operationId && it.status.isActive } ?: return
         val connection = container.connectionStore.load()
         if (connection != null) {
             Log.d(TAG, "REST_RECONCILE_START operationId=$operationId widgetId=$widgetId entityId=$entityId source=DEADLINE")
@@ -108,14 +132,7 @@ class DashboardOperationDeadlineWorker(context: Context, params: WorkerParameter
                 if (status == DashboardOperationStatus.TIMEOUT) "Home Assistant не подтвердил состояние до deadline" else null,
             )
         }
-        return Result.success()
-    }
-
-    companion object {
-        private const val TAG = "HAWidgetDeadline"
-        private const val KEY_WIDGET_ID = "widget_id"
-        private const val KEY_ENTITY_ID = "entity_id"
-        private const val KEY_OPERATION_ID = "operation_id"
+        }
 
         fun enqueue(context: Context, appWidgetId: Int, operation: DashboardOperation) {
             val remaining = (operation.deadlineAt - System.currentTimeMillis()).coerceAtLeast(0L)
@@ -129,6 +146,16 @@ class DashboardOperationDeadlineWorker(context: Context, params: WorkerParameter
                 ExistingWorkPolicy.REPLACE,
                 request,
             )
+            timers.computeIfAbsent(operation.operationId) {
+                timerScope.launch {
+                    try {
+                        delay(remaining)
+                        finishAtDeadline(context.applicationContext, appWidgetId, operation.entityId, operation.operationId)
+                    } finally {
+                        timers.remove(operation.operationId)
+                    }
+                }
+            }
         }
     }
 }
