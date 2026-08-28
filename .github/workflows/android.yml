@@ -48,7 +48,7 @@ jobs:
           apk="app/build/outputs/apk/debug/app-debug.apk"
           report="app/build/outputs/apk/debug/signature.txt"
           "$APKSIGNER" verify --verbose --print-certs "$apk" | tee "$report"
-          actual_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          actual_cert="$(sed -n 's/^.*certificate SHA-256 digest: //p' "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
           sha256sum "$apk" | tee app/build/outputs/apk/debug/apk-sha256.txt
