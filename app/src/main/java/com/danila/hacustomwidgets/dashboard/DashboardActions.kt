@@ -20,7 +20,6 @@ class DashboardRefreshAction : ActionCallback {
         val container = (context.applicationContext as HaWidgetApplication).container
         Log.d(TAG, "refresh callback received widgetId=$appWidgetId")
         container.dashboards.markRefreshInProgress(appWidgetId, true)
-        updateDashboardWidget(context, appWidgetId, "manual-refresh-enqueued")
         DashboardRefreshWorker.enqueue(context, appWidgetId, DashboardStateSource.MANUAL_REFRESH)
     }
 }
@@ -32,8 +31,6 @@ class DashboardNavigateAction : ActionCallback {
         val container = (context.applicationContext as HaWidgetApplication).container
         val started = System.currentTimeMillis()
         container.dashboards.setSelectedTab(appWidgetId, tab)
-        Log.d(TAG, "widget update requested widgetId=$appWidgetId reason=navigation ts=${System.currentTimeMillis()}")
-        updateDashboardWidget(context, appWidgetId, "navigation")
         Log.d(TAG, "navigation callback finished widgetId=$appWidgetId durationMs=${System.currentTimeMillis() - started}")
     }
 }
@@ -44,7 +41,6 @@ class DashboardToggleSectionAction : ActionCallback {
         val section = parameters[DashboardSectionKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
         container.dashboards.toggleSection(appWidgetId, section)
-        updateDashboardWidget(context, appWidgetId, "section")
     }
 }
 
@@ -56,25 +52,21 @@ class DashboardControlAction : ActionCallback {
         val container = (context.applicationContext as HaWidgetApplication).container
         if (container.connectionStore.load() == null) {
             container.dashboards.saveError(appWidgetId, "Подключение не настроено")
-            updateDashboardWidget(context, appWidgetId, "action-no-connection")
             return
         }
         val operation = runCatching {
             container.dashboards.beginOperation(appWidgetId, entityId, domain)
         }.getOrElse {
             container.dashboards.saveError(appWidgetId, it.message ?: "Действие недоступно")
-            updateDashboardWidget(context, appWidgetId, "action-invalid")
             return
         } ?: return
         Log.d(
             TAG,
-            "callback enqueue operationId=${operation.operationId} widgetId=$appWidgetId " +
-                "entityId=$entityId desiredState=${operation.desiredState}",
+            "CONTROL_TAP processStartId=${DashboardDiagnostics.processStartId} operationId=${operation.operationId} " +
+                "appWidgetId=$appWidgetId entityId=$entityId source=ACTION desiredState=${operation.desiredState}",
         )
-        updateDashboardWidget(context, appWidgetId, "action-optimistic")
         DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId)
     }
 }
 
 private const val TAG = "HAWidgetDashboardAction"
-

@@ -3,6 +3,8 @@ package com.danila.hacustomwidgets.data
 import android.content.Context
 import com.danila.hacustomwidgets.dashboard.DashboardEventCoordinator
 import com.danila.hacustomwidgets.dashboard.DashboardRepository
+import com.danila.hacustomwidgets.dashboard.DashboardRenderCoordinator
+import com.danila.hacustomwidgets.dashboard.DashboardStartupCoordinator
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
 import com.danila.hacustomwidgets.data.remote.HomeAssistantClient
@@ -188,5 +190,8 @@ class AppContainer(context: Context) {
     val client = HomeAssistantClient()
     val widgets = WidgetRepository(context)
     val dashboards = DashboardRepository(context)
+    val dashboardRenders = DashboardRenderCoordinator(context, dashboards)
+    init { dashboards.attachRenderRequester(dashboardRenders::request) }
     val dashboardEvents = DashboardEventCoordinator(context, connectionStore, client, dashboards)
+    val dashboardStartup = DashboardStartupCoordinator(context, connectionStore, client, dashboards)
 }

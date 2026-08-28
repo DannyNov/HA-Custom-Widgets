@@ -127,6 +127,7 @@ data class DashboardOperation(
     val optimisticState: String?,
     val previousState: String?,
     val createdAt: Long,
+    val deadlineAt: Long,
     val status: DashboardOperationStatus,
     val completedAt: Long? = null,
     val error: String? = null,
@@ -134,11 +135,21 @@ data class DashboardOperation(
 
 data class VersionedEntityState(
     val entityId: String,
-    val displayState: String,
-    val rawState: String,
-    val haLastUpdatedMillis: Long?,
+    val confirmedDisplayState: String,
+    val confirmedRawState: String,
+    val confirmedHaLastUpdatedMillis: Long?,
     val revision: Long,
+    val optimisticOverlay: String? = null,
     val optimisticOperationId: String? = null,
+) {
+    val displayState: String get() = optimisticOverlay ?: confirmedDisplayState
+    val rawState: String get() = optimisticOverlay ?: confirmedRawState
+}
+
+data class DashboardRevisionState(
+    val committedRevision: Long,
+    val requestedRenderRevision: Long,
+    val renderedRevision: Long,
 )
 
 enum class DashboardStateSource { CATALOG, MANUAL_REFRESH, PERIODIC_REFRESH, ACTION, EVENT, RECONCILIATION, MIGRATION }
@@ -189,4 +200,3 @@ data class DashboardState(
 }
 
 const val MAIN_TAB_ID = "__main__"
-

@@ -40,7 +40,6 @@ class DashboardRefreshWorker(
             return if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
         } finally {
             container.dashboards.markRefreshInProgress(appWidgetId, false)
-            updateDashboardWidget(applicationContext, appWidgetId, "refresh-worker")
             Log.d(
                 TAG,
                 "refresh worker end widgetId=$appWidgetId source=$source revision=${container.dashboards.currentStateRevision(appWidgetId)}",

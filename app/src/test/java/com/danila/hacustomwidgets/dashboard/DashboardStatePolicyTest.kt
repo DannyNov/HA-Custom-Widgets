@@ -41,8 +41,8 @@ class DashboardStatePolicyTest {
         assertTrue(DashboardStatePolicy.decide(state("on", 10), "off", 20, persisted).confirmsOperation)
     }
 
-    @Test fun refreshActionRaceRejectsConflictingRefreshDuringOperation() {
-        assertFalse(DashboardStatePolicy.decide(state("off", 100), "off", 200, operation("on")).accept)
+    @Test fun refreshActionRaceCommitsConflictingTruthBelowOverlay() {
+        assertTrue(DashboardStatePolicy.decide(state("off", 100), "off", 200, operation("on")).accept)
     }
 
     @Test fun periodicActionRaceRejectsOlderPeriodicResult() {
@@ -53,22 +53,22 @@ class DashboardStatePolicyTest {
         val active = operation("on")
         assertFalse(DashboardStatePolicy.canBeginOperation(active))
         assertEquals(
-            DashboardStatePolicy.actionWorkName(7, "switch.a"),
-            DashboardStatePolicy.actionWorkName(7, "switch.a"),
+            DashboardStatePolicy.actionWorkName(7, "switch.a", "op"),
+            DashboardStatePolicy.actionWorkName(7, "switch.a", "op"),
         )
     }
 
     @Test fun simultaneousActionsForDifferentEntitiesAreIndependent() {
         assertNotEquals(
-            DashboardStatePolicy.actionWorkName(7, "switch.a"),
-            DashboardStatePolicy.actionWorkName(7, "switch.b"),
+            DashboardStatePolicy.actionWorkName(7, "switch.a", "op-a"),
+            DashboardStatePolicy.actionWorkName(7, "switch.b", "op-b"),
         )
     }
 
     @Test fun twoControlsOfOneDeviceHaveIndependentOperationKeys() {
         assertNotEquals(
-            DashboardStatePolicy.actionWorkName(2, "light.main"),
-            DashboardStatePolicy.actionWorkName(2, "switch.ambient"),
+            DashboardStatePolicy.actionWorkName(2, "light.main", "one"),
+            DashboardStatePolicy.actionWorkName(2, "switch.ambient", "two"),
         )
     }
 
@@ -136,9 +136,9 @@ class DashboardStatePolicyTest {
 
     private fun state(raw: String, updated: Long) = VersionedEntityState(
         entityId = "switch.test",
-        displayState = raw,
-        rawState = raw,
-        haLastUpdatedMillis = updated,
+        confirmedDisplayState = raw,
+        confirmedRawState = raw,
+        confirmedHaLastUpdatedMillis = updated,
         revision = updated,
     )
 
@@ -151,6 +151,7 @@ class DashboardStatePolicyTest {
         optimisticState = desired,
         previousState = if (desired == "on") "off" else "on",
         createdAt = 1,
+        deadlineAt = 12_001,
         status = DashboardOperationStatus.PENDING,
     )
 
@@ -159,4 +160,3 @@ class DashboardStatePolicyTest {
         status: DashboardOperationStatus = DashboardOperationStatus.CONFIRMED,
     ) = operation(desired).copy(status = status, completedAt = 2)
 }
-

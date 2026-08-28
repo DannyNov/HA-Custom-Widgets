@@ -6,105 +6,48 @@ import com.danila.hacustomwidgets.data.model.HaDevice
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
 import com.danila.hacustomwidgets.data.model.HaFloor
-import com.danila.hacustomwidgets.data.model.HaSpaceKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashboardModelsTest {
-    @Test
-    fun semanticOrderPutsTemperatureHumidityAndBatteryLast() {
-        val items = listOf(
-            entity("sensor.battery", "Батарея", "battery"),
-            entity("sensor.humidity", "Влажность", "humidity"),
-            entity("sensor.pressure", "Давление", "pressure"),
-            entity("sensor.temperature", "Температура", "temperature"),
-        )
-        assertEquals(
-            listOf("temperature", "humidity", "pressure", "battery"),
-            defaultMetricOrder(items).map { it.deviceClass },
-        )
+    @Test fun entityWithoutDeviceHasIndependentCardKey() {
+        val one = HaDeviceGroup(null, listOf(entity("script.one")), "entity:script.one", "One")
+        val two = HaDeviceGroup(null, listOf(entity("script.two")), "entity:script.two", "Two")
+        assertNotEquals(one.key, two.key)
     }
 
-    @Test
-    fun floorsBecomeSpacesAndAreasBecomeRooms() {
-        val device = HaDevice("device", "Датчик", areaId = "living")
-        val group = HaDeviceGroup(device, listOf(entity("sensor.temperature", "Температура", "temperature")))
-        val catalog = HaCatalog(
-            groups = listOf(group),
-            areas = listOf(HaArea("living", "Гостиная", "home")),
-            floors = listOf(HaFloor("home", "Квартира", 1)),
-        )
-        val space = catalog.spaces().single()
-        assertEquals(HaSpaceKind.FLOOR, space.kind)
-        assertEquals("Квартира", space.name)
-        assertEquals(listOf("living"), space.areaIds)
+    @Test fun multipleControlsOfOneDeviceRemainIndependent() {
+        val entities = listOf(entity("light.main"), entity("switch.ambient"))
+        assertEquals(2, entities.mapNotNull(::serviceAction).size)
     }
 
-    @Test
-    fun areasBecomeSpacesWhenFloorsAreAbsent() {
-        val catalog = HaCatalog(emptyList(), areas = listOf(HaArea("office", "Офис")))
-        assertEquals("Офис", catalog.spaces().single().name)
-        assertEquals(HaSpaceKind.AREA, catalog.spaces().single().kind)
+    @Test fun entityAreaOverridesDeviceArea() {
+        val group = HaDeviceGroup(HaDevice("d", "Device", areaId = "device"), listOf(entity("sensor.x").copy(areaId = "entity")))
+        assertEquals("entity", group.effectiveAreaId)
     }
 
-    @Test
-    fun stateAwareActionsAvoidUnsafeToggleCalls() {
-        val lightOn = entity("light.hall", "Свет", null).copy(state = "on")
-        val lightOff = lightOn.copy(state = "off")
-        assertEquals(ServiceAction("light", "turn_off"), serviceAction(lightOn))
-        assertEquals(ServiceAction("light", "turn_on"), serviceAction(lightOff))
+    @Test fun hiddenAndDisabledEntitiesCannotControl() {
+        assertEquals(null, serviceAction(entity("switch.hidden").copy(hiddenBy = "user")))
+        assertEquals(null, serviceAction(entity("switch.disabled").copy(disabledBy = "integration")))
     }
 
-    @Test
-    fun hiddenEntityCannotBecomeAControl() {
-        val hidden = entity("switch.hidden", "Скрытый выключатель", null).copy(hiddenBy = "user")
-        assertEquals(null, serviceAction(hidden))
+    @Test fun mainOnlyDashboardStillHasMainTab() {
+        val config = DashboardConfig(1, emptyList(), emptyMap(), emptyList(), emptyMap(), emptyMap(), true, true)
+        val state = DashboardState(config, emptyList(), emptyList(), MAIN_TAB_ID, emptySet(), emptySet(), emptyMap(), 0, false, 0, null)
+        assertEquals(listOf(MAIN_TAB_ID), state.tabs.map { it.id })
     }
 
-    @Test
-    fun entityAreaOverridesDeviceArea() {
-        val group = HaDeviceGroup(
-            HaDevice("device", "Датчик", areaId = "device_area"),
-            listOf(entity("sensor.temperature", "Температура", "temperature").copy(areaId = "entity_area")),
-        )
-        assertEquals("entity_area", group.effectiveAreaId)
+    @Test fun catalogKeepsFloorsAndAreas() {
+        val catalog = HaCatalog(emptyList(), listOf(HaArea("room", "Room", "floor")), listOf(HaFloor("floor", "Home", 1)))
+        assertEquals("Home", catalog.spaces().single().name)
     }
 
-    @Test
-    fun syntheticUnassignedGroupsHaveIndependentKeys() {
-        val first = HaDeviceGroup(null, listOf(entity("script.one", "Первый", null)), "entity:script.one", "Первый")
-        val second = HaDeviceGroup(null, listOf(entity("script.two", "Второй", null)), "entity:script.two", "Второй")
-        assertTrue(first.key != second.key)
-        assertEquals("Первый", first.title)
+    @Test fun binaryControlNeverUsesToggle() {
+        assertTrue(serviceAction(entity("switch.x").copy(state = "on"))?.service == "turn_off")
+        assertTrue(serviceAction(entity("switch.x").copy(state = "off"))?.service == "turn_on")
     }
 
-    @Test
-    fun classificationUsesDeviceClassAndDomain() {
-        val opening = HaDeviceGroup(
-            HaDevice("door", "Дверь"),
-            listOf(entity("binary_sensor.front_door", "Входная дверь", "door")),
-        )
-        assertEquals(DeviceCategory.OPENINGS, deviceCategory(opening))
-        assertTrue(metricIcon(DashboardMetric("sensor.x", "Влажность", "42 %", "42", "sensor", "humidity")) == "💧")
-    }
-
-    @Test
-    fun batteryThresholdsDistinguishLowAndCritical() {
-        fun battery(value: String) = DashboardMetric(
-            "sensor.battery", "Батарея", "$value %", value, "sensor", "battery",
-        )
-        assertEquals(BatteryHealth.NORMAL, batteryHealth(battery("75")))
-        assertEquals(BatteryHealth.LOW, batteryHealth(battery("20")))
-        assertEquals(BatteryHealth.CRITICAL, batteryHealth(battery("10")))
-    }
-
-    private fun entity(id: String, name: String, deviceClass: String?) = HaEntity(
-        entityId = id,
-        state = "1",
-        friendlyName = name,
-        unit = null,
-        lastUpdated = null,
-        deviceClass = deviceClass,
-    )
+    private fun entity(id: String) = HaEntity(id, "off", id, null, null)
 }

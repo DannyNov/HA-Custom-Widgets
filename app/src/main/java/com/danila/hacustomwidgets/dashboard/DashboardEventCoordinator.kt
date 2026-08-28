@@ -28,28 +28,28 @@ class DashboardEventCoordinator(
     fun start() {
         if (socket != null || dashboards.all().isEmpty()) return
         val connection = connectionStore.load() ?: return
-        Log.d(TAG, "event connection opening")
+        Log.d(TAG, "WS_OPEN processStartId=${DashboardDiagnostics.processStartId} source=EVENT")
         socket = client.openStateChangedWebSocket(
             connection = connection,
             onSubscribed = {
                 reconnectAttempt = 0
-                Log.d(TAG, "event connection subscribed; reconciliation requested")
+                Log.d(TAG, "WS_OPEN processStartId=${DashboardDiagnostics.processStartId} source=EVENT subscribed=true")
                 scope.launch { reconcileAll("event-connected") }
             },
             onStateChanged = { entity ->
                 scope.launch {
                     val widgetIds = dashboards.widgetsContainingEntity(entity.entityId)
                     widgetIds.forEach { widgetId ->
-                        dashboards.updateEntityStates(
-                            widgetId,
-                            listOf(entity),
-                            DashboardStateSource.EVENT,
-                        )
-                        updateDashboardWidget(applicationContext, widgetId, "state-changed")
+                        runCatching {
+                            dashboards.updateEntityStates(widgetId, listOf(entity), DashboardStateSource.EVENT)
+                        }.onFailure {
+                            Log.e(TAG, "WS_STATE_CHANGED widgetId=$widgetId entityId=${entity.entityId} commitFailure=true", it)
+                        }
                     }
                     Log.d(
                         TAG,
-                        "state_changed entityId=${entity.entityId} widgets=${widgetIds.size}",
+                        "WS_STATE_CHANGED processStartId=${DashboardDiagnostics.processStartId} " +
+                            "entityId=${entity.entityId} haState=${entity.state} widgets=${widgetIds.size}",
                     )
                 }
             },
@@ -67,14 +67,15 @@ class DashboardEventCoordinator(
 
     private fun connectionLost(reason: String, error: Throwable?) {
         synchronized(this) { socket = null }
-        if (error == null) Log.d(TAG, "event connection lost reason=$reason")
-        else Log.w(TAG, "event connection lost reason=$reason", error)
+        if (error == null) Log.d(TAG, "WS_CLOSED processStartId=${DashboardDiagnostics.processStartId} reason=$reason")
+        else Log.w(TAG, "WS_FAILURE processStartId=${DashboardDiagnostics.processStartId} reason=$reason", error)
         if (dashboards.all().isEmpty() || !reconnectScheduled.compareAndSet(false, true)) return
         scope.launch {
             val waitMs = (1_000L shl reconnectAttempt.coerceAtMost(5)).coerceAtMost(30_000L)
             reconnectAttempt += 1
             delay(waitMs)
             reconnectScheduled.set(false)
+            Log.d(TAG, "WS_RECONNECT processStartId=${DashboardDiagnostics.processStartId} attempt=$reconnectAttempt")
             start()
         }
     }
@@ -91,7 +92,6 @@ class DashboardEventCoordinator(
                         it,
                         DashboardStateSource.RECONCILIATION,
                     )
-                    updateDashboardWidget(applicationContext, config.appWidgetId, reason)
                 }
                 .onFailure {
                     Log.w(TAG, "event reconciliation failed widgetId=${config.appWidgetId}", it)
@@ -108,4 +108,3 @@ class DashboardEventCoordinator(
         private const val TAG = "HAWidgetEvents"
     }
 }
-

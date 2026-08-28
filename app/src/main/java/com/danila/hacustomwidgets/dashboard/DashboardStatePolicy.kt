@@ -13,16 +13,20 @@ object DashboardStatePolicy {
         incomingHaLastUpdatedMillis: Long?,
         operation: DashboardOperation?,
     ): StateMergeDecision {
-        if (operation?.status?.isActive == true && operation.desiredState != null) {
-            return if (incomingRawState == operation.desiredState) {
-                StateMergeDecision(true, true, "matches desired state")
-            } else {
-                StateMergeDecision(false, false, "active optimistic operation rejects conflicting state")
-            }
-        }
-        val existingHa = existing?.haLastUpdatedMillis
+        val existingHa = existing?.confirmedHaLastUpdatedMillis
         if (existingHa != null && incomingHaLastUpdatedMillis != null && incomingHaLastUpdatedMillis < existingHa) {
             return StateMergeDecision(false, false, "older Home Assistant timestamp")
+        }
+        if (operation?.status?.isActive == true && operation.desiredState != null) {
+            return StateMergeDecision(
+                accept = true,
+                confirmsOperation = incomingRawState == operation.desiredState,
+                reason = if (incomingRawState == operation.desiredState) {
+                    "confirmed truth matches desired state"
+                } else {
+                    "conflicting truth committed below optimistic overlay"
+                },
+            )
         }
         return StateMergeDecision(true, false, "newest available state")
     }
@@ -44,13 +48,20 @@ object DashboardStatePolicy {
     fun canBeginOperation(existing: DashboardOperation?): Boolean =
         existing?.status?.isActive != true
 
-    fun actionWorkName(appWidgetId: Int, entityId: String): String =
-        "dashboard-action:$appWidgetId:$entityId"
+    fun actionWorkName(appWidgetId: Int, entityId: String, operationId: String): String =
+        "dashboard-action:$appWidgetId:$entityId:$operationId"
+
+    fun deadlineWorkName(operationId: String): String = "dashboard-deadline:$operationId"
+
+    fun operationExpired(operation: DashboardOperation, now: Long): Boolean =
+        operation.status.isActive && now >= operation.deadlineAt
 
     fun refreshWorkName(appWidgetId: Int): String = "dashboard-refresh:$appWidgetId"
 
     fun shouldMigrateStorage(hasSplitStructure: Boolean, hasLegacyCache: Boolean): Boolean =
         !hasSplitStructure && hasLegacyCache
+
+    const val OPERATION_WINDOW_MS = 12_000L
 }
 
 data class DashboardOperationPlan(
