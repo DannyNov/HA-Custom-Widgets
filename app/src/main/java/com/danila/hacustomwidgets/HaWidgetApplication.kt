@@ -10,5 +10,6 @@ class HaWidgetApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         WidgetSyncWorker.schedule(this)
+        container.dashboardEvents.start()
     }
 }

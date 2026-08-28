@@ -134,6 +134,60 @@ class HomeAssistantClient(
         }
     }
 
+    fun openStateChangedWebSocket(
+        connection: HomeAssistantConnection,
+        onSubscribed: () -> Unit,
+        onStateChanged: (HaEntity) -> Unit,
+        onClosed: () -> Unit,
+        onFailure: (Throwable) -> Unit,
+    ): WebSocket {
+        val request = Request.Builder().url(webSocketUrl(connection)).build()
+        return http.newWebSocket(request, object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                runCatching {
+                    val message = JSONObject(text)
+                    when (message.optString("type")) {
+                        "auth_required" -> webSocket.send(
+                            JSONObject()
+                                .put("type", "auth")
+                                .put("access_token", connection.token)
+                                .toString(),
+                        )
+                        "auth_invalid" -> throw IOException("Токен отклонён Home Assistant")
+                        "auth_ok" -> webSocket.send(
+                            JSONObject()
+                                .put("id", STATE_CHANGED_SUBSCRIPTION_ID)
+                                .put("type", "subscribe_events")
+                                .put("event_type", "state_changed")
+                                .toString(),
+                        )
+                        "result" -> if (message.optInt("id") == STATE_CHANGED_SUBSCRIPTION_ID) {
+                            ensureSuccessful(message)
+                            onSubscribed()
+                        }
+                        "event" -> if (message.optInt("id") == STATE_CHANGED_SUBSCRIPTION_ID) {
+                            val newState = message.optJSONObject("event")
+                                ?.optJSONObject("data")
+                                ?.optJSONObject("new_state")
+                            if (newState != null) onStateChanged(newState.toEntity())
+                        }
+                    }
+                }.onFailure {
+                    onFailure(it)
+                    webSocket.close(1002, "invalid response")
+                }
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                onClosed()
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                onFailure(IOException("Соединение событий Home Assistant потеряно", t))
+            }
+        })
+    }
+
     private suspend fun getRegistries(connection: HomeAssistantConnection): RegistrySnapshot =
         withContext(Dispatchers.IO) {
             withTimeout(20_000) {
@@ -331,6 +385,7 @@ class HomeAssistantClient(
         const val ENTITY_REQUEST_ID = 2
         const val AREA_REQUEST_ID = 3
         const val FLOOR_REQUEST_ID = 4
+        const val STATE_CHANGED_SUBSCRIPTION_ID = 10_001
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }

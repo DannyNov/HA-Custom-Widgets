@@ -1,53 +1,53 @@
 package com.danila.hacustomwidgets.dashboard
 
 import android.content.Context
+import android.util.Log
 import com.danila.hacustomwidgets.data.WidgetRepository
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
+import java.time.Instant
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
 class DashboardRepository(context: Context) {
-    private val prefs = context.getSharedPreferences("dashboard_widgets", Context.MODE_PRIVATE)
+    private val configPrefs = context.getSharedPreferences("dashboard_widgets", Context.MODE_PRIVATE)
+    private val structurePrefs = context.getSharedPreferences("dashboard_structure", Context.MODE_PRIVATE)
+    private val statePrefs = context.getSharedPreferences("dashboard_entity_states", Context.MODE_PRIVATE)
+    private val operationPrefs = context.getSharedPreferences("dashboard_operations", Context.MODE_PRIVATE)
+    private val flows = ConcurrentHashMap<Int, MutableStateFlow<DashboardState?>>()
 
+    @Synchronized
     fun saveConfiguration(config: DashboardConfig, catalog: HaCatalog) {
-        prefs.edit()
+        configPrefs.edit()
             .putString(key(config.appWidgetId, "config"), config.toJson().toString())
             .putStringSet(KEY_IDS, configuredIds() + config.appWidgetId.toString())
             .apply()
         updateFromCatalog(config.appWidgetId, catalog)
     }
 
-    fun getConfig(appWidgetId: Int): DashboardConfig? = prefs
+    fun getConfig(appWidgetId: Int): DashboardConfig? = configPrefs
         .getString(key(appWidgetId, "config"), null)
         ?.let { runCatching { parseConfig(JSONObject(it), appWidgetId) }.getOrNull() }
 
-    fun get(appWidgetId: Int): DashboardState? {
-        val config = getConfig(appWidgetId) ?: return null
-        val cache = prefs.getString(key(appWidgetId, "cache"), null)?.let {
-            runCatching { JSONObject(it) }.getOrNull()
-        } ?: return null
-        val spaces = parseSpaces(cache.optJSONArray("spaces") ?: JSONArray())
-        val cards = parseCards(cache.optJSONArray("cards") ?: JSONArray())
-        val tab = prefs.getString(key(appWidgetId, "selected_tab"), MAIN_TAB_ID) ?: MAIN_TAB_ID
-        val collapsed = prefs.getStringSet(key(appWidgetId, "collapsed"), emptySet())?.toSet().orEmpty()
-        val now = System.currentTimeMillis()
-        val inFlight = prefs.getString(key(appWidgetId, "in_flight"), null)?.let {
-            runCatching { JSONObject(it) }.getOrNull()
-        }?.let { json ->
-            json.keys().asSequence().filter { json.optLong(it) + ACTION_TIMEOUT_MS > now }.toSet()
-        }.orEmpty()
-        return DashboardState(
-            config = config,
-            spaces = spaces,
-            cards = cards,
-            selectedTabId = tab,
-            collapsedSections = collapsed,
-            inFlightDeviceKeys = inFlight,
-            lastUpdatedMillis = cache.optLong("updated"),
-            error = cache.optString("error").takeIf { it.isNotBlank() },
-        )
+    @Synchronized
+    fun get(appWidgetId: Int): DashboardState? = flows.getOrPut(appWidgetId) {
+        val started = System.currentTimeMillis()
+        MutableStateFlow(loadState(appWidgetId).also {
+            Log.d(TAG, "local state loaded widgetId=$appWidgetId durationMs=${System.currentTimeMillis() - started}")
+        })
+    }.value
+
+    @Synchronized
+    fun observe(appWidgetId: Int): StateFlow<DashboardState?> = flows.getOrPut(appWidgetId) {
+        val started = System.currentTimeMillis()
+        MutableStateFlow(loadState(appWidgetId).also {
+            Log.d(TAG, "local state/cache loaded widgetId=$appWidgetId durationMs=${System.currentTimeMillis() - started}")
+        })
     }
 
     fun all(): List<DashboardConfig> = configuredIds().mapNotNull { it.toIntOrNull()?.let(::getConfig) }
@@ -56,87 +56,362 @@ class DashboardRepository(context: Context) {
         .flatMap { card -> card.metrics.map { it.entityId } + card.controls.map { it.entityId } }
         .distinct()
 
+    fun widgetsContainingEntity(entityId: String): List<Int> = all()
+        .map { it.appWidgetId }
+        .filter { entityId in entityIds(it) }
+
+    fun currentStateRevision(appWidgetId: Int): Long = currentRevision(appWidgetId)
+
+    @Synchronized
     fun requiresCatalogRefresh(appWidgetId: Int): Boolean {
-        val cache = prefs.getString(key(appWidgetId, "cache"), null)?.let {
+        ensureMigrated(appWidgetId)
+        val structure = structurePrefs.getString(structureKey(appWidgetId), null)?.let {
             runCatching { JSONObject(it) }.getOrNull()
         } ?: return true
-        return cache.optInt("schema", 0) < CACHE_SCHEMA_VERSION
+        return structure.optInt("schema", 0) < STORAGE_SCHEMA_VERSION
     }
 
+    @Synchronized
     fun updateFromCatalog(appWidgetId: Int, catalog: HaCatalog) {
         val storedConfig = getConfig(appWidgetId) ?: return
         val config = migrateLegacyUnassigned(storedConfig, catalog)
         if (config != storedConfig) {
-            prefs.edit().putString(key(appWidgetId, "config"), config.toJson().toString()).apply()
+            configPrefs.edit().putString(key(appWidgetId, "config"), config.toJson().toString()).apply()
         }
         val spaces = catalog.spaces().map { DashboardSpace(it.id, it.name, it.areaIds) }
         val areaNames = catalog.areas.associate { it.id to it.name }
         val cards = catalog.groups.map { group -> group.toDashboardCard(config, areaNames) }
-        val json = JSONObject()
-            .put("schema", CACHE_SCHEMA_VERSION)
+        val structure = JSONObject()
+            .put("schema", STORAGE_SCHEMA_VERSION)
             .put("spaces", spacesJson(spaces))
             .put("cards", cardsJson(cards))
-            .put("updated", System.currentTimeMillis())
-        prefs.edit().putString(key(appWidgetId, "cache"), json.toString()).apply()
-    }
-
-    fun updateEntityStates(appWidgetId: Int, entities: List<HaEntity>) {
-        val state = get(appWidgetId) ?: return
-        val byId = entities.associateBy { it.entityId }
-        val cards = state.cards.map { card ->
-            val metrics = card.metrics.map { metric ->
-                byId[metric.entityId]?.let { metric.copy(state = it.displayState, rawState = it.state) } ?: metric
-            }
-            val controls = card.controls.map { control ->
-                byId[control.entityId]?.let { control.copy(state = it.state) } ?: control
-            }
-            card.copy(metrics = metrics, controls = controls)
+        structurePrefs.edit().putString(structureKey(appWidgetId), structure.toString()).apply()
+        configPrefs.edit()
+            .remove(key(appWidgetId, "error"))
+            .apply()
+        val entities = catalog.groups.flatMap { it.entities }.distinctBy { it.entityId }
+        if (entities.isEmpty()) {
+            configPrefs.edit().putLong(key(appWidgetId, "updated"), System.currentTimeMillis()).apply()
+            publish(appWidgetId)
+        } else {
+            updateEntityStates(appWidgetId, entities, DashboardStateSource.CATALOG)
         }
-        writeCache(appWidgetId, state.spaces, cards, System.currentTimeMillis(), null)
-    }
-
-    fun saveError(appWidgetId: Int, message: String) {
-        val state = get(appWidgetId) ?: return
-        writeCache(appWidgetId, state.spaces, state.cards, state.lastUpdatedMillis, message)
-    }
-
-    fun setSelectedTab(appWidgetId: Int, tabId: String) {
-        prefs.edit().putString(key(appWidgetId, "selected_tab"), tabId).apply()
-    }
-
-    fun toggleSection(appWidgetId: Int, sectionKey: String) {
-        val current = prefs.getStringSet(key(appWidgetId, "collapsed"), emptySet())?.toSet().orEmpty()
-        val updated = if (sectionKey in current) current - sectionKey else current + sectionKey
-        prefs.edit().putStringSet(key(appWidgetId, "collapsed"), updated).apply()
     }
 
     @Synchronized
-    fun tryBeginAction(appWidgetId: Int, deviceKey: String): Boolean {
-        val now = System.currentTimeMillis()
-        val json = prefs.getString(key(appWidgetId, "in_flight"), null)?.let {
-            runCatching { JSONObject(it) }.getOrNull()
-        } ?: JSONObject()
-        val previous = json.optLong(deviceKey)
-        if (previous > 0 && previous + ACTION_TIMEOUT_MS > now) return false
-        json.put(deviceKey, now)
-        prefs.edit().putString(key(appWidgetId, "in_flight"), json.toString()).commit()
+    fun updateEntityStates(
+        appWidgetId: Int,
+        entities: List<HaEntity>,
+        source: DashboardStateSource = DashboardStateSource.MANUAL_REFRESH,
+    ): Long {
+        var revision = currentRevision(appWidgetId)
+        var accepted = 0
+        entities.forEach { entity ->
+            val existing = readEntityState(appWidgetId, entity.entityId)
+            val operation = getOperation(appWidgetId, entity.entityId)
+            val incomingMillis = parseTimestamp(entity.lastUpdated)
+            val decision = DashboardStatePolicy.decide(existing, entity.state, incomingMillis, operation)
+            if (decision.accept) {
+                revision += 1
+                accepted += 1
+                writeEntityState(
+                    appWidgetId,
+                    VersionedEntityState(
+                        entityId = entity.entityId,
+                        displayState = entity.displayState,
+                        rawState = entity.state,
+                        haLastUpdatedMillis = incomingMillis,
+                        revision = revision,
+                        optimisticOperationId = null,
+                    ),
+                )
+                if (decision.confirmsOperation && operation != null) {
+                    writeOperation(
+                        appWidgetId,
+                        operation.copy(
+                            status = DashboardOperationStatus.CONFIRMED,
+                            completedAt = System.currentTimeMillis(),
+                            error = null,
+                        ),
+                    )
+                }
+            } else {
+                Log.d(
+                    TAG,
+                    "state rejected widgetId=$appWidgetId entityId=${entity.entityId} source=$source reason=${decision.reason}",
+                )
+            }
+        }
+        if (accepted > 0) {
+            configPrefs.edit()
+                .putLong(key(appWidgetId, "updated"), System.currentTimeMillis())
+                .putLong(key(appWidgetId, "revision"), revision)
+                .remove(key(appWidgetId, "error"))
+                .apply()
+            publish(appWidgetId)
+        }
+        Log.d(TAG, "state applied widgetId=$appWidgetId source=$source accepted=$accepted revision=$revision")
+        return revision
+    }
+
+    @Synchronized
+    fun beginOperation(appWidgetId: Int, entityId: String, domain: String): DashboardOperation? {
+        val existingOperation = getOperation(appWidgetId, entityId)
+        if (!DashboardStatePolicy.canBeginOperation(existingOperation)) return null
+        val current = get(appWidgetId)?.cards
+            ?.asSequence()
+            ?.flatMap { it.controls.asSequence() }
+            ?.firstOrNull { it.entityId == entityId }
+            ?.state
+        val plan = DashboardOperationPlanner.plan(domain, current)
+        val operation = DashboardOperation(
+            operationId = UUID.randomUUID().toString(),
+            entityId = entityId,
+            domain = domain,
+            service = plan.service,
+            desiredState = plan.desiredState,
+            optimisticState = plan.optimisticState,
+            previousState = current,
+            createdAt = System.currentTimeMillis(),
+            status = DashboardOperationStatus.PENDING,
+        )
+        writeOperation(appWidgetId, operation)
+        if (plan.optimisticState != null) {
+            val old = readEntityState(appWidgetId, entityId)
+                ?: VersionedEntityState(entityId, current.orEmpty(), current.orEmpty(), null, currentRevision(appWidgetId))
+            val revision = currentRevision(appWidgetId) + 1
+            writeEntityState(
+                appWidgetId,
+                old.copy(
+                    displayState = plan.optimisticState,
+                    rawState = plan.optimisticState,
+                    revision = revision,
+                    optimisticOperationId = operation.operationId,
+                ),
+            )
+            configPrefs.edit().putLong(key(appWidgetId, "revision"), revision).apply()
+        }
+        publish(appWidgetId)
+        Log.d(
+            TAG,
+            "operation created operationId=${operation.operationId} widgetId=$appWidgetId entityId=$entityId " +
+                "desiredState=${operation.desiredState} revision=${currentRevision(appWidgetId)}",
+        )
+        return operation
+    }
+
+    fun getOperation(appWidgetId: Int, entityId: String): DashboardOperation? = operationPrefs
+        .getString(operationKey(appWidgetId, entityId), null)
+        ?.let { runCatching { parseOperation(JSONObject(it)) }.getOrNull() }
+
+    @Synchronized
+    fun setOperationStatus(
+        appWidgetId: Int,
+        entityId: String,
+        operationId: String,
+        status: DashboardOperationStatus,
+        error: String? = null,
+    ): Boolean {
+        val current = getOperation(appWidgetId, entityId) ?: return false
+        if (current.operationId != operationId) return false
+        val terminal = !status.isActive
+        val updated = current.copy(
+            status = status,
+            completedAt = if (terminal) System.currentTimeMillis() else null,
+            error = error,
+        )
+        writeOperation(appWidgetId, updated)
+        if (terminal && status == DashboardOperationStatus.CONFIRMED) {
+            val state = readEntityState(appWidgetId, entityId)
+            if (state?.optimisticOperationId == operationId) {
+                writeEntityState(
+                    appWidgetId,
+                    state.copy(optimisticOperationId = null),
+                )
+            }
+        }
+        if (terminal && status != DashboardOperationStatus.CONFIRMED) {
+            val state = readEntityState(appWidgetId, entityId)
+            if (state?.optimisticOperationId == operationId && current.previousState != null) {
+                val revision = currentRevision(appWidgetId) + 1
+                writeEntityState(
+                    appWidgetId,
+                    state.copy(
+                        displayState = current.previousState,
+                        rawState = current.previousState,
+                        revision = revision,
+                        optimisticOperationId = null,
+                    ),
+                )
+                configPrefs.edit().putLong(key(appWidgetId, "revision"), revision).apply()
+            }
+        }
+        if (error != null) configPrefs.edit().putString(key(appWidgetId, "error"), error).apply()
+        publish(appWidgetId)
+        Log.d(
+            TAG,
+            "operation status operationId=$operationId widgetId=$appWidgetId entityId=$entityId " +
+                "status=$status revision=${currentRevision(appWidgetId)}",
+        )
         return true
     }
 
-    fun finishAction(appWidgetId: Int, deviceKey: String) {
-        val json = prefs.getString(key(appWidgetId, "in_flight"), null)?.let {
-            runCatching { JSONObject(it) }.getOrNull()
-        } ?: return
-        json.remove(deviceKey)
-        prefs.edit().putString(key(appWidgetId, "in_flight"), json.toString()).apply()
+    @Synchronized
+    fun markRefreshInProgress(appWidgetId: Int, active: Boolean) {
+        configPrefs.edit().putBoolean(key(appWidgetId, "refreshing"), active).apply()
+        publish(appWidgetId)
     }
 
-    fun delete(appWidgetId: Int) {
-        val editor = prefs.edit()
-        listOf("config", "cache", "selected_tab", "collapsed", "in_flight").forEach {
-            editor.remove(key(appWidgetId, it))
+    @Synchronized
+    fun saveError(appWidgetId: Int, message: String) {
+        configPrefs.edit().putString(key(appWidgetId, "error"), message).apply()
+        publish(appWidgetId)
+    }
+
+    @Synchronized
+    fun clearError(appWidgetId: Int) {
+        configPrefs.edit().remove(key(appWidgetId, "error")).apply()
+        publish(appWidgetId)
+    }
+
+    @Synchronized
+    fun setSelectedTab(appWidgetId: Int, tabId: String) {
+        val state = get(appWidgetId) ?: return
+        val validIds = state.tabs.map { it.id }.toSet()
+        val target = tabId.takeIf { it in validIds } ?: MAIN_TAB_ID
+        val started = System.currentTimeMillis()
+        Log.d(TAG, "navigation tap received widgetId=$appWidgetId fromTab=${state.selectedTabId} toTab=$target ts=$started")
+        configPrefs.edit().putString(key(appWidgetId, "selected_tab"), target).commit()
+        flows[appWidgetId]?.value = state.copy(selectedTabId = target)
+        Log.d(
+            TAG,
+            "selected_tab saved widgetId=$appWidgetId toTab=$target durationMs=${System.currentTimeMillis() - started}",
+        )
+    }
+
+    @Synchronized
+    fun toggleSection(appWidgetId: Int, sectionKey: String) {
+        val state = get(appWidgetId) ?: return
+        val updated = if (sectionKey in state.collapsedSections) {
+            state.collapsedSections - sectionKey
+        } else {
+            state.collapsedSections + sectionKey
         }
+        configPrefs.edit().putStringSet(key(appWidgetId, "collapsed"), updated).apply()
+        flows[appWidgetId]?.value = state.copy(collapsedSections = updated)
+    }
+
+    @Synchronized
+    fun delete(appWidgetId: Int) {
+        val entityIds = entityIds(appWidgetId)
+        val editor = configPrefs.edit()
+        listOf(
+            "config", "cache", "selected_tab", "collapsed", "in_flight", "updated",
+            "revision", "error", "refreshing",
+        ).forEach { editor.remove(key(appWidgetId, it)) }
         editor.putStringSet(KEY_IDS, configuredIds() - appWidgetId.toString()).apply()
+        structurePrefs.edit().remove(structureKey(appWidgetId)).apply()
+        val stateEditor = statePrefs.edit()
+        val operationEditor = operationPrefs.edit()
+        entityIds.forEach {
+            stateEditor.remove(stateKey(appWidgetId, it))
+            operationEditor.remove(operationKey(appWidgetId, it))
+        }
+        stateEditor.apply()
+        operationEditor.apply()
+        flows.remove(appWidgetId)
+    }
+
+    private fun loadState(appWidgetId: Int): DashboardState? {
+        ensureMigrated(appWidgetId)
+        val config = getConfig(appWidgetId) ?: return null
+        val structure = structurePrefs.getString(structureKey(appWidgetId), null)?.let {
+            runCatching { JSONObject(it) }.getOrNull()
+        } ?: return null
+        val spaces = parseSpaces(structure.optJSONArray("spaces") ?: JSONArray())
+        val baselineCards = parseCards(structure.optJSONArray("cards") ?: JSONArray())
+        val cards = baselineCards.map { card ->
+            card.copy(
+                metrics = card.metrics.map { metric ->
+                    readEntityState(appWidgetId, metric.entityId)?.let {
+                        metric.copy(state = it.displayState, rawState = it.rawState)
+                    } ?: metric
+                },
+                controls = card.controls.map { control ->
+                    readEntityState(appWidgetId, control.entityId)?.let {
+                        control.copy(state = it.rawState)
+                    } ?: control
+                },
+            )
+        }
+        val entityIds = cards.flatMap { card ->
+            card.metrics.map { it.entityId } + card.controls.map { it.entityId }
+        }.distinct()
+        val operations = entityIds.mapNotNull { id -> getOperation(appWidgetId, id)?.let { id to it } }.toMap()
+        val now = System.currentTimeMillis()
+        val visibleOperations = operations.filterValues {
+            it.status.isActive || (it.completedAt ?: 0L) + TERMINAL_STATUS_VISIBLE_MS > now
+        }
+        val visibleTabs = config.visibleSpaceIds.filter { id -> spaces.any { it.id == id } }
+        val storedTab = configPrefs.getString(key(appWidgetId, "selected_tab"), MAIN_TAB_ID) ?: MAIN_TAB_ID
+        val selectedTab = DashboardStatePolicy.resolveSelectedTab(storedTab, visibleTabs)
+        if (selectedTab != storedTab) {
+            configPrefs.edit().putString(key(appWidgetId, "selected_tab"), selectedTab).apply()
+        }
+        return DashboardState(
+            config = config,
+            spaces = spaces,
+            cards = cards,
+            selectedTabId = selectedTab,
+            collapsedSections = configPrefs.getStringSet(key(appWidgetId, "collapsed"), emptySet())
+                ?.toSet().orEmpty(),
+            inFlightDeviceKeys = visibleOperations.filterValues { it.status.isActive }.keys,
+            operationStatusByEntity = visibleOperations.mapValues { it.value.status },
+            stateRevision = currentRevision(appWidgetId),
+            refreshInProgress = configPrefs.getBoolean(key(appWidgetId, "refreshing"), false),
+            lastUpdatedMillis = configPrefs.getLong(key(appWidgetId, "updated"), 0L),
+            error = configPrefs.getString(key(appWidgetId, "error"), null),
+        )
+    }
+
+    private fun publish(appWidgetId: Int) {
+        flows[appWidgetId]?.value = loadState(appWidgetId)
+    }
+
+    private fun ensureMigrated(appWidgetId: Int) {
+        if (!DashboardStatePolicy.shouldMigrateStorage(
+                structurePrefs.contains(structureKey(appWidgetId)),
+                configPrefs.contains(key(appWidgetId, "cache")),
+            )
+        ) return
+        val legacy = configPrefs.getString(key(appWidgetId, "cache"), null)?.let {
+            runCatching { JSONObject(it) }.getOrNull()
+        } ?: return
+        val cards = parseCards(legacy.optJSONArray("cards") ?: JSONArray())
+        var revision = currentRevision(appWidgetId)
+        cards.flatMap { card ->
+            card.metrics.map { Triple(it.entityId, it.state, it.rawState) } +
+                card.controls.map { Triple(it.entityId, it.state, it.state) }
+        }.distinctBy { it.first }.forEach { (entityId, display, raw) ->
+            revision += 1
+            writeEntityState(
+                appWidgetId,
+                VersionedEntityState(entityId, display, raw, null, revision),
+            )
+        }
+        val structure = JSONObject()
+            .put("schema", STORAGE_SCHEMA_VERSION)
+            .put("spaces", legacy.optJSONArray("spaces") ?: JSONArray())
+            .put("cards", legacy.optJSONArray("cards") ?: JSONArray())
+        structurePrefs.edit().putString(structureKey(appWidgetId), structure.toString()).commit()
+        configPrefs.edit()
+            .putLong(key(appWidgetId, "updated"), legacy.optLong("updated"))
+            .putLong(key(appWidgetId, "revision"), revision)
+            .putString(key(appWidgetId, "error"), legacy.optString("error").takeIf { it.isNotBlank() })
+            .remove(key(appWidgetId, "cache"))
+            .remove(key(appWidgetId, "in_flight"))
+            .apply()
+        Log.i(TAG, "migrated dashboard storage widgetId=$appWidgetId revision=$revision")
     }
 
     private fun HaDeviceGroup.toDashboardCard(
@@ -183,8 +458,8 @@ class DashboardRepository(context: Context) {
         val legacyKey = HaDeviceGroup.UNASSIGNED_DEVICE_ID
         val replacementKeys = catalog.groups.filter { it.device == null }.map { it.key }
         if (replacementKeys.isEmpty()) return config
-        fun replaceLegacy(items: List<String>) = items.flatMap { key ->
-            if (key == legacyKey) replacementKeys else listOf(key)
+        fun replaceLegacy(items: List<String>) = items.flatMap { item ->
+            if (item == legacyKey) replacementKeys else listOf(item)
         }.distinct()
         val hasLegacy = legacyKey in config.favoriteDeviceKeys ||
             config.cardOrderBySpace.values.any { legacyKey in it } ||
@@ -197,21 +472,62 @@ class DashboardRepository(context: Context) {
         )
     }
 
-    private fun writeCache(
-        appWidgetId: Int,
-        spaces: List<DashboardSpace>,
-        cards: List<DashboardCard>,
-        updated: Long,
-        error: String?,
-    ) {
-        val json = JSONObject()
-            .put("schema", CACHE_SCHEMA_VERSION)
-            .put("spaces", spacesJson(spaces))
-            .put("cards", cardsJson(cards))
-            .put("updated", updated)
-        if (error != null) json.put("error", error)
-        prefs.edit().putString(key(appWidgetId, "cache"), json.toString()).apply()
+    private fun readEntityState(appWidgetId: Int, entityId: String): VersionedEntityState? = statePrefs
+        .getString(stateKey(appWidgetId, entityId), null)
+        ?.let { runCatching { parseEntityState(JSONObject(it)) }.getOrNull() }
+
+    private fun writeEntityState(appWidgetId: Int, state: VersionedEntityState) {
+        statePrefs.edit().putString(stateKey(appWidgetId, state.entityId), state.toJson().toString()).apply()
     }
+
+    private fun writeOperation(appWidgetId: Int, operation: DashboardOperation) {
+        operationPrefs.edit().putString(operationKey(appWidgetId, operation.entityId), operation.toJson().toString()).apply()
+    }
+
+    private fun VersionedEntityState.toJson() = JSONObject()
+        .put("id", entityId)
+        .put("display", displayState)
+        .put("raw", rawState)
+        .put("ha_updated", haLastUpdatedMillis)
+        .put("revision", revision)
+        .put("optimistic_operation", optimisticOperationId)
+
+    private fun parseEntityState(json: JSONObject) = VersionedEntityState(
+        entityId = json.getString("id"),
+        displayState = json.optString("display"),
+        rawState = json.optString("raw"),
+        haLastUpdatedMillis = json.optLong("ha_updated").takeIf { !json.isNull("ha_updated") },
+        revision = json.optLong("revision"),
+        optimisticOperationId = json.optNullable("optimistic_operation"),
+    )
+
+    private fun DashboardOperation.toJson() = JSONObject()
+        .put("operation_id", operationId)
+        .put("entity_id", entityId)
+        .put("domain", domain)
+        .put("service", service)
+        .put("desired", desiredState)
+        .put("optimistic", optimisticState)
+        .put("previous", previousState)
+        .put("created", createdAt)
+        .put("status", status.name)
+        .put("completed", completedAt)
+        .put("error", error)
+
+    private fun parseOperation(json: JSONObject) = DashboardOperation(
+        operationId = json.getString("operation_id"),
+        entityId = json.getString("entity_id"),
+        domain = json.getString("domain"),
+        service = json.getString("service"),
+        desiredState = json.optNullable("desired"),
+        optimisticState = json.optNullable("optimistic"),
+        previousState = json.optNullable("previous"),
+        createdAt = json.optLong("created"),
+        status = runCatching { DashboardOperationStatus.valueOf(json.optString("status")) }
+            .getOrDefault(DashboardOperationStatus.FAILED),
+        completedAt = json.optLong("completed").takeIf { !json.isNull("completed") },
+        error = json.optNullable("error"),
+    )
 
     private fun DashboardConfig.toJson() = JSONObject()
         .put("spaces", JSONArray(visibleSpaceIds))
@@ -236,7 +552,9 @@ class DashboardRepository(context: Context) {
     )
 
     private fun spacesJson(items: List<DashboardSpace>) = JSONArray().also { array ->
-        items.forEach { array.put(JSONObject().put("id", it.id).put("name", it.name).put("areas", JSONArray(it.roomAreaIds))) }
+        items.forEach {
+            array.put(JSONObject().put("id", it.id).put("name", it.name).put("areas", JSONArray(it.roomAreaIds)))
+        }
     }
 
     private fun parseSpaces(array: JSONArray) = buildList {
@@ -313,7 +631,8 @@ class DashboardRepository(context: Context) {
                 DashboardCard(
                     item.getString("key"), item.optString("title"), item.optNullable("area"),
                     item.optNullable("room"),
-                    runCatching { DeviceCategory.valueOf(item.optString("category")) }.getOrDefault(DeviceCategory.OTHER),
+                    runCatching { DeviceCategory.valueOf(item.optString("category")) }
+                        .getOrDefault(DeviceCategory.OTHER),
                     metrics, controls,
                 ),
             )
@@ -321,7 +640,7 @@ class DashboardRepository(context: Context) {
     }
 
     private fun mapOfListsJson(value: Map<String, List<String>>) = JSONObject().also { out ->
-        value.forEach { (key, list) -> out.put(key, JSONArray(list)) }
+        value.forEach { (mapKey, list) -> out.put(mapKey, JSONArray(list)) }
     }
 
     private fun JSONObject?.mapOfLists(): Map<String, List<String>> = this?.let { json ->
@@ -336,14 +655,25 @@ class DashboardRepository(context: Context) {
         buildList { for (i in 0 until array.length()) add(array.getString(i)) }
     }.orEmpty()
 
-    private fun JSONObject.optNullable(key: String): String? = optString(key).takeIf { !isNull(key) && it.isNotBlank() }
-    private fun configuredIds(): Set<String> = prefs.getStringSet(KEY_IDS, emptySet())?.toSet().orEmpty()
+    private fun JSONObject.optNullable(name: String): String? =
+        optString(name).takeIf { !isNull(name) && it.isNotBlank() }
+
+    private fun parseTimestamp(value: String?): Long? = value?.let {
+        runCatching { Instant.parse(it).toEpochMilli() }.getOrNull()
+    }
+
+    private fun currentRevision(appWidgetId: Int) = configPrefs.getLong(key(appWidgetId, "revision"), 0L)
+    private fun configuredIds(): Set<String> = configPrefs.getStringSet(KEY_IDS, emptySet())?.toSet().orEmpty()
     private fun key(id: Int, suffix: String) = "dashboard_${id}_$suffix"
+    private fun structureKey(id: Int) = "dashboard_${id}_structure"
+    private fun stateKey(id: Int, entityId: String) = "dashboard_${id}_state_$entityId"
+    private fun operationKey(id: Int, entityId: String) = "dashboard_${id}_operation_$entityId"
 
     companion object {
+        private const val TAG = "HAWidgetDashboard"
         private const val KEY_IDS = "configured_dashboard_ids"
-        private const val CACHE_SCHEMA_VERSION = 2
+        private const val STORAGE_SCHEMA_VERSION = 3
         private const val DEFAULT_METRIC_LIMIT = 5
-        private const val ACTION_TIMEOUT_MS = 10_000L
+        private const val TERMINAL_STATUS_VISIBLE_MS = 4_000L
     }
 }

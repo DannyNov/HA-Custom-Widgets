@@ -1,6 +1,7 @@
 package com.danila.hacustomwidgets.data
 
 import android.content.Context
+import com.danila.hacustomwidgets.dashboard.DashboardEventCoordinator
 import com.danila.hacustomwidgets.dashboard.DashboardRepository
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
@@ -187,4 +188,5 @@ class AppContainer(context: Context) {
     val client = HomeAssistantClient()
     val widgets = WidgetRepository(context)
     val dashboards = DashboardRepository(context)
+    val dashboardEvents = DashboardEventCoordinator(context, connectionStore, client, dashboards)
 }

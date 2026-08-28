@@ -112,6 +112,37 @@ data class DashboardControl(
     val state: String,
 )
 
+enum class DashboardOperationStatus {
+    PENDING, RUNNING, CONFIRMED, FAILED, TIMEOUT, CANCELLED;
+
+    val isActive: Boolean get() = this == PENDING || this == RUNNING
+}
+
+data class DashboardOperation(
+    val operationId: String,
+    val entityId: String,
+    val domain: String,
+    val service: String,
+    val desiredState: String?,
+    val optimisticState: String?,
+    val previousState: String?,
+    val createdAt: Long,
+    val status: DashboardOperationStatus,
+    val completedAt: Long? = null,
+    val error: String? = null,
+)
+
+data class VersionedEntityState(
+    val entityId: String,
+    val displayState: String,
+    val rawState: String,
+    val haLastUpdatedMillis: Long?,
+    val revision: Long,
+    val optimisticOperationId: String? = null,
+)
+
+enum class DashboardStateSource { CATALOG, MANUAL_REFRESH, PERIODIC_REFRESH, ACTION, EVENT, RECONCILIATION, MIGRATION }
+
 data class DashboardCard(
     val key: String,
     val title: String,
@@ -146,6 +177,9 @@ data class DashboardState(
     val selectedTabId: String,
     val collapsedSections: Set<String>,
     val inFlightDeviceKeys: Set<String>,
+    val operationStatusByEntity: Map<String, DashboardOperationStatus>,
+    val stateRevision: Long,
+    val refreshInProgress: Boolean,
     val lastUpdatedMillis: Long,
     val error: String?,
 ) {
@@ -155,3 +189,4 @@ data class DashboardState(
 }
 
 const val MAIN_TAB_ID = "__main__"
+

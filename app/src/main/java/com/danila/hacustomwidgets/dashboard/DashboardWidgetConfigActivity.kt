@@ -38,7 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.glance.appwidget.updateAll
 import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.data.AppContainer
 import com.danila.hacustomwidgets.data.model.HaCatalog
@@ -70,7 +69,12 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
                     existing = container.dashboards.getConfig(appWidgetId),
                     onSave = { config, catalog ->
                         container.dashboards.saveConfiguration(config, catalog)
-                        DashboardWidget().updateAll(this@DashboardWidgetConfigActivity)
+                        container.dashboardEvents.start()
+                        updateDashboardWidget(
+                            this@DashboardWidgetConfigActivity,
+                            appWidgetId,
+                            "configuration",
+                        )
                         setResult(
                             Activity.RESULT_OK,
                             Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),

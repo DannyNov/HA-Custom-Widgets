@@ -10,7 +10,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.danila.hacustomwidgets.HaWidgetApplication
-import com.danila.hacustomwidgets.dashboard.DashboardWidget
+import com.danila.hacustomwidgets.dashboard.DashboardRefreshWorker
+import com.danila.hacustomwidgets.dashboard.DashboardStateSource
 import java.util.concurrent.TimeUnit
 
 class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -29,26 +30,13 @@ class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 }
         }
         container.dashboards.all().forEach { config ->
-            val needsCatalog = container.dashboards.requiresCatalogRefresh(config.appWidgetId)
-            val entityIds = container.dashboards.entityIds(config.appWidgetId)
-            val refresh = if (needsCatalog || entityIds.isEmpty()) {
-                runCatching {
-                    container.client.getCatalog(connection)
-                        .also { container.dashboards.updateFromCatalog(config.appWidgetId, it) }
-                }
-            } else {
-                runCatching {
-                    container.client.getEntities(connection, entityIds)
-                        .also { container.dashboards.updateEntityStates(config.appWidgetId, it) }
-                }
-            }
-            refresh.onFailure {
-                transientFailure = true
-                container.dashboards.saveError(config.appWidgetId, it.message ?: "Ошибка сети")
-            }
+            DashboardRefreshWorker.enqueue(
+                applicationContext,
+                config.appWidgetId,
+                DashboardStateSource.PERIODIC_REFRESH,
+            )
         }
         EntityStateWidget().updateAll(applicationContext)
-        DashboardWidget().updateAll(applicationContext)
         return if (transientFailure) Result.retry() else Result.success()
     }
 

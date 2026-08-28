@@ -3,7 +3,11 @@ package com.danila.hacustomwidgets.dashboard
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,6 +29,7 @@ import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -48,8 +53,19 @@ class DashboardWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
-        val state = (context.applicationContext as HaWidgetApplication).container.dashboards.get(appWidgetId)
+        val repository = (context.applicationContext as HaWidgetApplication).container.dashboards
+        val states = repository.observe(appWidgetId)
+        val started = System.currentTimeMillis()
+        Log.d(TAG, "provideGlance started widgetId=$appWidgetId ts=$started")
         provideContent {
+            val state by states.collectAsState()
+            SideEffect {
+                Log.d(
+                    TAG,
+                    "content composition finished widgetId=$appWidgetId tab=${state?.selectedTabId} " +
+                        "revision=${state?.stateRevision} durationMs=${System.currentTimeMillis() - started}",
+                )
+            }
             GlanceTheme { DashboardContent(context, state, appWidgetId, LocalSize.current) }
         }
     }
@@ -106,14 +122,14 @@ private fun DashboardContent(
                     if (section.key !in state.collapsedSections) {
                         items(
                             items = section.cards,
-                            itemId = { stableItemId("card:${state.selectedTabId}:${it.key}") },
+                            itemId = { stableItemId("card:${it.key}") },
                         ) { card ->
                             DashboardDeviceCard(
                                 card = card,
                                 appWidgetId = appWidgetId,
                                 widthDp = width,
                                 compact = state.config.compactDensity,
-                                inFlightKeys = state.inFlightDeviceKeys,
+                                operationStatuses = state.operationStatusByEntity,
                             )
                             Spacer(GlanceModifier.height(if (state.config.compactDensity) 5.dp else 8.dp))
                         }
@@ -187,21 +203,21 @@ private fun DashboardTabs(
     val selectedIndex = tabs.indexOfFirst { it.id == state.selectedTab.id }.coerceAtLeast(0)
     Row(
         modifier = GlanceModifier.fillMaxWidth().background(ColorProvider(R.color.widget_tile))
-            .cornerRadius(12.dp).padding(horizontal = 5.dp, vertical = 3.dp),
+            .cornerRadius(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            "★",
-            modifier = GlanceModifier.padding(horizontal = 7.dp, vertical = 4.dp).clickable(
+        Box(
+            modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
                 actionRunCallback<DashboardNavigateAction>(
                     actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAIN_TAB_ID),
                 ),
             ),
-            style = TextStyle(color = if (selectedIndex == 0) accent else secondary, fontSize = 15.sp),
-        )
-        Text(
-            "‹",
-            modifier = GlanceModifier.padding(horizontal = 7.dp, vertical = 4.dp).clickable(
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("★", style = TextStyle(color = if (selectedIndex == 0) accent else secondary, fontSize = 15.sp))
+        }
+        Box(
+            modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
                 actionRunCallback<DashboardNavigateAction>(
                     actionParametersOf(
                         DashboardWidgetIdKey to appWidgetId,
@@ -209,22 +225,12 @@ private fun DashboardTabs(
                     ),
                 ),
             ),
-            style = TextStyle(color = secondary, fontSize = 18.sp),
-        )
-        Text(
-            if (state.selectedTab.id == MAIN_TAB_ID) "Главное" else state.selectedTab.name,
-            modifier = GlanceModifier.defaultWeight(),
-            maxLines = 1,
-            style = TextStyle(
-                color = primary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            ),
-        )
-        Text(
-            "›",
-            modifier = GlanceModifier.padding(horizontal = 7.dp, vertical = 4.dp).clickable(
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("‹", style = TextStyle(color = secondary, fontSize = 20.sp))
+        }
+        Box(
+            modifier = GlanceModifier.defaultWeight().height(48.dp).clickable(
                 actionRunCallback<DashboardNavigateAction>(
                     actionParametersOf(
                         DashboardWidgetIdKey to appWidgetId,
@@ -232,8 +238,32 @@ private fun DashboardTabs(
                     ),
                 ),
             ),
-            style = TextStyle(color = secondary, fontSize = 18.sp),
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                if (state.selectedTab.id == MAIN_TAB_ID) "Главное" else state.selectedTab.name,
+                maxLines = 1,
+                style = TextStyle(
+                    color = primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                ),
+            )
+        }
+        Box(
+            modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
+                actionRunCallback<DashboardNavigateAction>(
+                    actionParametersOf(
+                        DashboardWidgetIdKey to appWidgetId,
+                        DashboardTabKey to tabs[(selectedIndex + 1) % tabs.size].id,
+                    ),
+                ),
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("›", style = TextStyle(color = secondary, fontSize = 20.sp))
+        }
     }
 }
 
@@ -271,7 +301,7 @@ private fun DashboardDeviceCard(
     appWidgetId: Int,
     widthDp: Int,
     compact: Boolean,
-    inFlightKeys: Set<String>,
+    operationStatuses: Map<String, DashboardOperationStatus>,
 ) {
     val primaryControl = card.controls.firstOrNull()
     val unavailable = card.metrics.any { it.rawState == "unavailable" } ||
@@ -320,7 +350,7 @@ private fun DashboardDeviceCard(
                 } else if (card.controls.size == 1) {
                     val control = card.controls.first()
                     Text(
-                        controlLabel(control, control.entityId in inFlightKeys),
+                        controlLabel(control, operationStatuses[control.entityId]),
                         modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
                             actionRunCallback<DashboardControlAction>(
                                 actionParametersOf(
@@ -349,7 +379,7 @@ private fun DashboardDeviceCard(
                                 else -> ColorProvider(R.color.widget_secondary)
                             }
                             Text(
-                                "${control.label} ${controlLabel(control, control.entityId in inFlightKeys)}",
+                                "${control.label} ${controlLabel(control, operationStatuses[control.entityId])}",
                                 modifier = GlanceModifier.width(controlWidth.dp)
                                     .padding(horizontal = 4.dp, vertical = 5.dp)
                                     .clickable(
@@ -454,24 +484,33 @@ private fun List<DashboardCard>.orderedBy(order: List<String>?): List<DashboardC
     return sortedWith(compareBy<DashboardCard> { rank[it.key] ?: Int.MAX_VALUE }.thenBy { it.title.lowercase() })
 }
 
-private fun controlLabel(control: DashboardControl, inFlight: Boolean): String = when {
-    inFlight -> "…"
-    control.domain in setOf("button", "script", "scene") -> "▶"
+private fun controlLabel(
+    control: DashboardControl,
+    status: DashboardOperationStatus?,
+): String = when {
+    status?.isActive == true -> "…"
+    status == DashboardOperationStatus.CONFIRMED && control.domain in setOf("button", "script", "scene") -> "✓"
+    status == DashboardOperationStatus.FAILED || status == DashboardOperationStatus.TIMEOUT -> "⚠"
+    control.domain in setOf("button", "script", "scene") -> "Запустить"
     control.domain == "timer" && control.state == "active" -> "Ⅱ"
-    control.domain == "timer" -> "▶"
+    control.domain == "timer" && control.state in setOf("idle", "paused") -> "▶"
+    control.domain == "timer" -> "—"
     control.state in ACTIVE_STATES -> "ВКЛ"
     else -> "ВЫКЛ"
 }
 
-private fun stableItemId(value: String): Long = value.hashCode().toLong() and 0xffffffffL
+private fun stableItemId(value: String): Long = DashboardStatePolicy.stableCollectionId(value)
 private val ACTIVE_STATES = setOf("on", "open", "active", "playing", "heat", "cool", "home")
 
 class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = DashboardWidget()
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        val repository = (context.applicationContext as HaWidgetApplication).container.dashboards
-        appWidgetIds.forEach(repository::delete)
+        val container = (context.applicationContext as HaWidgetApplication).container
+        appWidgetIds.forEach(container.dashboards::delete)
+        container.dashboardEvents.stopIfUnused()
         super.onDeleted(context, appWidgetIds)
     }
 }
+
+private const val TAG = "HAWidgetDashboard"
