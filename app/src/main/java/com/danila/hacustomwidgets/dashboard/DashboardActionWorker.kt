@@ -22,6 +22,7 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
         val operationId = inputData.getString(KEY_OPERATION_ID) ?: return Result.failure()
         if (appWidgetId < 0) return Result.failure()
         val container = (applicationContext as HaWidgetApplication).container
+        container.dashboardEvents.workerStarted("DASHBOARD_ACTION")
         val operation = container.dashboards.getOperation(appWidgetId, entityId)
             ?.takeIf { it.operationId == operationId && it.status.isActive } ?: return Result.success()
 

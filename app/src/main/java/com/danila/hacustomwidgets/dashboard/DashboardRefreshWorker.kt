@@ -23,6 +23,7 @@ class DashboardRefreshWorker(
             ?.let { runCatching { DashboardStateSource.valueOf(it) }.getOrNull() }
             ?: DashboardStateSource.MANUAL_REFRESH
         val container = (applicationContext as HaWidgetApplication).container
+        container.dashboardEvents.workerStarted("DASHBOARD_REFRESH")
         Log.d(TAG, "refresh worker start widgetId=$appWidgetId source=$source attempt=$runAttemptCount")
         try {
             container.connectionStore.load() ?: error("Подключение не настроено")
@@ -41,6 +42,9 @@ class DashboardRefreshWorker(
             container.dashboards.saveError(appWidgetId, error.message ?: "Ошибка обновления")
             return if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
         } finally {
+            if (source == DashboardStateSource.MANUAL_REFRESH) {
+                container.dashboardEvents.evaluateAfterManualRefresh()
+            }
             container.dashboards.markRefreshInProgress(appWidgetId, false)
             Log.d(
                 TAG,

@@ -5,6 +5,7 @@ import com.danila.hacustomwidgets.dashboard.DashboardEventCoordinator
 import com.danila.hacustomwidgets.dashboard.DashboardRepository
 import com.danila.hacustomwidgets.dashboard.DashboardRenderCoordinator
 import com.danila.hacustomwidgets.dashboard.DashboardStartupCoordinator
+import com.danila.hacustomwidgets.widget.EntityWidgetRenderCoordinator
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
 import com.danila.hacustomwidgets.data.remote.HomeAssistantClient
@@ -30,6 +31,9 @@ data class WidgetConfig(
 
 class WidgetRepository(context: Context) {
     private val prefs = context.getSharedPreferences("entity_widgets", Context.MODE_PRIVATE)
+    @Volatile private var configurationChanged: ((String) -> Unit)? = null
+
+    fun attachConfigurationChanged(listener: (String) -> Unit) { configurationChanged = listener }
 
     fun saveConfiguration(
         appWidgetId: Int,
@@ -54,6 +58,7 @@ class WidgetRepository(context: Context) {
                 lastUpdatedMillis = System.currentTimeMillis(),
             ),
         )
+        configurationChanged?.invoke("DEVICE_WIDGET_SAVED")
     }
 
     fun updateStates(appWidgetId: Int, entities: List<HaEntity>) {
@@ -94,6 +99,12 @@ class WidgetRepository(context: Context) {
 
     fun all(): List<WidgetConfig> = configuredIds().mapNotNull { it.toIntOrNull()?.let(::get) }
 
+    fun entityIds(): List<String> = all().flatMap { config -> config.metrics.map { it.entityId } }.distinct()
+
+    fun widgetsContainingEntity(entityId: String): List<Int> = all()
+        .filter { config -> config.metrics.any { it.entityId == entityId } }
+        .map { it.appWidgetId }
+
     fun delete(appWidgetId: Int) {
         val editor = prefs.edit()
         listOf(
@@ -101,6 +112,7 @@ class WidgetRepository(context: Context) {
             "entity_id", "state",
         ).forEach { editor.remove(key(appWidgetId, it)) }
         editor.putStringSet(KEY_IDS, configuredIds().minus(appWidgetId.toString())).apply()
+        configurationChanged?.invoke("DEVICE_WIDGET_DELETED")
     }
 
     private fun writeConfig(config: WidgetConfig) {
@@ -191,9 +203,16 @@ class AppContainer(context: Context) {
     val widgets = WidgetRepository(context)
     val dashboards = DashboardRepository(context)
     val dashboardRenders = DashboardRenderCoordinator(context, dashboards)
+    val widgetRenders = EntityWidgetRenderCoordinator(context)
     init { dashboards.attachRenderRequester(dashboardRenders::request) }
-    val dashboardEvents = DashboardEventCoordinator(context, connectionStore, client, dashboards)
+    val dashboardEvents = DashboardEventCoordinator(
+        context, connectionStore, client, dashboards, widgets, widgetRenders,
+    )
+    init {
+        widgets.attachConfigurationChanged(dashboardEvents::subscriptionSetChanged)
+        dashboards.attachConfigurationChanged(dashboardEvents::subscriptionSetChanged)
+    }
     val dashboardStartup = DashboardStartupCoordinator(
-        context, connectionStore, client, dashboards, dashboardEvents,
+        context, connectionStore, client, dashboards,
     )
 }

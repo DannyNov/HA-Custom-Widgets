@@ -1,0 +1,43 @@
+name: v0.3.5 compile and tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compile-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Compile and run unit/regression tests
+        run: gradle testDebugUnitTest --stacktrace
+      - name: Report executed tests
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ET
+
+          totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+          reports = glob.glob("app/build/test-results/testDebugUnitTest/*.xml")
+          if not reports:
+              raise SystemExit("No JUnit XML reports found")
+          for report in reports:
+              root = ET.parse(report).getroot()
+              for key in totals:
+                  totals[key] += int(root.attrib.get(key, 0))
+          print("TEST_RESULT " + " ".join(f"{key}={value}" for key, value in totals.items()))
+          if totals["failures"] or totals["errors"]:
+              raise SystemExit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v0.3.5-test-results
+          path: app/build/test-results/testDebugUnitTest
+          if-no-files-found: error

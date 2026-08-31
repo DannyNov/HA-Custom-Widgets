@@ -18,10 +18,10 @@ class DashboardRefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
-        container.dashboardEvents.ensureStarted("MANUAL_REFRESH", reconcileIfStale = false)
         Log.d(TAG, "refresh callback received widgetId=$appWidgetId")
         container.dashboards.markRefreshInProgress(appWidgetId, true)
         DashboardRefreshWorker.enqueue(context, appWidgetId, DashboardStateSource.MANUAL_REFRESH)
+        container.dashboardEvents.wakeAsync("MANUAL_REFRESH", reconcileIfStale = false)
     }
 }
 
@@ -30,10 +30,10 @@ class DashboardNavigateAction : ActionCallback {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
         val tab = parameters[DashboardTabKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
-        container.dashboardEvents.ensureStarted("NAVIGATION")
         val started = System.currentTimeMillis()
         container.dashboards.setSelectedTab(appWidgetId, tab)
         Log.d(TAG, "navigation callback finished widgetId=$appWidgetId durationMs=${System.currentTimeMillis() - started}")
+        container.dashboardEvents.wakeAsync("NAVIGATION")
     }
 }
 
@@ -42,8 +42,8 @@ class DashboardToggleSectionAction : ActionCallback {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
         val section = parameters[DashboardSectionKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
-        container.dashboardEvents.ensureStarted("SECTION")
         container.dashboards.toggleSection(appWidgetId, section)
+        container.dashboardEvents.wakeAsync("SECTION")
     }
 }
 
@@ -53,7 +53,6 @@ class DashboardControlAction : ActionCallback {
         val entityId = parameters[DashboardEntityKey] ?: return
         val domain = parameters[DashboardDomainKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
-        container.dashboardEvents.ensureStarted("CONTROL")
         if (container.connectionStore.load() == null) {
             container.dashboards.saveError(appWidgetId, "Подключение не настроено")
             return
@@ -70,6 +69,7 @@ class DashboardControlAction : ActionCallback {
                 "appWidgetId=$appWidgetId entityId=$entityId source=ACTION desiredState=${operation.desiredState}",
         )
         DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId)
+        container.dashboardEvents.wakeAsync("CONTROL")
     }
 }
 

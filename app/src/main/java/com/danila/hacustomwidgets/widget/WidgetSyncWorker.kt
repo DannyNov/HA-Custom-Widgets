@@ -1,7 +1,6 @@
 package com.danila.hacustomwidgets.widget
 
 import android.content.Context
-import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -16,29 +15,23 @@ import java.util.concurrent.TimeUnit
 class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val container = (applicationContext as HaWidgetApplication).container
-        val connection = container.connectionStore.load() ?: return Result.success()
-        var transientFailure = false
-        container.widgets.all().forEach { config ->
-            runCatching {
-                container.client.getEntities(connection, config.metrics.map { it.entityId })
+        container.dashboardEvents.workerStarted("PERIODIC_SYNC")
+        container.connectionStore.load() ?: return Result.success()
+        val hasWidgets = container.dashboards.all().isNotEmpty() || container.widgets.all().isNotEmpty()
+        if (!hasWidgets) return Result.success()
+        container.dashboardEvents.ensureStarted("PERIODIC_WORK", reconcileIfStale = false)
+        val success = container.dashboardEvents.reconcileNow(
+            reason = "PERIODIC_WORK",
+            force = true,
+            source = DashboardStateSource.PERIODIC_REFRESH,
+        )
+        if (!success) {
+            container.widgets.all().forEach {
+                container.widgets.saveError(it.appWidgetId, "Ошибка фонового обновления")
+                container.widgetRenders.request(it.appWidgetId, "PERIODIC_FAILURE")
             }
-                .onSuccess { container.widgets.updateStates(config.appWidgetId, it) }
-                .onFailure {
-                    transientFailure = true
-                    container.widgets.saveError(config.appWidgetId, it.message ?: "Ошибка сети")
-                }
         }
-        if (container.dashboards.all().isNotEmpty()) {
-            container.dashboardEvents.ensureStarted("PERIODIC_WORK", reconcileIfStale = false)
-            if (!container.dashboardEvents.reconcileNow(
-                    reason = "PERIODIC_WORK",
-                    force = true,
-                    source = DashboardStateSource.PERIODIC_REFRESH,
-                )
-            ) transientFailure = true
-        }
-        EntityStateWidget().updateAll(applicationContext)
-        return if (transientFailure) Result.retry() else Result.success()
+        return if (success) Result.success() else Result.retry()
     }
 
     companion object {

@@ -1,6 +1,8 @@
 package com.danila.hacustomwidgets.widget
 
 import android.content.Context
+import android.appwidget.AppWidgetManager
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -34,6 +36,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.R
+import com.danila.hacustomwidgets.dashboard.DashboardDiagnostics
 import com.danila.hacustomwidgets.data.WidgetConfig
 import com.danila.hacustomwidgets.data.WidgetMetric
 import java.text.DateFormat
@@ -175,9 +178,23 @@ val WidgetIdKey = ActionParameters.Key<Int>("app_widget_id")
 class EntityStateWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = EntityStateWidget()
 
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val container = (context.applicationContext as HaWidgetApplication).container
+        Log.i(
+            TAG,
+            "APPWIDGET_UPDATE processStartId=${DashboardDiagnostics.processStartId} " +
+                "widgetIds=${appWidgetIds.joinToString()} widgetType=device source=SYSTEM",
+        )
+        container.dashboardEvents.ensureStarted("DEVICE_APPWIDGET_UPDATE")
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+    }
+
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        val repository = (context.applicationContext as HaWidgetApplication).container.widgets
-        appWidgetIds.forEach(repository::delete)
+        val container = (context.applicationContext as HaWidgetApplication).container
+        appWidgetIds.forEach(container.widgets::delete)
+        container.dashboardEvents.stopIfUnused()
         super.onDeleted(context, appWidgetIds)
     }
+
+    companion object { private const val TAG = "HAWidgetDevice" }
 }

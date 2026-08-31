@@ -44,14 +44,12 @@ class DashboardV034PolicyTest {
         assertEquals(12_000L, DashboardEventPolicy.CONNECT_TIMEOUT_MS)
     }
 
-    @Test fun halfOpenWatchdogDetectsStaleSubscribedSocket() {
-        assertTrue(DashboardEventPolicy.isWatchdogStale(
-            DashboardSocketState.SUBSCRIBED, 1_000L, 1_000L + DashboardEventPolicy.WATCHDOG_STALE_MS,
-        ))
+    @Test fun modernHomeAssistantUsesTargetedEntities() {
+        assertTrue(DashboardEventPolicy.supportsSubscribeEntities("2026.8.4"))
     }
 
-    @Test fun watchdogDoesNotFireDuringAuthentication() {
-        assertFalse(DashboardEventPolicy.isWatchdogStale(DashboardSocketState.AUTHENTICATING, 0, Long.MAX_VALUE))
+    @Test fun oldHomeAssistantUsesStateChangedFallback() {
+        assertFalse(DashboardEventPolicy.supportsSubscribeEntities("2022.3.9"))
     }
 
     @Test fun closeAndFailureHaveRecoverableBackoffState() {

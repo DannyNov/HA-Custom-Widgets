@@ -26,14 +26,12 @@ class DashboardStartupCoordinator(
     private val connectionStore: SecureConnectionStore,
     private val client: HomeAssistantClient,
     private val dashboards: DashboardRepository,
-    private val events: DashboardEventCoordinator,
 ) {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun start() {
         scope.launch {
-            events.requestReconciliation("PROCESS_START", force = true)
             val active = dashboards.activeOperations()
             Log.i(
                 TAG,

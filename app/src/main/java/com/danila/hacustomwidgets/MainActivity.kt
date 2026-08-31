@@ -1,6 +1,10 @@
 package com.danila.hacustomwidgets
 
 import android.os.Bundle
+import android.content.Intent
+import android.provider.Settings
+import android.os.SystemClock
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -32,19 +37,27 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.danila.hacustomwidgets.data.security.HomeAssistantConnection
 import com.danila.hacustomwidgets.ui.HaCustomWidgetsTheme
+import com.danila.hacustomwidgets.realtime.RealtimeNotificationAccess
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val appContainer get() = (application as HaWidgetApplication).container
+    private val realtimeGranted = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = appContainer
+        realtimeGranted.value = RealtimeNotificationAccess.isGranted(this)
         setContent {
             HaCustomWidgetsTheme {
                 ConnectionScreen(
                     initialUrl = container.connectionStore.load()?.baseUrl.orEmpty(),
                     hasStoredToken = container.connectionStore.load() != null,
+                    realtimeGranted = realtimeGranted.value,
+                    onEnableRealtime = {
+                        runCatching { startActivity(RealtimeNotificationAccess.settingsIntent(this)) }
+                            .onFailure { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                    },
                     onConnect = { url, token ->
                         val effectiveToken = token.ifBlank {
                             container.connectionStore.load()?.token.orEmpty()
@@ -62,6 +75,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        val granted = RealtimeNotificationAccess.isGranted(this)
+        realtimeGranted.value = granted
+        Log.i(
+            "HAWidgetRealtime",
+            "NLS_PERMISSION_STATE processStartId=${com.danila.hacustomwidgets.dashboard.DashboardDiagnostics.processStartId} " +
+                "granted=$granted source=ACTIVITY_RESUME monotonicMs=${SystemClock.elapsedRealtime()}",
+        )
         appContainer.dashboardEvents.ensureStarted("ACTIVITY_RESUME")
     }
 }
@@ -71,6 +91,8 @@ class MainActivity : ComponentActivity() {
 private fun ConnectionScreen(
     initialUrl: String,
     hasStoredToken: Boolean,
+    realtimeGranted: Boolean,
+    onEnableRealtime: () -> Unit,
     onConnect: suspend (String, String) -> Int,
 ) {
     var url by remember { mutableStateOf(initialUrl) }
@@ -79,6 +101,7 @@ private fun ConnectionScreen(
         mutableStateOf(if (hasStoredToken) "Подключение сохранено. Можно добавить виджет." else "Подключение ещё не настроено")
     }
     var busy by remember { mutableStateOf(false) }
+    var explainRealtime by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Scaffold(topBar = { TopAppBar(title = { Text("HA Custom Widgets") }) }) { padding ->
@@ -130,6 +153,26 @@ private fun ConnectionScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(status, modifier = Modifier.padding(16.dp))
             }
+            Text("Real-time обновления", style = MaterialTheme.typography.titleMedium)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(if (realtimeGranted) "Real-time: Включено" else "Real-time: Выключено")
+                    Text(
+                        if (realtimeGranted) {
+                            "Android поддерживает фоновую работу канала обновлений виджетов."
+                        } else {
+                            "Без системного доступа внешние изменения обновляются в режиме best-effort и через Refresh."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (!realtimeGranted) {
+                        Button(onClick = { explainRealtime = true }) { Text("Включить Real-time") }
+                    }
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text("Как добавить виджет", style = MaterialTheme.typography.titleMedium)
             Text("1. Удерживайте пустое место на домашнем экране.\n2. Откройте «Виджеты».\n3. Найдите HA Custom Widgets.\n4. Перетащите «Состояние сущности HA» и выберите сущность.")
@@ -146,5 +189,28 @@ private fun ConnectionScreen(
                 textAlign = TextAlign.Center,
             )
         }
+    }
+    if (explainRealtime) {
+        AlertDialog(
+            onDismissRequest = { explainRealtime = false },
+            title = { Text("Real-time обновления") },
+            text = {
+                Text(
+                    "Для обновления виджетов в реальном времени Android должен поддерживать " +
+                        "фоновую работу приложения. Для этого используется системный доступ " +
+                        "Notification access — тот же принцип применяет официальное приложение " +
+                        "Home Assistant для Real-time widgets. HA Custom Widgets не читает и " +
+                        "не использует содержимое ваших уведомлений.",
+                )
+            },
+            confirmButton = {
+                Button(onClick = { explainRealtime = false; onEnableRealtime() }) {
+                    Text("Открыть настройки")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { explainRealtime = false }) { Text("Отмена") }
+            },
+        )
     }
 }

@@ -31,22 +31,24 @@ interface StateChangedWebSocketListener {
     fun onOpen(socket: WebSocket)
     fun onMessage(socket: WebSocket, type: String)
     fun onAuthRequired(socket: WebSocket)
-    fun onAuthOk(socket: WebSocket)
+    fun onAuthOk(socket: WebSocket, haVersion: String)
     fun onAuthInvalid(socket: WebSocket)
-    fun onSubscribeSent(socket: WebSocket)
-    fun onSubscribed(socket: WebSocket)
-    fun onSubscribeRejected(socket: WebSocket)
-    fun onStateChanged(socket: WebSocket, entity: HaEntity)
+    fun onSubscriptionResult(socket: WebSocket, subscriptionId: Int, success: Boolean, error: String?)
+    fun onEntities(socket: WebSocket, subscriptionId: Int, entities: List<HaEntity>, initial: Boolean)
     fun onClosed(socket: WebSocket, code: Int, reason: String)
     fun onFailure(socket: WebSocket, error: Throwable)
 }
+
+enum class EntitySubscriptionMode { SUBSCRIBE_ENTITIES, STATE_CHANGED }
 
 class HomeAssistantClient(
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(25, TimeUnit.SECONDS)
-        .pingInterval(20, TimeUnit.SECONDS)
+        // A single transport heartbeat detects half-open TCP connections. There is deliberately
+        // no application ping/watchdog loop: NotificationListenerService owns process lifetime.
+        .pingInterval(60, TimeUnit.SECONDS)
         .build(),
 ) {
     suspend fun testConnection(connection: HomeAssistantConnection) = withContext(Dispatchers.IO) {
@@ -154,6 +156,7 @@ class HomeAssistantClient(
         listener: StateChangedWebSocketListener,
     ): WebSocket {
         val request = Request.Builder().url(webSocketUrl(connection)).build()
+        val compressedParsers = linkedMapOf<Int, CompressedEntitySubscriptionParser>()
         return http.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 listener.onOpen(webSocket)
@@ -176,27 +179,29 @@ class HomeAssistantClient(
                             listener.onAuthInvalid(webSocket)
                             throw IOException("Токен отклонён Home Assistant")
                         }
-                        "auth_ok" -> {
-                            listener.onAuthOk(webSocket)
-                            webSocket.send(JSONObject()
-                                .put("id", STATE_CHANGED_SUBSCRIPTION_ID)
-                                .put("type", "subscribe_events")
-                                .put("event_type", "state_changed")
-                                .toString())
-                            listener.onSubscribeSent(webSocket)
+                        "auth_ok" -> listener.onAuthOk(webSocket, message.optString("ha_version"))
+                        "result" -> {
+                            val error = message.optJSONObject("error")?.optString("message")
+                            listener.onSubscriptionResult(
+                                webSocket, message.optInt("id"), message.optBoolean("success"), error,
+                            )
                         }
-                        "result" -> if (message.optInt("id") == STATE_CHANGED_SUBSCRIPTION_ID) {
-                            if (message.optBoolean("success")) listener.onSubscribed(webSocket)
-                            else {
-                                listener.onSubscribeRejected(webSocket)
-                                ensureSuccessful(message)
+                        "event" -> {
+                            val subscriptionId = message.optInt("id")
+                            val event = message.optJSONObject("event") ?: return@runCatching
+                            val newState = event.optJSONObject("data")?.optJSONObject("new_state")
+                            if (newState != null) {
+                                listener.onEntities(webSocket, subscriptionId, listOf(newState.toEntity()), false)
+                            } else {
+                                val parser = compressedParsers.getOrPut(subscriptionId) {
+                                    if (compressedParsers.size >= MAX_RETAINED_SUBSCRIPTION_PARSERS) {
+                                        compressedParsers.remove(compressedParsers.keys.first())
+                                    }
+                                    CompressedEntitySubscriptionParser()
+                                }
+                                val parsed = parser.apply(event)
+                                listener.onEntities(webSocket, subscriptionId, parsed.entities, parsed.initial)
                             }
-                        }
-                        "event" -> if (message.optInt("id") == STATE_CHANGED_SUBSCRIPTION_ID) {
-                            val newState = message.optJSONObject("event")
-                                ?.optJSONObject("data")
-                                ?.optJSONObject("new_state")
-                            if (newState != null) listener.onStateChanged(webSocket, newState.toEntity())
                         }
                     }
                 }.onFailure {
@@ -214,6 +219,18 @@ class HomeAssistantClient(
             }
         })
     }
+
+    fun subscribeEntities(
+        socket: WebSocket,
+        subscriptionId: Int,
+        entityIds: Set<String>,
+        mode: EntitySubscriptionMode,
+    ): Boolean {
+        return socket.send(entitySubscriptionCommand(subscriptionId, entityIds, mode))
+    }
+
+    fun unsubscribe(socket: WebSocket, commandId: Int, subscriptionId: Int): Boolean =
+        socket.send(unsubscribeCommand(commandId, subscriptionId))
 
     private suspend fun getRegistries(connection: HomeAssistantConnection): RegistrySnapshot =
         withContext(Dispatchers.IO) {
@@ -413,7 +430,115 @@ class HomeAssistantClient(
         const val ENTITY_REQUEST_ID = 2
         const val AREA_REQUEST_ID = 3
         const val FLOOR_REQUEST_ID = 4
-        const val STATE_CHANGED_SUBSCRIPTION_ID = 10_001
+        const val MAX_RETAINED_SUBSCRIPTION_PARSERS = 4
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
+}
+
+internal fun entitySubscriptionCommand(
+    subscriptionId: Int,
+    entityIds: Set<String>,
+    mode: EntitySubscriptionMode,
+): String = JSONObject().put("id", subscriptionId).apply {
+    when (mode) {
+        EntitySubscriptionMode.SUBSCRIBE_ENTITIES -> {
+            put("type", "subscribe_entities")
+            put("entity_ids", JSONArray(entityIds.sorted()))
+        }
+        EntitySubscriptionMode.STATE_CHANGED -> {
+            put("type", "subscribe_events")
+            put("event_type", "state_changed")
+        }
+    }
+}.toString()
+
+internal fun unsubscribeCommand(commandId: Int, subscriptionId: Int): String =
+    JSONObject().put("id", commandId).put("type", "unsubscribe_events")
+        .put("subscription", subscriptionId).toString()
+
+data class EntitySubscriptionUpdate(val entities: List<HaEntity>, val initial: Boolean)
+
+/** Stateful decoder for Home Assistant's subscribe_entities compact event protocol. */
+internal class CompressedEntitySubscriptionParser {
+    private val states = linkedMapOf<String, HaEntity>()
+
+    fun apply(event: JSONObject): EntitySubscriptionUpdate {
+        val initial = event.has("a")
+        event.optJSONObject("a")?.let { added ->
+            added.keys().forEach { entityId ->
+                states[entityId] = fullEntity(entityId, added.getJSONObject(entityId))
+            }
+        }
+        event.optJSONObject("c")?.let { changed ->
+            changed.keys().forEach { entityId ->
+                val current = states[entityId]
+                val change = changed.getJSONObject(entityId)
+                val plus = change.optJSONObject("+") ?: JSONObject()
+                val attributes = entityAttributes(current, plus.optJSONObject("a"))
+                change.optJSONObject("-")?.optJSONArray("a")?.let { removed ->
+                    for (index in 0 until removed.length()) attributes.remove(removed.getString(index))
+                }
+                states[entityId] = HaEntity(
+                    entityId = entityId,
+                    state = plus.optString("s", current?.state ?: "unknown"),
+                    friendlyName = attributes.optString("friendly_name", entityId),
+                    unit = attributes.optNullableString("unit_of_measurement"),
+                    lastUpdated = epochSeconds(plus, "lu") ?: current?.lastUpdated,
+                    lastChanged = epochSeconds(plus, "lc") ?: current?.lastChanged,
+                    deviceClass = attributes.optNullableString("device_class"),
+                    icon = attributes.optNullableString("icon"),
+                )
+            }
+        }
+        val removedStates = mutableListOf<HaEntity>()
+        event.optJSONArray("r")?.let { removed ->
+            for (index in 0 until removed.length()) {
+                val entityId = removed.getString(index)
+                val previous = states.remove(entityId)
+                removedStates += HaEntity(
+                    entityId = entityId,
+                    state = "unavailable",
+                    friendlyName = previous?.friendlyName ?: entityId,
+                    unit = null,
+                    lastUpdated = java.time.Instant.now().toString(),
+                    deviceClass = previous?.deviceClass,
+                    icon = previous?.icon,
+                )
+            }
+        }
+        val affected = linkedSetOf<String>().apply {
+            event.optJSONObject("a")?.keys()?.let { keys -> while (keys.hasNext()) add(keys.next()) }
+            event.optJSONObject("c")?.keys()?.let { keys -> while (keys.hasNext()) add(keys.next()) }
+        }
+        return EntitySubscriptionUpdate(affected.mapNotNull(states::get) + removedStates, initial)
+    }
+
+    private fun fullEntity(entityId: String, value: JSONObject): HaEntity {
+        val attributes = value.optJSONObject("a") ?: JSONObject()
+        return HaEntity(
+            entityId = entityId,
+            state = value.optString("s", "unknown"),
+            friendlyName = attributes.optString("friendly_name", entityId),
+            unit = attributes.optNullableString("unit_of_measurement"),
+            lastUpdated = epochSeconds(value, "lu"),
+            lastChanged = epochSeconds(value, "lc"),
+            deviceClass = attributes.optNullableString("device_class"),
+            icon = attributes.optNullableString("icon"),
+        )
+    }
+
+    private fun entityAttributes(current: HaEntity?, updates: JSONObject?): JSONObject = JSONObject().apply {
+        current?.friendlyName?.let { put("friendly_name", it) }
+        current?.unit?.let { put("unit_of_measurement", it) }
+        current?.deviceClass?.let { put("device_class", it) }
+        current?.icon?.let { put("icon", it) }
+        updates?.keys()?.let { keys -> while (keys.hasNext()) keys.next().let { put(it, updates.get(it)) } }
+    }
+
+    private fun epochSeconds(value: JSONObject, key: String): String? =
+        if (!value.has(key) || value.isNull(key)) null
+        else java.time.Instant.ofEpochMilli((value.getDouble(key) * 1_000.0).toLong()).toString()
+
+    private fun JSONObject.optNullableString(key: String): String? =
+        optString(key).takeIf { !isNull(key) && it.isNotBlank() }
 }

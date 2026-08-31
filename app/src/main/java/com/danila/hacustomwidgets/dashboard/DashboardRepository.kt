@@ -33,10 +33,13 @@ class DashboardRepository(context: Context) {
     private val structures = ConcurrentHashMap<Int, DashboardStructureSnapshot>()
     private val widgetsByEntity = ConcurrentHashMap<String, MutableSet<Int>>()
     @Volatile private var renderRequester: ((Int, Long, String) -> Unit)? = null
+    @Volatile private var configurationChanged: ((String) -> Unit)? = null
 
     fun attachRenderRequester(requester: (Int, Long, String) -> Unit) {
         renderRequester = requester
     }
+
+    fun attachConfigurationChanged(listener: (String) -> Unit) { configurationChanged = listener }
 
     @Synchronized
     fun saveConfiguration(config: DashboardConfig, catalog: HaCatalog) {
@@ -119,6 +122,7 @@ class DashboardRepository(context: Context) {
             .put("cards", cardsJson(cards))
         structurePrefs.edit().putString(structureKey(appWidgetId), structure.toString()).apply()
         invalidateStructure(appWidgetId)
+        configurationChanged?.invoke("DASHBOARD_STRUCTURE_CHANGED")
         configPrefs.edit()
             .remove(key(appWidgetId, "error"))
             .apply()
@@ -379,6 +383,7 @@ class DashboardRepository(context: Context) {
         atomicStore.delete(appWidgetId)
         flows.remove(appWidgetId)
         invalidateStructure(appWidgetId)
+        configurationChanged?.invoke("DASHBOARD_DELETED")
     }
 
     private fun loadState(appWidgetId: Int): DashboardState? {

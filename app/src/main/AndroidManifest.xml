@@ -40,6 +40,16 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name=".realtime.RealtimeNotificationListenerService"
+            android:exported="true"
+            android:label="@string/realtime_service_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".widget.EntityStateWidgetReceiver"
             android:exported="true"

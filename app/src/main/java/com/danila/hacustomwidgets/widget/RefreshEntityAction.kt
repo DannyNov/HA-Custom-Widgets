@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
-import androidx.glance.appwidget.updateAll
 import com.danila.hacustomwidgets.HaWidgetApplication
 
 class RefreshEntityAction : ActionCallback {
@@ -22,6 +21,7 @@ class RefreshEntityAction : ActionCallback {
                 .onSuccess { container.widgets.updateStates(appWidgetId, it) }
                 .onFailure { container.widgets.saveError(appWidgetId, it.message ?: "Ошибка сети") }
         }
-        EntityStateWidget().updateAll(context)
+        container.widgetRenders.request(appWidgetId, "MANUAL_REFRESH")
+        container.dashboardEvents.evaluateAfterManualRefresh()
     }
 }
