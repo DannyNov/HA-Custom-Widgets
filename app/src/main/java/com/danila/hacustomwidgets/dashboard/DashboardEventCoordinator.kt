@@ -159,7 +159,7 @@ class DashboardEventCoordinator(
                 val state = socketState
                 if (state in ACTIVE_STATES) break
                 val delayMs = if (state == DashboardSocketState.BACKOFF) {
-                    DashboardEventPolicy.reconnectDelayMs(reconnectAttempt)
+                    DashboardEventPolicy.reconnectDelayMs((reconnectAttempt - 1).coerceAtLeast(0))
                 } else 0L
                 if (delayMs > 0L) {
                     log("WS_RECONNECT_SCHEDULED", "attempt=$reconnectAttempt delayMs=$delayMs")

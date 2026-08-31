@@ -44,22 +44,26 @@ jobs:
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           test -n "$APKSIGNER"
+          test -n "$AAPT"
           apk="app/build/outputs/apk/release/app-release.apk"
           report="app/build/outputs/apk/release/signature.txt"
           "$APKSIGNER" verify --verbose --print-certs "$apk" | tee "$report"
           actual_cert="$(sed -n 's/^.*certificate SHA-256 digest: //p' "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
-          test "$(apkanalyzer manifest application-id "$apk")" = "com.danila.hacustomwidgets"
-          test "$(apkanalyzer manifest version-name "$apk")" = "0.3.4"
-          test "$(apkanalyzer manifest version-code "$apk")" = "8"
-          test "$(apkanalyzer manifest debuggable "$apk")" = "false"
+          badging="$($AAPT dump badging "$apk")"
+          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='8' versionName='0.3.4'"
+          if printf '%s\n' "$badging" | grep -q '^application-debuggable:'; then
+            echo 'APK unexpectedly contains android:debuggable=true' >&2
+            exit 1
+          fi
           {
-            printf 'applicationId=%s\n' "$(apkanalyzer manifest application-id "$apk")"
-            printf 'versionName=%s\n' "$(apkanalyzer manifest version-name "$apk")"
-            printf 'versionCode=%s\n' "$(apkanalyzer manifest version-code "$apk")"
-            printf 'debuggable=%s\n' "$(apkanalyzer manifest debuggable "$apk")"
+            printf 'applicationId=com.danila.hacustomwidgets\n'
+            printf 'versionName=0.3.4\n'
+            printf 'versionCode=8\n'
+            printf 'debuggable=false\n'
           } | tee app/build/outputs/apk/release/build-info.txt
           sha256sum "$apk" | tee app/build/outputs/apk/release/apk-sha256.txt
           cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.3.4.apk

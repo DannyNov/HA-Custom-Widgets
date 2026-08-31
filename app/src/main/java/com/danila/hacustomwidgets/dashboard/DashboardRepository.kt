@@ -152,6 +152,7 @@ class DashboardRepository(context: Context) {
                     TAG,
                     "MERGE_DECISION widgetId=$appWidgetId operationId=${operation?.operationId} " +
                         "entityId=${entity.entityId} source=$source haState=${entity.state} " +
+                        "lastUpdated=${entity.lastUpdated} lastChanged=${entity.lastChanged} " +
                         "confirmed=${existing?.confirmedRawState} overlay=${existing?.optimisticOverlay} " +
                         "desired=${operation?.desiredState} accept=${decision.accept} reason=${decision.reason}",
                 )
@@ -526,7 +527,7 @@ class DashboardRepository(context: Context) {
             widgetsByEntity[entityId]?.remove(appWidgetId)
         }
         snapshot.entityIds.forEach { entityId ->
-            widgetsByEntity.getOrPut(entityId) { ConcurrentHashMap.newKeySet() }.add(appWidgetId)
+            widgetsByEntity.getOrPut(entityId) { ConcurrentHashMap.newKeySet<Int>() }.add(appWidgetId)
         }
     }
 

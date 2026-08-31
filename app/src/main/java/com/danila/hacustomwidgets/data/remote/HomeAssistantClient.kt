@@ -375,6 +375,7 @@ class HomeAssistantClient(
             friendlyName = attributes.optString("friendly_name", id),
             unit = attributes.optNullableString("unit_of_measurement"),
             lastUpdated = optNullableString("last_updated"),
+            lastChanged = optNullableString("last_changed"),
             deviceClass = attributes.optNullableString("device_class"),
             icon = attributes.optNullableString("icon"),
         )
