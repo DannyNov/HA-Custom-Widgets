@@ -3,6 +3,7 @@ package com.danila.hacustomwidgets.dashboard
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -58,12 +59,20 @@ class DashboardWidget : GlanceAppWidget() {
         val started = System.currentTimeMillis()
         Log.d(TAG, "provideGlance started widgetId=$appWidgetId ts=$started")
         provideContent {
+            val compositionStarted = SystemClock.elapsedRealtime()
             val state by states.collectAsState()
+            Log.d(
+                TAG,
+                "COMPOSITION_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
+                    "revision=${state?.stateRevision} cardsTotal=${state?.cards?.size ?: 0} " +
+                    "monotonicMs=$compositionStarted",
+            )
             SideEffect {
                 Log.d(
                     TAG,
-                    "content composition finished widgetId=$appWidgetId tab=${state?.selectedTabId} " +
-                        "revision=${state?.stateRevision} durationMs=${System.currentTimeMillis() - started}",
+                    "COMPOSITION_END processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
+                        "tab=${state?.selectedTabId} revision=${state?.stateRevision} " +
+                        "durationMs=${SystemClock.elapsedRealtime() - compositionStarted}",
                 )
             }
             GlanceTheme { DashboardContent(context, state, appWidgetId, LocalSize.current) }
@@ -504,6 +513,17 @@ private val ACTIVE_STATES = setOf("on", "open", "active", "playing", "heat", "co
 
 class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = DashboardWidget()
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        val container = (context.applicationContext as HaWidgetApplication).container
+        Log.i(
+            TAG,
+            "APPWIDGET_UPDATE processStartId=${DashboardDiagnostics.processStartId} " +
+                "widgetIds=${appWidgetIds.joinToString()} source=SYSTEM",
+        )
+        container.dashboardEvents.ensureStarted("APPWIDGET_UPDATE")
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+    }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val container = (context.applicationContext as HaWidgetApplication).container

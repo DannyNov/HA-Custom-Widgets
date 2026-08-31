@@ -34,7 +34,8 @@ class DashboardRenderCoordinator(
         slot.reason = reason
         Log.d(
             TAG,
-            "RENDER_REQUEST widgetId=$appWidgetId requiredRevision=$requiredRevision reason=$reason " +
+            "RENDER_REQUEST processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
+                "requiredRevision=$requiredRevision reason=$reason " +
                 "monotonicMs=${SystemClock.elapsedRealtime()}",
         )
         if (slot.running.compareAndSet(false, true)) {
@@ -53,13 +54,13 @@ class DashboardRenderCoordinator(
                 if (target <= revisionState.renderedRevision) return
                 val reason = slot.reason
                 val started = SystemClock.elapsedRealtime()
-                Log.d(TAG, "RENDER_START widgetId=$appWidgetId revision=$target reason=$reason monotonicMs=$started")
+                Log.d(TAG, "RENDER_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId revision=$target reason=$reason monotonicMs=$started")
                 try {
                     performDashboardWidgetUpdate(applicationContext, appWidgetId)
                     repository.markRendered(appWidgetId, target)
                     Log.d(
                         TAG,
-                        "RENDER_SUCCESS widgetId=$appWidgetId revision=$target durationMs=${SystemClock.elapsedRealtime() - started}",
+                        "RENDER_SUCCESS processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId revision=$target durationMs=${SystemClock.elapsedRealtime() - started}",
                     )
                 } catch (error: Throwable) {
                     Log.e(

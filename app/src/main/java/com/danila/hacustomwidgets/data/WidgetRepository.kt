@@ -193,5 +193,7 @@ class AppContainer(context: Context) {
     val dashboardRenders = DashboardRenderCoordinator(context, dashboards)
     init { dashboards.attachRenderRequester(dashboardRenders::request) }
     val dashboardEvents = DashboardEventCoordinator(context, connectionStore, client, dashboards)
-    val dashboardStartup = DashboardStartupCoordinator(context, connectionStore, client, dashboards)
+    val dashboardStartup = DashboardStartupCoordinator(
+        context, connectionStore, client, dashboards, dashboardEvents,
+    )
 }

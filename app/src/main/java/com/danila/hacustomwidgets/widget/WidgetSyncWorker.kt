@@ -10,7 +10,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.danila.hacustomwidgets.HaWidgetApplication
-import com.danila.hacustomwidgets.dashboard.DashboardRefreshWorker
 import com.danila.hacustomwidgets.dashboard.DashboardStateSource
 import java.util.concurrent.TimeUnit
 
@@ -29,12 +28,14 @@ class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     container.widgets.saveError(config.appWidgetId, it.message ?: "Ошибка сети")
                 }
         }
-        container.dashboards.all().forEach { config ->
-            DashboardRefreshWorker.enqueue(
-                applicationContext,
-                config.appWidgetId,
-                DashboardStateSource.PERIODIC_REFRESH,
-            )
+        if (container.dashboards.all().isNotEmpty()) {
+            container.dashboardEvents.ensureStarted("PERIODIC_WORK", reconcileIfStale = false)
+            if (!container.dashboardEvents.reconcileNow(
+                    reason = "PERIODIC_WORK",
+                    force = true,
+                    source = DashboardStateSource.PERIODIC_REFRESH,
+                )
+            ) transientFailure = true
         }
         EntityStateWidget().updateAll(applicationContext)
         return if (transientFailure) Result.retry() else Result.success()

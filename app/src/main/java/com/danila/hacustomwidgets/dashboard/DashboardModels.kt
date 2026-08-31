@@ -179,6 +179,7 @@ data class DashboardConfig(
     val cardOrderBySpace: Map<String, List<String>>,
     val showLastUpdated: Boolean,
     val compactDensity: Boolean,
+    val spaceOrderIds: List<String> = visibleSpaceIds,
 )
 
 data class DashboardState(
@@ -195,7 +196,9 @@ data class DashboardState(
     val error: String?,
 ) {
     val tabs: List<DashboardSpace> = listOf(DashboardSpace(MAIN_TAB_ID, "Главное", emptyList())) +
-        config.visibleSpaceIds.mapNotNull { id -> spaces.firstOrNull { it.id == id } }
+        DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })
+            .filter { it in config.visibleSpaceIds }
+            .mapNotNull { id -> spaces.firstOrNull { it.id == id } }
     val selectedTab: DashboardSpace get() = tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first()
 }
 

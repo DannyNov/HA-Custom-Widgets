@@ -27,11 +27,26 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+interface StateChangedWebSocketListener {
+    fun onOpen(socket: WebSocket)
+    fun onMessage(socket: WebSocket, type: String)
+    fun onAuthRequired(socket: WebSocket)
+    fun onAuthOk(socket: WebSocket)
+    fun onAuthInvalid(socket: WebSocket)
+    fun onSubscribeSent(socket: WebSocket)
+    fun onSubscribed(socket: WebSocket)
+    fun onSubscribeRejected(socket: WebSocket)
+    fun onStateChanged(socket: WebSocket, entity: HaEntity)
+    fun onClosed(socket: WebSocket, code: Int, reason: String)
+    fun onFailure(socket: WebSocket, error: Throwable)
+}
+
 class HomeAssistantClient(
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(25, TimeUnit.SECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
         .build(),
 ) {
     suspend fun testConnection(connection: HomeAssistantConnection) = withContext(Dispatchers.IO) {
@@ -136,54 +151,66 @@ class HomeAssistantClient(
 
     fun openStateChangedWebSocket(
         connection: HomeAssistantConnection,
-        onSubscribed: () -> Unit,
-        onStateChanged: (HaEntity) -> Unit,
-        onClosed: () -> Unit,
-        onFailure: (Throwable) -> Unit,
+        listener: StateChangedWebSocketListener,
     ): WebSocket {
         val request = Request.Builder().url(webSocketUrl(connection)).build()
         return http.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                listener.onOpen(webSocket)
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
                 runCatching {
                     val message = JSONObject(text)
-                    when (message.optString("type")) {
-                        "auth_required" -> webSocket.send(
-                            JSONObject()
+                    val type = message.optString("type")
+                    listener.onMessage(webSocket, type)
+                    when (type) {
+                        "auth_required" -> {
+                            listener.onAuthRequired(webSocket)
+                            webSocket.send(JSONObject()
                                 .put("type", "auth")
                                 .put("access_token", connection.token)
-                                .toString(),
-                        )
-                        "auth_invalid" -> throw IOException("Токен отклонён Home Assistant")
-                        "auth_ok" -> webSocket.send(
-                            JSONObject()
+                                .toString())
+                        }
+                        "auth_invalid" -> {
+                            listener.onAuthInvalid(webSocket)
+                            throw IOException("Токен отклонён Home Assistant")
+                        }
+                        "auth_ok" -> {
+                            listener.onAuthOk(webSocket)
+                            webSocket.send(JSONObject()
                                 .put("id", STATE_CHANGED_SUBSCRIPTION_ID)
                                 .put("type", "subscribe_events")
                                 .put("event_type", "state_changed")
-                                .toString(),
-                        )
+                                .toString())
+                            listener.onSubscribeSent(webSocket)
+                        }
                         "result" -> if (message.optInt("id") == STATE_CHANGED_SUBSCRIPTION_ID) {
-                            ensureSuccessful(message)
-                            onSubscribed()
+                            if (message.optBoolean("success")) listener.onSubscribed(webSocket)
+                            else {
+                                listener.onSubscribeRejected(webSocket)
+                                ensureSuccessful(message)
+                            }
                         }
                         "event" -> if (message.optInt("id") == STATE_CHANGED_SUBSCRIPTION_ID) {
                             val newState = message.optJSONObject("event")
                                 ?.optJSONObject("data")
                                 ?.optJSONObject("new_state")
-                            if (newState != null) onStateChanged(newState.toEntity())
+                            if (newState != null) listener.onStateChanged(webSocket, newState.toEntity())
                         }
                     }
                 }.onFailure {
-                    onFailure(it)
+                    listener.onFailure(webSocket, it)
                     webSocket.close(1002, "invalid response")
                 }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                onClosed()
+                listener.onClosed(webSocket, code, reason)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                onFailure(IOException("Соединение событий Home Assistant потеряно", t))
+                listener.onFailure(webSocket, IOException("Соединение событий Home Assistant потеряно", t))
             }
         })
     }

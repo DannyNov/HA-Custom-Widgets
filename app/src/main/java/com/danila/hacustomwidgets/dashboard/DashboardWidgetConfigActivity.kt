@@ -14,10 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,6 +60,7 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
             return
         }
         val container = (application as HaWidgetApplication).container
+        container.dashboardEvents.ensureStarted("CONFIGURATION_OPEN")
         setContent {
             HaCustomWidgetsTheme {
                 DashboardConfigurator(
@@ -69,7 +69,10 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
                     existing = container.dashboards.getConfig(appWidgetId),
                     onSave = { config, catalog ->
                         container.dashboards.saveConfiguration(config, catalog)
-                        container.dashboardEvents.start()
+                        container.dashboardEvents.ensureStarted("CONFIGURATION_SAVE", reconcileIfStale = false)
+                        container.dashboardEvents.requestReconciliation(
+                            "CONFIGURATION_SAVE", force = true, appWidgetId = appWidgetId,
+                        )
                         updateDashboardWidget(
                             this@DashboardWidgetConfigActivity,
                             appWidgetId,
@@ -104,6 +107,7 @@ private fun DashboardConfigurator(
     var currentSpaceId by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var visibleSpaces by remember { mutableStateOf(existing?.visibleSpaceIds.orEmpty()) }
+    var spaceOrder by remember { mutableStateOf(existing?.spaceOrderIds.orEmpty()) }
     var grouping by remember { mutableStateOf(existing?.groupingBySpace.orEmpty()) }
     var favorites by remember { mutableStateOf(existing?.favoriteDeviceKeys.orEmpty()) }
     var entityOrder by remember { mutableStateOf(existing?.entityOrderByDevice.orEmpty()) }
@@ -120,8 +124,8 @@ private fun DashboardConfigurator(
             .onSuccess { loaded ->
                 catalog = loaded
                 val ids = loaded.spaces().map { it.id }
-                if (existing == null) visibleSpaces = ids
-                else visibleSpaces = visibleSpaces.filter { it in ids }
+                visibleSpaces = if (existing == null) ids else visibleSpaces.filter { it in ids }
+                spaceOrder = DashboardOrderPolicy.merge(spaceOrder, ids)
                 grouping = ids.associateWith { grouping[it] ?: DashboardGrouping.TYPES }
                 status = ""
             }
@@ -171,13 +175,14 @@ private fun DashboardConfigurator(
                 modifier = Modifier.padding(padding),
                 catalog = loaded,
                 visibleSpaces = visibleSpaces,
+                spaceOrder = spaceOrder,
                 grouping = grouping,
                 showUpdated = showUpdated,
                 compact = compact,
                 onToggleSpace = { id ->
                     visibleSpaces = if (id in visibleSpaces) visibleSpaces - id else visibleSpaces + id
                 },
-                onMoveSpace = { id, delta -> visibleSpaces = visibleSpaces.move(id, delta) },
+                onSpaceOrderChanged = { spaceOrder = it },
                 onCycleGrouping = { id -> grouping = grouping + (id to grouping.getValue(id).next()) },
                 onShowUpdated = { showUpdated = it },
                 onCompact = { compact = it },
@@ -196,6 +201,7 @@ private fun DashboardConfigurator(
                             DashboardConfig(
                                 appWidgetId, visibleSpaces, grouping, favorites, entityOrder,
                                 cardOrder, showUpdated, compact,
+                                spaceOrder,
                             ),
                             loaded,
                         )
@@ -209,7 +215,7 @@ private fun DashboardConfigurator(
                 query = query,
                 onQuery = { query = it },
                 onToggle = { key -> favorites = if (key in favorites) favorites - key else favorites + key },
-                onMove = { key, delta -> favorites = favorites.move(key, delta) },
+                onOrderChanged = { favorites = it },
                 onOpenEntities = { group -> currentDevice = group; screen = ConfigScreen.ENTITIES },
             )
             ConfigScreen.ENTITIES -> currentDevice?.let { group ->
@@ -228,9 +234,7 @@ private fun DashboardConfigurator(
                     spaceName = space.name,
                     groups = loaded.groupsForSpace(space),
                     order = cardOrder[spaceId].orEmpty(),
-                    onMove = { key, delta ->
-                        cardOrder = cardOrder + (spaceId to cardOrder[spaceId].orEmpty().move(key, delta))
-                    },
+                    onOrderChanged = { cardOrder = cardOrder + (spaceId to it) },
                 )
             }
         }
@@ -242,11 +246,12 @@ private fun DashboardOverview(
     modifier: Modifier,
     catalog: HaCatalog,
     visibleSpaces: List<String>,
+    spaceOrder: List<String>,
     grouping: Map<String, DashboardGrouping>,
     showUpdated: Boolean,
     compact: Boolean,
     onToggleSpace: (String) -> Unit,
-    onMoveSpace: (String, Int) -> Unit,
+    onSpaceOrderChanged: (List<String>) -> Unit,
     onCycleGrouping: (String) -> Unit,
     onShowUpdated: (Boolean) -> Unit,
     onCompact: (Boolean) -> Unit,
@@ -255,20 +260,31 @@ private fun DashboardOverview(
     onSave: () -> Unit,
 ) {
     val spaces = catalog.spaces()
+    val byId = spaces.associateBy { it.id }
+    val orderedIds = DashboardOrderPolicy.merge(spaceOrder, spaces.map { it.id })
+    val orderedSpaces = orderedIds.mapNotNull(byId::get)
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Пространства синхронизируются из Home Assistant. Выберите вкладки, порядок и группировку.")
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(spaces, key = { it.id }) { space ->
+        Text("Пространства синхронизируются из Home Assistant. Для изменения порядка удерживайте карточку и перетащите её.")
+        ReorderableList(
+            items = orderedSpaces,
+            stableId = { it.id },
+            canDrag = { it.id in visibleSpaces },
+            modifier = Modifier.weight(1f),
+            onMove = { from, to ->
+                val moved = moveStable(orderedSpaces, from, to)
+                onSpaceOrderChanged(moved.map { it.id }.filter { it in visibleSpaces })
+            },
+        ) { space, dragging, dragModifier ->
                 val enabled = space.id in visibleSpaces
-                Card(Modifier.fillMaxWidth()) {
+                Card(
+                    dragModifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
+                ) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = enabled, onCheckedChange = { onToggleSpace(space.id) })
                             Text(space.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                            if (enabled) {
-                                TextButton(onClick = { onMoveSpace(space.id, -1) }) { Text("↑") }
-                                TextButton(onClick = { onMoveSpace(space.id, 1) }) { Text("↓") }
-                            }
+                            if (enabled) Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
                         }
                         if (enabled) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -280,7 +296,6 @@ private fun DashboardOverview(
                         }
                     }
                 }
-            }
         }
         Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Настроить ★ Главное и параметры") }
         SettingSwitch("Показывать время обновления", showUpdated, onShowUpdated)
@@ -297,22 +312,27 @@ private fun SpaceCardOrderScreen(
     spaceName: String,
     groups: List<HaDeviceGroup>,
     order: List<String>,
-    onMove: (String, Int) -> Unit,
+    onOrderChanged: (List<String>) -> Unit,
 ) {
     val byKey = groups.associateBy { it.key }
     val ordered = order.mapNotNull(byKey::get) + groups.filter { it.key !in order }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("$spaceName: порядок используется внутри секций и в режиме без группировки.")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(ordered, key = { it.key }) { group ->
-                Card(Modifier.fillMaxWidth()) {
+        ReorderableList(
+            items = ordered,
+            stableId = { it.key },
+            modifier = Modifier.weight(1f),
+            onMove = { from, to -> onOrderChanged(moveStable(ordered, from, to).map { it.key }) },
+        ) { group, dragging, dragModifier ->
+                Card(
+                    dragModifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
+                ) {
                     Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(group.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                        TextButton(onClick = { onMove(group.key, -1) }) { Text("↑") }
-                        TextButton(onClick = { onMove(group.key, 1) }) { Text("↓") }
+                        Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
                     }
                 }
-            }
         }
     }
 }
@@ -325,7 +345,7 @@ private fun FavoriteCardsScreen(
     query: String,
     onQuery: (String) -> Unit,
     onToggle: (String) -> Unit,
-    onMove: (String, Int) -> Unit,
+    onOrderChanged: (List<String>) -> Unit,
     onOpenEntities: (HaDeviceGroup) -> Unit,
 ) {
     val filtered = groups.filter { group ->
@@ -333,13 +353,26 @@ private fun FavoriteCardsScreen(
             it.friendlyName.contains(query, true) || it.entityId.contains(query, true)
         }
     }
+    val byKey = filtered.associateBy { it.key }
+    val ordered = favorites.mapNotNull(byKey::get) + filtered.filter { it.key !in favorites }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Отметьте карточки для ★ Главного. Нажмите название устройства, чтобы выбрать и упорядочить параметры.")
         OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), label = { Text("Поиск устройств и сущностей") }, singleLine = true)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(filtered, key = { it.key }) { group ->
+        ReorderableList(
+            items = ordered,
+            stableId = { it.key },
+            modifier = Modifier.weight(1f),
+            canDrag = { query.isBlank() && it.key in favorites },
+            onMove = { from, to ->
+                val moved = moveStable(ordered, from, to)
+                onOrderChanged(moved.map { it.key }.filter { it in favorites })
+            },
+        ) { group, dragging, dragModifier ->
                 val selected = group.key in favorites
-                Card(Modifier.fillMaxWidth()) {
+                Card(
+                    dragModifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
+                ) {
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(selected, { onToggle(group.key) })
                         Column(
@@ -348,13 +381,9 @@ private fun FavoriteCardsScreen(
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
                             Text("${group.entities.size} сущн. · настроить параметры ›", style = MaterialTheme.typography.bodySmall)
                         }
-                        if (selected) {
-                            TextButton(onClick = { onMove(group.key, -1) }) { Text("↑") }
-                            TextButton(onClick = { onMove(group.key, 1) }) { Text("↓") }
-                        }
+                        if (selected) Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
                     }
                 }
-            }
         }
     }
 }
@@ -370,11 +399,22 @@ private fun EntityOrderScreen(
     val sorted = selectedOrder.mapNotNull(byId::get) +
         defaultMetricOrder(group.entities.filter { it.entityId !in selectedOrder })
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Выберите параметры. Стрелки меняют их порядок; батарея по умолчанию располагается последней.")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            items(sorted, key = { it.entityId }) { entity ->
+        Text("Выберите параметры. Для изменения порядка удерживайте выбранный параметр; батарея по умолчанию последняя.")
+        ReorderableList(
+            items = sorted,
+            stableId = { it.entityId },
+            modifier = Modifier.weight(1f),
+            canDrag = { it.entityId in selectedOrder },
+            onMove = { from, to ->
+                val moved = moveStable(sorted, from, to)
+                onChange(moved.map { it.entityId }.filter { it in selectedOrder })
+            },
+        ) { entity, dragging, dragModifier ->
                 val selected = entity.entityId in selectedOrder
-                Card(Modifier.fillMaxWidth()) {
+                Card(
+                    dragModifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
+                ) {
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
                             selected,
@@ -389,13 +429,9 @@ private fun EntityOrderScreen(
                             Text(entity.friendlyName, style = MaterialTheme.typography.titleSmall)
                             Text("${entity.displayState} · ${entity.entityId}", style = MaterialTheme.typography.bodySmall)
                         }
-                        if (selected) {
-                            TextButton(onClick = { onChange(selectedOrder.move(entity.entityId, -1)) }) { Text("↑") }
-                            TextButton(onClick = { onChange(selectedOrder.move(entity.entityId, 1)) }) { Text("↓") }
-                        }
+                        if (selected) Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
                     }
                 }
-            }
         }
     }
 }
@@ -418,12 +454,4 @@ private fun DashboardGrouping?.label() = when (this) {
     DashboardGrouping.ROOMS -> "по помещениям"
     DashboardGrouping.TYPES -> "по типам устройств"
     DashboardGrouping.NONE, null -> "без группировки"
-}
-
-private fun <T> List<T>.move(item: T, delta: Int): List<T> {
-    val from = indexOf(item)
-    if (from < 0) return this
-    val to = (from + delta).coerceIn(0, lastIndex)
-    if (from == to) return this
-    return toMutableList().apply { removeAt(from); add(to, item) }
 }

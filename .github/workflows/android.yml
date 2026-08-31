@@ -38,26 +38,37 @@ jobs:
             -storepass "$HA_DEBUG_KEYSTORE_PASSWORD" \
             -alias "$HA_DEBUG_KEY_ALIAS" > /dev/null
           printf 'HA_DEBUG_KEYSTORE_PATH=%s\n' "$keystore_path" >> "$GITHUB_ENV"
-      - name: Compile and test
-        run: gradle testDebugUnitTest assembleDebug --stacktrace
+      - name: Compile, test and build non-debuggable release
+        run: gradle testDebugUnitTest assembleRelease --stacktrace
       - name: Verify APK signature
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -n "$APKSIGNER"
-          apk="app/build/outputs/apk/debug/app-debug.apk"
-          report="app/build/outputs/apk/debug/signature.txt"
+          apk="app/build/outputs/apk/release/app-release.apk"
+          report="app/build/outputs/apk/release/signature.txt"
           "$APKSIGNER" verify --verbose --print-certs "$apk" | tee "$report"
           actual_cert="$(sed -n 's/^.*certificate SHA-256 digest: //p' "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
-          sha256sum "$apk" | tee app/build/outputs/apk/debug/apk-sha256.txt
-          cp "$apk" app/build/outputs/apk/debug/HAWidgets-v0.3.3.apk
+          test "$(apkanalyzer manifest application-id "$apk")" = "com.danila.hacustomwidgets"
+          test "$(apkanalyzer manifest version-name "$apk")" = "0.3.4"
+          test "$(apkanalyzer manifest version-code "$apk")" = "8"
+          test "$(apkanalyzer manifest debuggable "$apk")" = "false"
+          {
+            printf 'applicationId=%s\n' "$(apkanalyzer manifest application-id "$apk")"
+            printf 'versionName=%s\n' "$(apkanalyzer manifest version-name "$apk")"
+            printf 'versionCode=%s\n' "$(apkanalyzer manifest version-code "$apk")"
+            printf 'debuggable=%s\n' "$(apkanalyzer manifest debuggable "$apk")"
+          } | tee app/build/outputs/apk/release/build-info.txt
+          sha256sum "$apk" | tee app/build/outputs/apk/release/apk-sha256.txt
+          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.3.4.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HA-Custom-Widgets-v0.3.3-debug
+          name: HA-Custom-Widgets-v0.3.4-release
           path: |
-            app/build/outputs/apk/debug/HAWidgets-v0.3.3.apk
-            app/build/outputs/apk/debug/signature.txt
-            app/build/outputs/apk/debug/apk-sha256.txt
+            app/build/outputs/apk/release/HAWidgets-v0.3.4.apk
+            app/build/outputs/apk/release/signature.txt
+            app/build/outputs/apk/release/apk-sha256.txt
+            app/build/outputs/apk/release/build-info.txt
           if-no-files-found: error

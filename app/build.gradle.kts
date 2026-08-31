@@ -23,8 +23,8 @@ android {
         applicationId = "com.danila.hacustomwidgets"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.3.3"
+        versionCode = 8
+        versionName = "0.3.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -32,7 +32,7 @@ android {
 
     signingConfigs {
         if (ciSigningEnabled) {
-            create("ciDebug") {
+            create("ciPermanent") {
                 storeFile = file(requireNotNull(ciKeystorePath))
                 storePassword = ciKeystorePassword
                 keyAlias = ciKeyAlias
@@ -43,10 +43,11 @@ android {
 
     buildTypes {
         debug {
-            if (ciSigningEnabled) signingConfig = signingConfigs.getByName("ciDebug")
+            if (ciSigningEnabled) signingConfig = signingConfigs.getByName("ciPermanent")
         }
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
+            if (ciSigningEnabled) signingConfig = signingConfigs.getByName("ciPermanent")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

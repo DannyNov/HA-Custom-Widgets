@@ -25,14 +25,16 @@ class DashboardRefreshWorker(
         val container = (applicationContext as HaWidgetApplication).container
         Log.d(TAG, "refresh worker start widgetId=$appWidgetId source=$source attempt=$runAttemptCount")
         try {
-            val connection = container.connectionStore.load() ?: error("Подключение не настроено")
-            val entityIds = container.dashboards.entityIds(appWidgetId)
-            if (entityIds.isEmpty() || container.dashboards.requiresCatalogRefresh(appWidgetId)) {
-                container.dashboards.updateFromCatalog(appWidgetId, container.client.getCatalog(connection))
-            } else {
-                val entities = container.client.getEntities(connection, entityIds)
-                container.dashboards.updateEntityStates(appWidgetId, entities, source)
-            }
+            container.connectionStore.load() ?: error("Подключение не настроено")
+            container.dashboardEvents.ensureStarted("REFRESH_WORKER", reconcileIfStale = false)
+            check(
+                container.dashboardEvents.reconcileNow(
+                    reason = "REFRESH_WORKER_$source",
+                    force = true,
+                    appWidgetId = appWidgetId,
+                    source = source,
+                ),
+            ) { "Не удалось обновить состояния Home Assistant" }
             container.dashboards.clearError(appWidgetId)
             return Result.success()
         } catch (error: Throwable) {

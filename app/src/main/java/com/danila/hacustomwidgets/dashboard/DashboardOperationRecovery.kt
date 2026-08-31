@@ -26,12 +26,14 @@ class DashboardStartupCoordinator(
     private val connectionStore: SecureConnectionStore,
     private val client: HomeAssistantClient,
     private val dashboards: DashboardRepository,
+    private val events: DashboardEventCoordinator,
 ) {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun start() {
         scope.launch {
+            events.requestReconciliation("PROCESS_START", force = true)
             val active = dashboards.activeOperations()
             Log.i(
                 TAG,
@@ -39,26 +41,16 @@ class DashboardStartupCoordinator(
                     "monotonicMs=${SystemClock.elapsedRealtime()}",
             )
             val connection = connectionStore.load()
-            dashboards.all().forEach { config ->
-                val ids = dashboards.entityIds(config.appWidgetId)
-                if (connection != null && ids.isNotEmpty()) {
-                    Log.d(TAG, "REST_RECONCILE_START widgetId=${config.appWidgetId} source=PROCESS_START entities=${ids.size}")
-                    runCatching { client.getEntities(connection, ids) }
-                        .onSuccess {
-                            dashboards.updateEntityStates(config.appWidgetId, it, DashboardStateSource.RECONCILIATION)
-                            Log.d(TAG, "REST_RECONCILE_END widgetId=${config.appWidgetId} source=PROCESS_START success=true")
-                        }
-                        .onFailure {
-                            Log.w(TAG, "REST_RECONCILE_END widgetId=${config.appWidgetId} source=PROCESS_START success=false", it)
-                            DashboardRefreshWorker.enqueue(applicationContext, config.appWidgetId, DashboardStateSource.RECONCILIATION)
-                        }
-                }
-            }
             val now = System.currentTimeMillis()
             active.forEach { (widgetId, original) ->
                 val latest = dashboards.getOperation(widgetId, original.entityId) ?: return@forEach
                 if (!latest.status.isActive) return@forEach
                 if (DashboardStatePolicy.operationExpired(latest, now)) {
+                    if (connection != null) {
+                        runCatching { client.getEntity(connection, latest.entityId) }.onSuccess {
+                            dashboards.updateEntityStates(widgetId, listOf(it), DashboardStateSource.RECONCILIATION)
+                        }
+                    }
                     dashboards.finishOperation(
                         widgetId, latest.entityId, latest.operationId, DashboardOperationStatus.TIMEOUT,
                         "Операция истекла до восстановления процесса",

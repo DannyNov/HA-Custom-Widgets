@@ -35,9 +35,11 @@ import com.danila.hacustomwidgets.ui.HaCustomWidgetsTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val appContainer get() = (application as HaWidgetApplication).container
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val container = (application as HaWidgetApplication).container
+        val container = appContainer
         setContent {
             HaCustomWidgetsTheme {
                 ConnectionScreen(
@@ -50,11 +52,17 @@ class MainActivity : ComponentActivity() {
                         val connection = HomeAssistantConnection(url.trim().trimEnd('/'), effectiveToken)
                         container.client.testConnection(connection)
                         container.connectionStore.save(connection.baseUrl, connection.token)
+                        container.dashboardEvents.ensureStarted("CONNECTION_SAVED")
                         container.client.getEntities(connection).size
                     },
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appContainer.dashboardEvents.ensureStarted("ACTIVITY_RESUME")
     }
 }
 
@@ -124,7 +132,7 @@ private fun ConnectionScreen(
             }
             Spacer(Modifier.height(4.dp))
             Text("Как добавить виджет", style = MaterialTheme.typography.titleMedium)
-            Text("1. Удерживайте пустое место на домашнем экране.\n2. Откройте «Виджеты».\n3. Найдите HA Custom Widgets.\n4. Выберите большой «HA Dashboard» или компактный виджет устройства.")
+            Text("1. Удерживайте пустое место на домашнем экране.\n2. Откройте «Виджеты».\n3. Найдите HA Custom Widgets.\n4. Перетащите «Состояние сущности HA» и выберите сущность.")
             Text(
                 "Для безопасности предпочтителен HTTPS. HTTP оставлен доступным для локальных адресов Home Assistant.",
                 style = MaterialTheme.typography.bodySmall,

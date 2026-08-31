@@ -18,6 +18,7 @@ class DashboardRefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
+        container.dashboardEvents.ensureStarted("MANUAL_REFRESH", reconcileIfStale = false)
         Log.d(TAG, "refresh callback received widgetId=$appWidgetId")
         container.dashboards.markRefreshInProgress(appWidgetId, true)
         DashboardRefreshWorker.enqueue(context, appWidgetId, DashboardStateSource.MANUAL_REFRESH)
@@ -29,6 +30,7 @@ class DashboardNavigateAction : ActionCallback {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
         val tab = parameters[DashboardTabKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
+        container.dashboardEvents.ensureStarted("NAVIGATION")
         val started = System.currentTimeMillis()
         container.dashboards.setSelectedTab(appWidgetId, tab)
         Log.d(TAG, "navigation callback finished widgetId=$appWidgetId durationMs=${System.currentTimeMillis() - started}")
@@ -40,6 +42,7 @@ class DashboardToggleSectionAction : ActionCallback {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
         val section = parameters[DashboardSectionKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
+        container.dashboardEvents.ensureStarted("SECTION")
         container.dashboards.toggleSection(appWidgetId, section)
     }
 }
@@ -50,6 +53,7 @@ class DashboardControlAction : ActionCallback {
         val entityId = parameters[DashboardEntityKey] ?: return
         val domain = parameters[DashboardDomainKey] ?: return
         val container = (context.applicationContext as HaWidgetApplication).container
+        container.dashboardEvents.ensureStarted("CONTROL")
         if (container.connectionStore.load() == null) {
             container.dashboards.saveError(appWidgetId, "Подключение не настроено")
             return
