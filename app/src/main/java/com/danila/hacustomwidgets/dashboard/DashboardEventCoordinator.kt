@@ -443,8 +443,9 @@ class DashboardEventCoordinator(
             failGeneration(socket, generation, connectionId, reason, null)
         }
     }
-    private fun stale(callback: String, generation: Long, id: String) =
+    private fun stale(callback: String, generation: Long, id: String) {
         Log.d(TAG, context("WS_STALE_CALLBACK", "callback=$callback staleGeneration=$generation staleConnectionId=$id"))
+    }
     private fun lastSyncAt(id: Int) = syncPrefs.getLong(syncKey(id), 0L)
     private fun syncKey(id: Int) = "widget_${id}_last_confirmed_sync"
     private fun log(event: String, fields: String = "") = Log.d(TAG, context(event, fields))
