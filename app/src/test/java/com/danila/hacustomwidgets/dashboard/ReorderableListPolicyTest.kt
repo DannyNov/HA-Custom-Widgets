@@ -73,11 +73,17 @@ class ReorderableListPolicyTest {
 
     @Test fun stableDraggedIdSurvivesIndexAndGeometryChanges() {
         val session = ReorderDragSession(
-            "stable-id", 80f, 20f, 60, 10f, 1,
-            ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL),
+            id = "stable-id",
+            sourceIndex = 2,
+            insertionIndex = 2,
+            pointerY = 80f,
+            grabOffset = 20f,
+            itemHeight = 60,
+            edgeIntent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL),
         )
-        val afterReorder = session.copy(awaitingIndex = 7, lastKnownTop = -400f)
+        val afterReorder = session.copy(insertionIndex = 7)
         assertEquals("stable-id", afterReorder.id)
+        assertEquals(2, afterReorder.sourceIndex)
     }
 
     @Test fun targetCanBeFoundWhenDraggedItemIsAbsentFromVisibleGeometry() {
@@ -87,8 +93,13 @@ class ReorderableListPolicyTest {
 
     @Test fun cancellationIsRepresentedByClearedSession() {
         var session: ReorderDragSession? = ReorderDragSession(
-            "a", 10f, 2f, 8, 0f, 0,
-            ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL),
+            id = "a",
+            sourceIndex = 0,
+            insertionIndex = 0,
+            pointerY = 10f,
+            grabOffset = 2f,
+            itemHeight = 8,
+            edgeIntent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL),
         )
         session = null
         assertNull(session)
@@ -137,8 +148,13 @@ class ReorderableListPolicyTest {
 
     @Test fun dropOrCancelStopsAutoScrollByClearingActiveSession() {
         val active = ReorderDragSession(
-            "a", 990f, 10f, 50, 0f, 1,
-            ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.BOTTOM),
+            id = "a",
+            sourceIndex = 0,
+            insertionIndex = 0,
+            pointerY = 990f,
+            grabOffset = 10f,
+            itemHeight = 50,
+            edgeIntent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.BOTTOM),
         )
         assertTrue(active.id.isNotEmpty())
         val finished: ReorderDragSession? = null

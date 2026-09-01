@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -256,6 +257,51 @@ internal object ReorderDragPolicy {
         }
     }
 
+    /** Maps a position in the would-be reordered list back to the unchanged keyed data set. */
+    fun virtualToUnderlyingIndex(
+        sourceIndex: Int,
+        insertionIndex: Int,
+        virtualIndex: Int,
+    ): Int = when {
+        insertionIndex > sourceIndex && virtualIndex == insertionIndex -> sourceIndex
+        insertionIndex > sourceIndex && virtualIndex in sourceIndex until insertionIndex -> virtualIndex + 1
+        insertionIndex < sourceIndex && virtualIndex == insertionIndex -> sourceIndex
+        insertionIndex < sourceIndex && virtualIndex in (insertionIndex + 1)..sourceIndex -> virtualIndex - 1
+        else -> virtualIndex
+    }
+
+    /**
+     * Advances only the virtual insertion cursor. The geometry still belongs to the unchanged
+     * underlying LazyColumn, so the dragged stable key never changes index before drop.
+     */
+    fun adjacentInsertionTarget(
+        sourceIndex: Int,
+        insertionIndex: Int,
+        draggedCenter: Float,
+        direction: Int,
+        itemCount: Int,
+        geometry: List<ReorderItemGeometry>,
+    ): Int? {
+        if (direction == 0 || sourceIndex !in 0 until itemCount || insertionIndex !in 0 until itemCount) {
+            return null
+        }
+        val targetVirtualIndex = insertionIndex + if (direction > 0) 1 else -1
+        if (targetVirtualIndex !in 0 until itemCount) return null
+        val targetUnderlyingIndex = virtualToUnderlyingIndex(
+            sourceIndex,
+            insertionIndex,
+            targetVirtualIndex,
+        )
+        val target = geometry.firstOrNull {
+            it.index == targetUnderlyingIndex && it.draggable
+        } ?: return null
+        return when {
+            direction > 0 && draggedCenter > target.midpoint -> targetVirtualIndex
+            direction < 0 && draggedCenter < target.midpoint -> targetVirtualIndex
+            else -> null
+        }
+    }
+
     fun compensatedTop(lastKnownTop: Float, consumedScroll: Float): Float =
         lastKnownTop - consumedScroll
 
@@ -292,13 +338,12 @@ internal object ReorderDragPolicy {
 
 internal data class ReorderDragSession(
     val id: String,
+    val sourceIndex: Int,
+    val insertionIndex: Int,
     val pointerY: Float,
     val grabOffset: Float,
     val itemHeight: Int,
-    val lastKnownTop: Float,
-    val direction: Int,
     val edgeIntent: ReorderEdgeIntent,
-    val awaitingIndex: Int? = null,
 )
 
 /**
@@ -306,9 +351,9 @@ internal data class ReorderDragSession(
  *
  * The pointer and Lazy item offsets use viewport coordinates. Logical drag geometry remains
  * unclamped for midpoint crossing, while only the overlay is clamped inside the viewport.
- * Scrolling therefore never changes pointerY; the consumed scroll only moves the saved fallback
- * item geometry. Each frame reads fresh LazyList geometry before crossing one adjacent midpoint,
- * so stale offsets cannot produce a multi-move burst or oscillation.
+ * The keyed [items] order remains immutable for the whole gesture. Midpoint crossings only move a
+ * virtual insertion cursor; [onMove] is invoked once on drop. This prevents LazyColumn's stable-key
+ * anchor correction from turning one adjacent move into a self-sustaining viewport/reorder loop.
  */
 @Composable
 fun <T> ReorderableList(
@@ -358,16 +403,11 @@ fun <T> ReorderableList(
         ReorderItemGeometry(info.index, info.offset.toFloat(), info.size, latestCanDrag(item))
     }
 
-    fun attemptMove(direction: Int) {
+    fun attemptInsertionMove(direction: Int) {
         val current = drag ?: return
-        val currentIndex = latestItems.indexOfFirst { stableId(it) == current.id }
-        if (currentIndex < 0) {
+        if (latestItems.getOrNull(current.sourceIndex)?.let { stableId(it) } != current.id) {
             drag = null
             return
-        }
-        if (current.awaitingIndex != null) {
-            if (currentIndex != current.awaitingIndex) return
-            drag = current.copy(awaitingIndex = null)
         }
         val layout = listState.layoutInfo
         val coordinates = ReorderDragPolicy.dragCoordinates(
@@ -377,20 +417,35 @@ fun <T> ReorderableList(
             layout.viewportStartOffset.toFloat(),
             layout.viewportEndOffset.toFloat(),
         )
-        val target = ReorderDragPolicy.adjacentTarget(
-            currentIndex,
+        val target = ReorderDragPolicy.adjacentInsertionTarget(
+            current.sourceIndex,
+            current.insertionIndex,
             coordinates.logicalCenter,
             direction,
+            latestItems.size,
             geometry(),
         ) ?: return
-        drag = current.copy(awaitingIndex = target)
-        latestOnMove(currentIndex, target)
+        drag = current.copy(insertionIndex = target)
+    }
+
+    fun finishDrag(commit: Boolean) {
+        val completed = drag ?: return
+        drag = null
+        if (!commit || completed.insertionIndex == completed.sourceIndex) return
+        if (latestItems.getOrNull(completed.sourceIndex)?.let { stableId(it) } != completed.id) return
+        if (completed.insertionIndex !in latestItems.indices) return
+        latestOnMove(completed.sourceIndex, completed.insertionIndex)
     }
 
     LaunchedEffect(items.map(stableId)) {
         val ids = items.mapTo(hashSetOf(), stableId)
         handleBounds.keys.retainAll(ids)
-        if (drag?.id !in ids) drag = null
+        val active = drag
+        if (active != null && (
+                active.id !in ids ||
+                    items.getOrNull(active.sourceIndex)?.let { stableId(it) } != active.id
+                )
+        ) drag = null
     }
 
     // Exactly one frame-driven job exists for the active drag. It scrolls and re-evaluates reorder
@@ -424,12 +479,8 @@ fun <T> ReorderableList(
             )
             if (velocity != 0f) {
                 val requested = ReorderDragPolicy.requestedScroll(velocity, elapsed)
-                val consumed = listState.scrollBy(requested)
-                drag = (drag ?: break).copy(
-                    lastKnownTop = ReorderDragPolicy.compensatedTop(current.lastKnownTop, consumed),
-                    direction = armedDirection,
-                )
-                attemptMove(armedDirection)
+                listState.scrollBy(requested)
+                attemptInsertionMove(armedDirection)
             }
         }
     }
@@ -452,16 +503,16 @@ fun <T> ReorderableList(
                     val initialZone = currentEdgeZone(position.y)
                     drag = ReorderDragSession(
                         id = id,
+                        sourceIndex = index,
+                        insertionIndex = index,
                         pointerY = position.y,
                         grabOffset = position.y - info.offset,
                         itemHeight = info.size,
-                        lastKnownTop = info.offset.toFloat(),
-                        direction = 0,
                         edgeIntent = ReorderDragPolicy.initialEdgeIntent(initialZone),
                     )
                 },
-                onDragCancel = { drag = null },
-                onDragEnd = { drag = null },
+                onDragCancel = { finishDrag(commit = false) },
+                onDragEnd = { finishDrag(commit = true) },
                 onDrag = { change, amount ->
                     val current = drag ?: return@detectDragGesturesAfterLongPress
                     change.consume()
@@ -477,22 +528,34 @@ fun <T> ReorderableList(
                     )
                     drag = current.copy(
                         pointerY = change.position.y,
-                        direction = direction,
                         edgeIntent = intent,
                     )
-                    attemptMove(direction)
+                    attemptInsertionMove(direction)
                 },
             )
         }
 
     Box(rootModifier) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-            itemsIndexed(items, key = { _, item -> stableId(item) }) { _, item ->
+            itemsIndexed(items, key = { _, item -> stableId(item) }) { index, item ->
                 val id = stableId(item)
                 val dragging = drag?.id == id
+                val insertion = drag
+                val insertionMarker = insertion != null &&
+                    insertion.insertionIndex != insertion.sourceIndex &&
+                    index == insertion.insertionIndex
+                val markerAtTop = insertionMarker && insertion!!.insertionIndex < insertion.sourceIndex
+                val markerColor = MaterialTheme.colorScheme.primary
                 val itemModifier = Modifier
                     .padding(vertical = 3.dp)
                     .graphicsLayer { alpha = if (dragging) 0f else 1f }
+                    .drawBehind {
+                        if (insertionMarker) {
+                            val stroke = 3.dp.toPx()
+                            val y = if (markerAtTop) stroke / 2f else size.height - stroke / 2f
+                            drawLine(markerColor, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
+                        }
+                    }
                 val handle: @Composable () -> Unit = {
                     DisposableEffect(id) {
                         onDispose { handleBounds.remove(id) }
