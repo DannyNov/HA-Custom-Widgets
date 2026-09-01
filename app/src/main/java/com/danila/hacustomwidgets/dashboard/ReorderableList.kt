@@ -58,7 +58,7 @@ internal data class ReorderEdgeIntent(
     val candidateSinceNanos: Long = 0L,
     val movementAnchorY: Float = Float.NaN,
     val lastMeaningfulMovementNanos: Long = 0L,
-    val neutralSeen: Boolean = false,
+    val edgeEligible: Boolean = false,
     val previousZone: ReorderEdgeZone = ReorderEdgeZone.NEUTRAL,
 )
 
@@ -76,6 +76,65 @@ internal data class ReorderDragCoordinates(
     val logicalCenter: Float,
     val visualTop: Float,
 )
+
+internal data class ReorderViewportSlot(val index: Int, val scrollOffset: Int)
+
+internal data class PendingViewportRestore(
+    val draggedId: String,
+    val sourceIndex: Int,
+    val insertionIndex: Int,
+    val beforeOrder: List<String>,
+    val expectedOrder: List<String>,
+    val slot: ReorderViewportSlot,
+)
+
+internal enum class ViewportRestoreDecision { WAIT, APPLY, CANCEL }
+
+internal object ReorderViewportPolicy {
+    fun plan(
+        commit: Boolean,
+        draggedId: String,
+        sourceIndex: Int,
+        insertionIndex: Int,
+        beforeOrder: List<String>,
+        slot: ReorderViewportSlot,
+    ): PendingViewportRestore? {
+        if (!commit || sourceIndex !in beforeOrder.indices || insertionIndex !in beforeOrder.indices ||
+            sourceIndex == insertionIndex || beforeOrder[sourceIndex] != draggedId
+        ) return null
+        return PendingViewportRestore(
+            draggedId = draggedId,
+            sourceIndex = sourceIndex,
+            insertionIndex = insertionIndex,
+            beforeOrder = beforeOrder,
+            expectedOrder = expectedOrder(beforeOrder, sourceIndex, insertionIndex),
+            slot = slot,
+        )
+    }
+
+    fun expectedOrder(order: List<String>, sourceIndex: Int, insertionIndex: Int): List<String> {
+        if (sourceIndex !in order.indices || insertionIndex !in order.indices || sourceIndex == insertionIndex) {
+            return order
+        }
+        return order.toMutableList().apply { add(insertionIndex, removeAt(sourceIndex)) }
+    }
+
+    fun decision(pending: PendingViewportRestore, currentOrder: List<String>): ViewportRestoreDecision = when {
+        currentOrder == pending.expectedOrder -> ViewportRestoreDecision.APPLY
+        currentOrder == pending.beforeOrder -> ViewportRestoreDecision.WAIT
+        currentOrder.size == pending.beforeOrder.size &&
+            currentOrder.getOrNull(pending.insertionIndex) == pending.draggedId -> ViewportRestoreDecision.APPLY
+        else -> ViewportRestoreDecision.CANCEL
+    }
+
+    fun target(slot: ReorderViewportSlot, itemCount: Int): ReorderViewportSlot? {
+        if (itemCount <= 0) return null
+        return ReorderViewportSlot(
+            index = slot.index.coerceIn(0, itemCount - 1),
+            scrollOffset = slot.scrollOffset.coerceAtLeast(0),
+        )
+    }
+}
 
 /** Pure calculations kept outside Compose so density, scroll and midpoint behavior are testable. */
 internal object ReorderDragPolicy {
@@ -103,32 +162,49 @@ internal object ReorderDragPolicy {
         else -> ReorderEdgeZone.NEUTRAL
     }
 
-    fun initialEdgeIntent(zone: ReorderEdgeZone): ReorderEdgeIntent = ReorderEdgeIntent(
-        neutralSeen = zone == ReorderEdgeZone.NEUTRAL,
+    fun initialEdgeIntent(zone: ReorderEdgeZone, pointerY: Float = Float.NaN): ReorderEdgeIntent = ReorderEdgeIntent(
+        movementAnchorY = pointerY,
+        edgeEligible = zone == ReorderEdgeZone.NEUTRAL,
         previousZone = zone,
     )
 
     fun updateEdgeIntent(
         current: ReorderEdgeIntent,
         zone: ReorderEdgeZone,
-        pointerDirection: Int,
         pointerY: Float,
         movementDeadbandPx: Float,
         nowNanos: Long,
     ): ReorderEdgeIntent {
         if (zone == ReorderEdgeZone.NEUTRAL) {
-            return ReorderEdgeIntent(neutralSeen = true, previousZone = zone)
+            return ReorderEdgeIntent(
+                movementAnchorY = pointerY,
+                lastMeaningfulMovementNanos = nowNanos,
+                edgeEligible = true,
+                previousZone = zone,
+            )
         }
         val zoneDirection = zone.direction
         if (current.phase == ReorderEdgePhase.ARMED) {
             if (zoneDirection != current.direction) {
-                return ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+                return current.copy(
+                    phase = ReorderEdgePhase.NEUTRAL,
+                    direction = 0,
+                    movementAnchorY = pointerY,
+                    lastMeaningfulMovementNanos = nowNanos,
+                    previousZone = zone,
+                )
             }
             val movement = pointerY - current.movementAnchorY
             val meaningful = kotlin.math.abs(movement) >= movementDeadbandPx
             return when {
                 meaningful && movement.sign.toInt() != current.direction ->
-                    ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+                    current.copy(
+                        phase = ReorderEdgePhase.NEUTRAL,
+                        direction = 0,
+                        movementAnchorY = pointerY,
+                        lastMeaningfulMovementNanos = nowNanos,
+                        previousZone = zone,
+                    )
                 meaningful -> current.copy(
                     movementAnchorY = pointerY,
                     lastMeaningfulMovementNanos = nowNanos,
@@ -139,13 +215,25 @@ internal object ReorderDragPolicy {
         }
         if (current.phase == ReorderEdgePhase.CANDIDATE) {
             if (zoneDirection != current.direction) {
-                return ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+                return current.copy(
+                    phase = ReorderEdgePhase.NEUTRAL,
+                    direction = 0,
+                    movementAnchorY = pointerY,
+                    lastMeaningfulMovementNanos = nowNanos,
+                    previousZone = zone,
+                )
             }
             val movement = pointerY - current.movementAnchorY
             val meaningful = kotlin.math.abs(movement) >= movementDeadbandPx
             return when {
                 meaningful && movement.sign.toInt() != current.direction ->
-                    ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+                    current.copy(
+                        phase = ReorderEdgePhase.NEUTRAL,
+                        direction = 0,
+                        movementAnchorY = pointerY,
+                        lastMeaningfulMovementNanos = nowNanos,
+                        previousZone = zone,
+                    )
                 meaningful -> current.copy(
                     movementAnchorY = pointerY,
                     lastMeaningfulMovementNanos = nowNanos,
@@ -154,17 +242,24 @@ internal object ReorderDragPolicy {
                 else -> current.copy(previousZone = zone)
             }
         }
-        val intentionallyEntered = current.neutralSeen &&
-            current.previousZone == ReorderEdgeZone.NEUTRAL &&
-            pointerDirection == zoneDirection
-        return if (intentionallyEntered) {
+        val anchor = current.movementAnchorY
+        val displacement = if (anchor.isNaN()) 0f else pointerY - anchor
+        val meaningful = kotlin.math.abs(displacement) >= movementDeadbandPx
+        val outward = meaningful && displacement.sign.toInt() == zoneDirection
+        return if (current.edgeEligible && outward) {
             ReorderEdgeIntent(
                 phase = ReorderEdgePhase.CANDIDATE,
                 direction = zoneDirection,
                 candidateSinceNanos = nowNanos,
                 movementAnchorY = pointerY,
                 lastMeaningfulMovementNanos = nowNanos,
-                neutralSeen = true,
+                edgeEligible = true,
+                previousZone = zone,
+            )
+        } else if (meaningful) {
+            current.copy(
+                movementAnchorY = pointerY,
+                lastMeaningfulMovementNanos = nowNanos,
                 previousZone = zone,
             )
         } else {
@@ -180,11 +275,29 @@ internal object ReorderDragPolicy {
     ): ReorderEdgeIntent {
         if (current.phase == ReorderEdgePhase.ARMED) {
             return if (zone.direction == current.direction) current
-            else ReorderEdgeIntent(neutralSeen = zone == ReorderEdgeZone.NEUTRAL, previousZone = zone)
+            else current.copy(
+                phase = ReorderEdgePhase.NEUTRAL,
+                direction = 0,
+                edgeEligible = current.edgeEligible || zone == ReorderEdgeZone.NEUTRAL,
+                previousZone = zone,
+            )
+        }
+        if (current.phase == ReorderEdgePhase.CANDIDATE && zone.direction != current.direction) {
+            return current.copy(
+                phase = ReorderEdgePhase.NEUTRAL,
+                direction = 0,
+                edgeEligible = current.edgeEligible || zone == ReorderEdgeZone.NEUTRAL,
+                previousZone = zone,
+            )
         }
         if (current.phase != ReorderEdgePhase.CANDIDATE || zone.direction != current.direction) {
             return if (zone == ReorderEdgeZone.NEUTRAL) {
-                ReorderEdgeIntent(neutralSeen = true, previousZone = zone)
+                current.copy(
+                    phase = ReorderEdgePhase.NEUTRAL,
+                    direction = 0,
+                    edgeEligible = true,
+                    previousZone = zone,
+                )
             } else {
                 current.copy(previousZone = zone)
             }
@@ -285,19 +398,26 @@ internal object ReorderDragPolicy {
         if (direction == 0 || sourceIndex !in 0 until itemCount || insertionIndex !in 0 until itemCount) {
             return null
         }
-        val targetVirtualIndex = insertionIndex + if (direction > 0) 1 else -1
-        if (targetVirtualIndex !in 0 until itemCount) return null
-        val targetUnderlyingIndex = virtualToUnderlyingIndex(
-            sourceIndex,
-            insertionIndex,
-            targetVirtualIndex,
-        )
-        val target = geometry.firstOrNull {
-            it.index == targetUnderlyingIndex && it.draggable
-        } ?: return null
+        val step = if (direction > 0) 1 else -1
+        var targetVirtualIndex = insertionIndex + step
+        var target: ReorderItemGeometry? = null
+        while (targetVirtualIndex in 0 until itemCount) {
+            val targetUnderlyingIndex = virtualToUnderlyingIndex(
+                sourceIndex,
+                insertionIndex,
+                targetVirtualIndex,
+            )
+            val candidate = geometry.firstOrNull { it.index == targetUnderlyingIndex } ?: return null
+            if (candidate.draggable) {
+                target = candidate
+                break
+            }
+            targetVirtualIndex += step
+        }
+        val draggableTarget = target ?: return null
         return when {
-            direction > 0 && draggedCenter > target.midpoint -> targetVirtualIndex
-            direction < 0 && draggedCenter < target.midpoint -> targetVirtualIndex
+            direction > 0 && draggedCenter > draggableTarget.midpoint -> targetVirtualIndex
+            direction < 0 && draggedCenter < draggableTarget.midpoint -> targetVirtualIndex
             else -> null
         }
     }
@@ -376,6 +496,7 @@ fun <T> ReorderableList(
     val handleBounds = remember { mutableMapOf<String, Rect>() }
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var drag by remember { mutableStateOf<ReorderDragSession?>(null) }
+    var pendingViewportRestore by remember { mutableStateOf<PendingViewportRestore?>(null) }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     val movementDeadbandPx = MOVEMENT_DEADBAND_DP * density
 
@@ -434,11 +555,25 @@ fun <T> ReorderableList(
         if (!commit || completed.insertionIndex == completed.sourceIndex) return
         if (latestItems.getOrNull(completed.sourceIndex)?.let { stableId(it) } != completed.id) return
         if (completed.insertionIndex !in latestItems.indices) return
+        val beforeOrder = latestItems.map(stableId)
+        pendingViewportRestore = ReorderViewportPolicy.plan(
+            commit = true,
+            draggedId = completed.id,
+            sourceIndex = completed.sourceIndex,
+            insertionIndex = completed.insertionIndex,
+            beforeOrder = beforeOrder,
+            slot = ReorderViewportSlot(
+                index = listState.firstVisibleItemIndex,
+                scrollOffset = listState.firstVisibleItemScrollOffset,
+            ),
+        )
         latestOnMove(completed.sourceIndex, completed.insertionIndex)
     }
 
-    LaunchedEffect(items.map(stableId)) {
-        val ids = items.mapTo(hashSetOf(), stableId)
+    val itemIds = items.map(stableId)
+
+    LaunchedEffect(itemIds) {
+        val ids = itemIds.toHashSet()
         handleBounds.keys.retainAll(ids)
         val active = drag
         if (active != null && (
@@ -446,6 +581,21 @@ fun <T> ReorderableList(
                     items.getOrNull(active.sourceIndex)?.let { stableId(it) } != active.id
                 )
         ) drag = null
+    }
+
+    LaunchedEffect(itemIds, pendingViewportRestore) {
+        val pending = pendingViewportRestore ?: return@LaunchedEffect
+        when (ReorderViewportPolicy.decision(pending, itemIds)) {
+            ViewportRestoreDecision.WAIT -> Unit
+            ViewportRestoreDecision.CANCEL -> pendingViewportRestore = null
+            ViewportRestoreDecision.APPLY -> {
+                val target = ReorderViewportPolicy.target(pending.slot, itemIds.size)
+                if (target != null) {
+                    listState.scrollToItem(target.index, target.scrollOffset)
+                }
+                if (pendingViewportRestore == pending) pendingViewportRestore = null
+            }
+        }
     }
 
     // Exactly one frame-driven job exists for the active drag. It scrolls and re-evaluates reorder
@@ -508,7 +658,7 @@ fun <T> ReorderableList(
                         pointerY = position.y,
                         grabOffset = position.y - info.offset,
                         itemHeight = info.size,
-                        edgeIntent = ReorderDragPolicy.initialEdgeIntent(initialZone),
+                        edgeIntent = ReorderDragPolicy.initialEdgeIntent(initialZone, position.y),
                     )
                 },
                 onDragCancel = { finishDrag(commit = false) },
@@ -521,7 +671,6 @@ fun <T> ReorderableList(
                     val intent = ReorderDragPolicy.updateEdgeIntent(
                         current.edgeIntent,
                         zone,
-                        direction,
                         change.position.y,
                         movementDeadbandPx,
                         System.nanoTime(),

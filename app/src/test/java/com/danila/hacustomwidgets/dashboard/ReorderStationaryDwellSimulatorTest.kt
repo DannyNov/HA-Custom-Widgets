@@ -17,7 +17,7 @@ private class ReorderGestureSimulator(
 ) {
     private val edge = ReorderDragPolicy.effectiveEdgePx(0f, viewportEnd, 1f)
     private val items = List(itemCount) { ReorderItemGeometry(it, it * itemHeight.toFloat(), itemHeight) }
-    private var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.TOP)
+    private var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.TOP, grabOffset)
     private var pointerY = grabOffset
     private var lastPointerY = pointerY
     private var lastFrameMs = 0L
@@ -38,7 +38,6 @@ private class ReorderGestureSimulator(
         intent = ReorderDragPolicy.updateEdgeIntent(
             intent,
             zone,
-            direction,
             pointerY,
             movementDeadbandPx = 3f,
             nowNanos = timeMs * 1_000_000L,

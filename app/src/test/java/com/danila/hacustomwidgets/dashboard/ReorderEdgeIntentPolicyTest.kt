@@ -18,11 +18,12 @@ class ReorderEdgeIntentPolicyTest {
         direction: Int,
         at: Long,
         y: Float = pointerY(zone.direction),
-    ) = ReorderDragPolicy.updateEdgeIntent(intent, zone, direction, y, deadband, at)
+    ) = ReorderDragPolicy.updateEdgeIntent(intent, zone, y, deadband, at)
 
     private fun candidate(direction: Int, at: Long = 1_000L): ReorderEdgeIntent {
         val zone = if (direction > 0) ReorderEdgeZone.BOTTOM else ReorderEdgeZone.TOP
-        val neutral = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL)
+        val neutralY = if (direction > 0) 400f else 100f
+        val neutral = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL, neutralY)
         return update(neutral, zone, direction, at)
     }
 
@@ -138,7 +139,7 @@ class ReorderEdgeIntentPolicyTest {
     @Test fun briefCandidateResetsWhenPointerReturnsToNeutral() {
         val reset = update(candidate(1), ReorderEdgeZone.NEUTRAL, -1, delay / 2, 250f)
         assertEquals(ReorderEdgePhase.NEUTRAL, reset.phase)
-        assertTrue(reset.neutralSeen)
+        assertTrue(reset.edgeEligible)
     }
 
     @Test fun frameLoopCannotInventIntentFromPointerPosition() {
@@ -164,5 +165,83 @@ class ReorderEdgeIntentPolicyTest {
     @Test fun effectiveEdgeScalesInDpButRemainsTwentyPercentCapped() {
         assertEquals(40f, ReorderDragPolicy.effectiveEdgePx(0f, 200f, density = 4f), 0.001f)
         assertEquals(72f, ReorderDragPolicy.effectiveEdgePx(0f, 1000f, density = 1f), 0.001f)
+    }
+
+    @Test fun eligibleEdgeCanCreateCandidateAfterBoundaryAdmissionWasMissed() {
+        listOf(-1, 1).forEach { direction ->
+            val zone = if (direction < 0) ReorderEdgeZone.TOP else ReorderEdgeZone.BOTTOM
+            val boundary = if (direction < 0) 41f else 459f
+            var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL, boundary)
+            intent = update(intent, zone, direction, 1_000L, boundary + direction * 2f)
+            assertEquals(ReorderEdgePhase.NEUTRAL, intent.phase)
+            intent = update(intent, zone, direction, 2_000L, boundary + direction * 5f)
+            assertEquals(ReorderEdgePhase.CANDIDATE, intent.phase)
+            assertEquals(direction, intent.direction)
+        }
+    }
+
+    @Test fun inwardCancellationKeepsEligibilityAndAllowsRearmInsideSameEdge() {
+        listOf(-1, 1).forEach { direction ->
+            val zone = if (direction < 0) ReorderEdgeZone.TOP else ReorderEdgeZone.BOTTOM
+            var intent = candidate(direction)
+            val candidateAnchor = intent.movementAnchorY
+            intent = update(intent, zone, -direction, 2_000L, candidateAnchor - direction * deadband)
+            assertEquals(ReorderEdgePhase.NEUTRAL, intent.phase)
+            assertTrue(intent.edgeEligible)
+            intent = update(intent, zone, direction, 3_000L, intent.movementAnchorY + direction * deadband)
+            assertEquals(ReorderEdgePhase.CANDIDATE, intent.phase)
+            assertEquals(direction, intent.direction)
+        }
+    }
+
+    @Test fun startInsideEdgeRequiresNeutralVisitBeforeEitherDirectionCanArm() {
+        listOf(-1, 1).forEach { direction ->
+            val zone = if (direction < 0) ReorderEdgeZone.TOP else ReorderEdgeZone.BOTTOM
+            val edgeY = pointerY(direction)
+            var intent = ReorderDragPolicy.initialEdgeIntent(zone, edgeY)
+            intent = update(intent, zone, direction, 1_000L, edgeY + direction * 20f)
+            intent = ReorderDragPolicy.advanceEdgeIntent(intent, zone, delay * 2, delay)
+            assertEquals(ReorderEdgePhase.NEUTRAL, intent.phase)
+            assertTrue(!intent.edgeEligible)
+        }
+    }
+
+    @Test fun neutralVisitThenReturnToEdgeArmsTopAndBottomSymmetrically() {
+        listOf(-1, 1).forEach { direction ->
+            val startZone = if (direction < 0) ReorderEdgeZone.TOP else ReorderEdgeZone.BOTTOM
+            val neutralY = 250f
+            var intent = ReorderDragPolicy.initialEdgeIntent(startZone, pointerY(direction))
+            intent = update(intent, ReorderEdgeZone.NEUTRAL, -direction, 1_000L, neutralY)
+            intent = update(intent, startZone, direction, 2_000L, pointerY(direction))
+            intent = ReorderDragPolicy.advanceEdgeIntent(intent, startZone, 2_000L + delay, delay)
+            assertEquals(ReorderEdgePhase.ARMED, intent.phase)
+            assertEquals(direction, intent.direction)
+        }
+    }
+
+    @Test fun armedInwardMovementDisarmsButCanRearmWithoutNeutralReentry() {
+        listOf(-1, 1).forEach { direction ->
+            val zone = if (direction < 0) ReorderEdgeZone.TOP else ReorderEdgeZone.BOTTOM
+            var intent = armed(direction)
+            intent = update(
+                intent,
+                zone,
+                -direction,
+                2_000L,
+                intent.movementAnchorY - direction * deadband,
+            )
+            assertEquals(ReorderEdgePhase.NEUTRAL, intent.phase)
+            assertTrue(intent.edgeEligible)
+            intent = update(
+                intent,
+                zone,
+                direction,
+                3_000L,
+                intent.movementAnchorY + direction * deadband,
+            )
+            assertEquals(ReorderEdgePhase.CANDIDATE, intent.phase)
+            intent = ReorderDragPolicy.advanceEdgeIntent(intent, zone, 3_000L + delay, delay)
+            assertEquals(ReorderEdgePhase.ARMED, intent.phase)
+        }
     }
 }

@@ -271,8 +271,20 @@ private fun DashboardOverview(
             canDrag = { it.id in visibleSpaces },
             modifier = Modifier.weight(1f),
             onMove = { from, to ->
-                val moved = moveStable(orderedSpaces, from, to)
-                onSpaceOrderChanged(moved.map { it.id }.filter { it in visibleSpaces })
+                val fullOrder = orderedSpaces.map { it.id }
+                val visibleOrder = fullOrder.filter { it in visibleSpaces }
+                val fromId = fullOrder.getOrNull(from)
+                val toId = fullOrder.getOrNull(to)
+                val fromVisible = if (fromId == null) -1 else visibleOrder.indexOf(fromId)
+                val toVisible = if (toId == null) -1 else visibleOrder.indexOf(toId)
+                onSpaceOrderChanged(
+                    DashboardOrderPolicy.reorderVisibleSubset(
+                        fullOrder,
+                        visibleSpaces,
+                        fromVisible,
+                        toVisible,
+                    ),
+                )
             },
         ) { space, dragging, itemModifier, dragHandle ->
                 val enabled = space.id in visibleSpaces

@@ -55,6 +55,28 @@ object DashboardOrderPolicy {
         if (fromIndex !in order.indices || toIndex !in order.indices || fromIndex == toIndex) return order
         return order.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
     }
+
+    /** Reorders values occupying visible slots while leaving every hidden/stale slot in place. */
+    fun reorderVisibleSubset(
+        fullOrder: List<String>,
+        visibleIds: Collection<String>,
+        fromVisibleIndex: Int,
+        toVisibleIndex: Int,
+    ): List<String> {
+        val visibleSet = visibleIds.toSet()
+        val visibleSlots = fullOrder.indices.filter { fullOrder[it] in visibleSet }
+        val visibleOrder = visibleSlots.map(fullOrder::get)
+        if (fromVisibleIndex !in visibleOrder.indices ||
+            toVisibleIndex !in visibleOrder.indices ||
+            fromVisibleIndex == toVisibleIndex
+        ) return fullOrder
+        val movedVisible = move(visibleOrder, fromVisibleIndex, toVisibleIndex)
+        return fullOrder.toMutableList().apply {
+            visibleSlots.forEachIndexed { visibleIndex, fullIndex ->
+                this[fullIndex] = movedVisible[visibleIndex]
+            }
+        }
+    }
 }
 
 data class DashboardNavigationMutation(
