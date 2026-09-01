@@ -40,6 +40,7 @@ import kotlin.math.sign
 private const val EDGE_ZONE_DP = 72f
 private const val MAX_EDGE_FRACTION = 0.20f
 private const val EDGE_ARM_DELAY_NANOS = 150_000_000L
+private const val MOVEMENT_DEADBAND_DP = 3f
 private const val MAX_EDGE_SPEED_DP_PER_SECOND = 920f
 
 internal enum class ReorderEdgeZone(val direction: Int) {
@@ -54,6 +55,8 @@ internal data class ReorderEdgeIntent(
     val phase: ReorderEdgePhase = ReorderEdgePhase.NEUTRAL,
     val direction: Int = 0,
     val candidateSinceNanos: Long = 0L,
+    val movementAnchorY: Float = Float.NaN,
+    val lastMeaningfulMovementNanos: Long = 0L,
     val neutralSeen: Boolean = false,
     val previousZone: ReorderEdgeZone = ReorderEdgeZone.NEUTRAL,
 )
@@ -108,6 +111,8 @@ internal object ReorderDragPolicy {
         current: ReorderEdgeIntent,
         zone: ReorderEdgeZone,
         pointerDirection: Int,
+        pointerY: Float,
+        movementDeadbandPx: Float,
         nowNanos: Long,
     ): ReorderEdgeIntent {
         if (zone == ReorderEdgeZone.NEUTRAL) {
@@ -115,21 +120,37 @@ internal object ReorderDragPolicy {
         }
         val zoneDirection = zone.direction
         if (current.phase == ReorderEdgePhase.ARMED) {
-            return if (zoneDirection == current.direction &&
-                (pointerDirection == 0 || pointerDirection == current.direction)
-            ) {
-                current.copy(previousZone = zone)
-            } else {
-                ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+            if (zoneDirection != current.direction) {
+                return ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+            }
+            val movement = pointerY - current.movementAnchorY
+            val meaningful = kotlin.math.abs(movement) >= movementDeadbandPx
+            return when {
+                meaningful && movement.sign.toInt() != current.direction ->
+                    ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+                meaningful -> current.copy(
+                    movementAnchorY = pointerY,
+                    lastMeaningfulMovementNanos = nowNanos,
+                    previousZone = zone,
+                )
+                else -> current.copy(previousZone = zone)
             }
         }
         if (current.phase == ReorderEdgePhase.CANDIDATE) {
-            return if (zoneDirection == current.direction &&
-                (pointerDirection == 0 || pointerDirection == current.direction)
-            ) {
-                current.copy(previousZone = zone)
-            } else {
-                ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+            if (zoneDirection != current.direction) {
+                return ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+            }
+            val movement = pointerY - current.movementAnchorY
+            val meaningful = kotlin.math.abs(movement) >= movementDeadbandPx
+            return when {
+                meaningful && movement.sign.toInt() != current.direction ->
+                    ReorderEdgeIntent(neutralSeen = false, previousZone = zone)
+                meaningful -> current.copy(
+                    movementAnchorY = pointerY,
+                    lastMeaningfulMovementNanos = nowNanos,
+                    previousZone = zone,
+                )
+                else -> current.copy(previousZone = zone)
             }
         }
         val intentionallyEntered = current.neutralSeen &&
@@ -140,6 +161,8 @@ internal object ReorderDragPolicy {
                 phase = ReorderEdgePhase.CANDIDATE,
                 direction = zoneDirection,
                 candidateSinceNanos = nowNanos,
+                movementAnchorY = pointerY,
+                lastMeaningfulMovementNanos = nowNanos,
                 neutralSeen = true,
                 previousZone = zone,
             )
@@ -165,7 +188,7 @@ internal object ReorderDragPolicy {
                 current.copy(previousZone = zone)
             }
         }
-        return if (nowNanos - current.candidateSinceNanos >= armDelayNanos) {
+        return if (nowNanos - current.lastMeaningfulMovementNanos >= armDelayNanos) {
             current.copy(phase = ReorderEdgePhase.ARMED, previousZone = zone)
         } else {
             current.copy(previousZone = zone)
@@ -309,6 +332,7 @@ fun <T> ReorderableList(
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var drag by remember { mutableStateOf<ReorderDragSession?>(null) }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val movementDeadbandPx = MOVEMENT_DEADBAND_DP * density
 
     fun currentEffectiveEdge(): Float {
         val layout = listState.layoutInfo
@@ -447,6 +471,8 @@ fun <T> ReorderableList(
                         current.edgeIntent,
                         zone,
                         direction,
+                        change.position.y,
+                        movementDeadbandPx,
                         System.nanoTime(),
                     )
                     drag = current.copy(

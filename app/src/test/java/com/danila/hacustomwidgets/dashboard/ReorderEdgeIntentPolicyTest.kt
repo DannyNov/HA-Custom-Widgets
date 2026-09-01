@@ -8,11 +8,22 @@ import org.junit.Test
 class ReorderEdgeIntentPolicyTest {
     private val geometry = List(5) { index -> ReorderItemGeometry(index, index * 100f, 100) }
     private val delay = 150_000_000L
+    private val deadband = 3f
+
+    private fun pointerY(direction: Int) = if (direction > 0) 490f else 10f
+
+    private fun update(
+        intent: ReorderEdgeIntent,
+        zone: ReorderEdgeZone,
+        direction: Int,
+        at: Long,
+        y: Float = pointerY(zone.direction),
+    ) = ReorderDragPolicy.updateEdgeIntent(intent, zone, direction, y, deadband, at)
 
     private fun candidate(direction: Int, at: Long = 1_000L): ReorderEdgeIntent {
         val zone = if (direction > 0) ReorderEdgeZone.BOTTOM else ReorderEdgeZone.TOP
         val neutral = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL)
-        return ReorderDragPolicy.updateEdgeIntent(neutral, zone, direction, at)
+        return update(neutral, zone, direction, at)
     }
 
     private fun armed(direction: Int, at: Long = 1_000L): ReorderEdgeIntent {
@@ -22,8 +33,8 @@ class ReorderEdgeIntentPolicyTest {
 
     @Test fun smallAdjacentDragFromFirstItemDoesNotArmOrRunAway() {
         var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.TOP)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.TOP, 1, 1_000L)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.NEUTRAL, 1, 2_000L)
+        intent = update(intent, ReorderEdgeZone.TOP, 1, 1_000L)
+        intent = update(intent, ReorderEdgeZone.NEUTRAL, 1, 2_000L, 250f)
         intent = ReorderDragPolicy.advanceEdgeIntent(intent, ReorderEdgeZone.NEUTRAL, delay * 10, delay)
 
         val onePointerMove = ReorderDragPolicy.adjacentTarget(0, 151f, 1, geometry)
@@ -40,8 +51,8 @@ class ReorderEdgeIntentPolicyTest {
 
     @Test fun smallAdjacentDragFromLastItemDoesNotArmOrRunAway() {
         var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.BOTTOM)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.BOTTOM, -1, 1_000L)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.NEUTRAL, -1, 2_000L)
+        intent = update(intent, ReorderEdgeZone.BOTTOM, -1, 1_000L)
+        intent = update(intent, ReorderEdgeZone.NEUTRAL, -1, 2_000L, 250f)
         intent = ReorderDragPolicy.advanceEdgeIntent(intent, ReorderEdgeZone.NEUTRAL, delay * 10, delay)
 
         assertEquals(3, ReorderDragPolicy.adjacentTarget(4, 349f, -1, geometry))
@@ -54,13 +65,18 @@ class ReorderEdgeIntentPolicyTest {
     }
 
     @Test fun intentionalLongDistanceDownArmsAfterDelayAndSurvivesStationaryPointer() {
-        val candidate = candidate(1)
+        val candidateAt = 1_000L
+        val candidate = candidate(1, candidateAt)
         assertEquals(ReorderEdgePhase.CANDIDATE, candidate.phase)
         assertEquals(
             ReorderEdgePhase.CANDIDATE,
-            ReorderDragPolicy.advanceEdgeIntent(candidate, ReorderEdgeZone.BOTTOM, delay - 1, delay).phase,
+            ReorderDragPolicy.advanceEdgeIntent(
+                candidate, ReorderEdgeZone.BOTTOM, candidateAt + delay - 1, delay,
+            ).phase,
         )
-        val armed = ReorderDragPolicy.advanceEdgeIntent(candidate, ReorderEdgeZone.BOTTOM, delay + 1_000L, delay)
+        val armed = ReorderDragPolicy.advanceEdgeIntent(
+            candidate, ReorderEdgeZone.BOTTOM, candidateAt + delay, delay,
+        )
         assertEquals(ReorderEdgePhase.ARMED, armed.phase)
         assertTrue(ReorderDragPolicy.armedVelocityPxPerSecond(armed, 490f, 0f, 500f, 72f, 1f) > 0f)
         assertEquals(
@@ -81,7 +97,7 @@ class ReorderEdgeIntentPolicyTest {
 
     @Test fun startingInsideTopEdgeNeverArmsWithoutNeutralReentry() {
         var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.TOP)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.TOP, -1, 1_000L)
+        intent = update(intent, ReorderEdgeZone.TOP, -1, 1_000L)
         intent = ReorderDragPolicy.advanceEdgeIntent(intent, ReorderEdgeZone.TOP, delay * 10, delay)
         assertEquals(ReorderEdgePhase.NEUTRAL, intent.phase)
         assertEquals(0, ReorderDragPolicy.armedDirection(intent))
@@ -89,7 +105,7 @@ class ReorderEdgeIntentPolicyTest {
 
     @Test fun startingInsideBottomEdgeNeverArmsWithoutNeutralReentry() {
         var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.BOTTOM)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.BOTTOM, 1, 1_000L)
+        intent = update(intent, ReorderEdgeZone.BOTTOM, 1, 1_000L)
         intent = ReorderDragPolicy.advanceEdgeIntent(intent, ReorderEdgeZone.BOTTOM, delay * 10, delay)
         assertEquals(ReorderEdgePhase.NEUTRAL, intent.phase)
         assertEquals(0, ReorderDragPolicy.armedDirection(intent))
@@ -97,33 +113,30 @@ class ReorderEdgeIntentPolicyTest {
 
     @Test fun neutralReentryAllowsOppositeBottomEdgeToArm() {
         var intent = ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.TOP)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.NEUTRAL, 1, 1_000L)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.BOTTOM, 1, 2_000L)
+        intent = update(intent, ReorderEdgeZone.NEUTRAL, 1, 1_000L, 100f)
+        intent = update(intent, ReorderEdgeZone.BOTTOM, 1, 2_000L)
         intent = ReorderDragPolicy.advanceEdgeIntent(intent, ReorderEdgeZone.BOTTOM, 2_000L + delay, delay)
         assertEquals(ReorderEdgePhase.ARMED, intent.phase)
         assertEquals(1, intent.direction)
     }
 
     @Test fun reversalImmediatelyStopsArmedBottomIntent() {
-        val reversed = ReorderDragPolicy.updateEdgeIntent(
-            armed(1), ReorderEdgeZone.BOTTOM, -1, delay * 2,
-        )
+        val armed = armed(1)
+        val reversed = update(armed, ReorderEdgeZone.BOTTOM, -1, delay * 2, armed.movementAnchorY - deadband)
         assertEquals(ReorderEdgePhase.NEUTRAL, reversed.phase)
         assertEquals(0, ReorderDragPolicy.armedDirection(reversed))
     }
 
     @Test fun oppositeEdgeDoesNotRetainOldDirection() {
         var intent = armed(1)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.NEUTRAL, -1, delay * 2)
-        intent = ReorderDragPolicy.updateEdgeIntent(intent, ReorderEdgeZone.TOP, -1, delay * 2 + 1)
+        intent = update(intent, ReorderEdgeZone.NEUTRAL, -1, delay * 2, 250f)
+        intent = update(intent, ReorderEdgeZone.TOP, -1, delay * 2 + 1)
         assertEquals(ReorderEdgePhase.CANDIDATE, intent.phase)
         assertEquals(-1, intent.direction)
     }
 
     @Test fun briefCandidateResetsWhenPointerReturnsToNeutral() {
-        val reset = ReorderDragPolicy.updateEdgeIntent(
-            candidate(1), ReorderEdgeZone.NEUTRAL, -1, delay / 2,
-        )
+        val reset = update(candidate(1), ReorderEdgeZone.NEUTRAL, -1, delay / 2, 250f)
         assertEquals(ReorderEdgePhase.NEUTRAL, reset.phase)
         assertTrue(reset.neutralSeen)
     }
