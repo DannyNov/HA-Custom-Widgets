@@ -72,7 +72,10 @@ class ReorderableListPolicyTest {
     }
 
     @Test fun stableDraggedIdSurvivesIndexAndGeometryChanges() {
-        val session = ReorderDragSession("stable-id", 80f, 20f, 60, 10f, 1)
+        val session = ReorderDragSession(
+            "stable-id", 80f, 20f, 60, 10f, 1,
+            ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL),
+        )
         val afterReorder = session.copy(awaitingIndex = 7, lastKnownTop = -400f)
         assertEquals("stable-id", afterReorder.id)
     }
@@ -83,7 +86,10 @@ class ReorderableListPolicyTest {
     }
 
     @Test fun cancellationIsRepresentedByClearedSession() {
-        var session: ReorderDragSession? = ReorderDragSession("a", 10f, 2f, 8, 0f, 0)
+        var session: ReorderDragSession? = ReorderDragSession(
+            "a", 10f, 2f, 8, 0f, 0,
+            ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.NEUTRAL),
+        )
         session = null
         assertNull(session)
     }
@@ -130,7 +136,10 @@ class ReorderableListPolicyTest {
     }
 
     @Test fun dropOrCancelStopsAutoScrollByClearingActiveSession() {
-        val active = ReorderDragSession("a", 990f, 10f, 50, 0f, 1)
+        val active = ReorderDragSession(
+            "a", 990f, 10f, 50, 0f, 1,
+            ReorderDragPolicy.initialEdgeIntent(ReorderEdgeZone.BOTTOM),
+        )
         assertTrue(active.id.isNotEmpty())
         val finished: ReorderDragSession? = null
         assertNull(finished)
