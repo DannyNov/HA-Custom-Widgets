@@ -1,5 +1,7 @@
 package com.danila.hacustomwidgets.dashboard
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
@@ -24,7 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,6 +44,8 @@ private const val MAX_EDGE_FRACTION = 0.20f
 private const val EDGE_ARM_DELAY_NANOS = 150_000_000L
 private const val MOVEMENT_DEADBAND_DP = 3f
 private const val MAX_EDGE_SPEED_DP_PER_SECOND = 920f
+private const val INSERTION_GAP_FRACTION = 0.70f
+private const val INSERTION_GAP_ANIMATION_MS = 120
 
 internal enum class ReorderEdgeZone(val direction: Int) {
     TOP(-1),
@@ -76,6 +79,72 @@ internal data class ReorderDragCoordinates(
     val logicalCenter: Float,
     val visualTop: Float,
 )
+
+/**
+ * Presentation-only insertion gap. It maps unchanged underlying keys into the virtual order and
+ * returns a graphics-layer translation. Because translation does not participate in measurement,
+ * LazyListItemInfo offsets used by midpoint crossing remain stable while the gap animates.
+ */
+internal object ReorderGapPolicy {
+    fun gapHeight(draggedItemHeight: Float, fraction: Float = INSERTION_GAP_FRACTION): Float =
+        draggedItemHeight.coerceAtLeast(0f) * fraction.coerceAtLeast(0f)
+
+    fun targetGapHeight(
+        sourceIndex: Int,
+        insertionIndex: Int,
+        draggedItemHeight: Float,
+    ): Float = if (sourceIndex == insertionIndex) 0f else gapHeight(draggedItemHeight)
+
+    fun underlyingToVirtualIndex(
+        sourceIndex: Int,
+        insertionIndex: Int,
+        underlyingIndex: Int,
+    ): Int = when {
+        insertionIndex > sourceIndex && underlyingIndex == sourceIndex -> insertionIndex
+        insertionIndex > sourceIndex && underlyingIndex in (sourceIndex + 1)..insertionIndex ->
+            underlyingIndex - 1
+        insertionIndex < sourceIndex && underlyingIndex == sourceIndex -> insertionIndex
+        insertionIndex < sourceIndex && underlyingIndex in insertionIndex until sourceIndex ->
+            underlyingIndex + 1
+        else -> underlyingIndex
+    }
+
+    /** Continuous counterpart used only while the visual insertion slot animates. */
+    fun underlyingToAnimatedVirtualIndex(
+        sourceIndex: Int,
+        animatedInsertionIndex: Float,
+        underlyingIndex: Int,
+    ): Float = when {
+        underlyingIndex > sourceIndex -> underlyingIndex -
+            (animatedInsertionIndex - (underlyingIndex - 1f)).coerceIn(0f, 1f)
+        underlyingIndex < sourceIndex -> underlyingIndex +
+            ((underlyingIndex + 1f) - animatedInsertionIndex).coerceIn(0f, 1f)
+        else -> animatedInsertionIndex
+    }
+
+    /** Slot-relative displacement; terminal slots receive the full gap inside the viewport. */
+    fun displacement(
+        sourceIndex: Int,
+        underlyingIndex: Int,
+        animatedInsertionIndex: Float,
+        itemCount: Int,
+        gapHeight: Float,
+    ): Float {
+        if (itemCount <= 1 || underlyingIndex == sourceIndex || gapHeight <= 0f) return 0f
+        val clampedInsertion = animatedInsertionIndex.coerceIn(0f, itemCount - 1f)
+        val virtualIndex = underlyingToAnimatedVirtualIndex(
+            sourceIndex,
+            clampedInsertion,
+            underlyingIndex,
+        )
+        val halfGap = gapHeight / 2f
+        val relative = (virtualIndex - clampedInsertion).coerceIn(-1f, 1f)
+        val topTerminal = (1f - clampedInsertion).coerceIn(0f, 1f) * halfGap
+        val bottomTerminal =
+            (clampedInsertion - (itemCount - 2f)).coerceIn(0f, 1f) * -halfGap
+        return relative * halfGap + topTerminal + bottomTerminal
+    }
+}
 
 internal data class ReorderViewportSlot(val index: Int, val scrollOffset: Int)
 
@@ -499,6 +568,18 @@ fun <T> ReorderableList(
     var pendingViewportRestore by remember { mutableStateOf<PendingViewportRestore?>(null) }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     val movementDeadbandPx = MOVEMENT_DEADBAND_DP * density
+    val gapTargetIndex = drag?.insertionIndex?.toFloat() ?: 0f
+    val animatedGapIndex by animateFloatAsState(
+        targetValue = gapTargetIndex,
+        animationSpec = tween(durationMillis = INSERTION_GAP_ANIMATION_MS),
+        label = "reorder-gap-slot",
+    )
+    val gapTargetProgress = if (drag != null && drag!!.insertionIndex != drag!!.sourceIndex) 1f else 0f
+    val animatedGapProgress by animateFloatAsState(
+        targetValue = gapTargetProgress,
+        animationSpec = tween(durationMillis = INSERTION_GAP_ANIMATION_MS),
+        label = "reorder-gap-progress",
+    )
 
     fun currentEffectiveEdge(): Float {
         val layout = listState.layoutInfo
@@ -690,20 +771,25 @@ fun <T> ReorderableList(
                 val id = stableId(item)
                 val dragging = drag?.id == id
                 val insertion = drag
-                val insertionMarker = insertion != null &&
-                    insertion.insertionIndex != insertion.sourceIndex &&
-                    index == insertion.insertionIndex
-                val markerAtTop = insertionMarker && insertion!!.insertionIndex < insertion.sourceIndex
-                val markerColor = MaterialTheme.colorScheme.primary
+                val visualGap = if (insertion != null) {
+                    ReorderGapPolicy.displacement(
+                        sourceIndex = insertion.sourceIndex,
+                        underlyingIndex = index,
+                        animatedInsertionIndex = animatedGapIndex,
+                        itemCount = items.size,
+                        gapHeight = ReorderGapPolicy.targetGapHeight(
+                            insertion.sourceIndex,
+                            insertion.insertionIndex,
+                            insertion.itemHeight.toFloat(),
+                        ) *
+                            animatedGapProgress,
+                    )
+                } else 0f
                 val itemModifier = Modifier
                     .padding(vertical = 3.dp)
-                    .graphicsLayer { alpha = if (dragging) 0f else 1f }
-                    .drawBehind {
-                        if (insertionMarker) {
-                            val stroke = 3.dp.toPx()
-                            val y = if (markerAtTop) stroke / 2f else size.height - stroke / 2f
-                            drawLine(markerColor, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
-                        }
+                    .graphicsLayer {
+                        alpha = if (dragging) 0f else 1f
+                        translationY = visualGap
                     }
                 val handle: @Composable () -> Unit = {
                     DisposableEffect(id) {
