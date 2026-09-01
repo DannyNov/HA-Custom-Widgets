@@ -49,6 +49,12 @@ internal data class ReorderItemGeometry(
     val midpoint: Float get() = top + size / 2f
 }
 
+internal data class ReorderDragCoordinates(
+    val logicalTop: Float,
+    val logicalCenter: Float,
+    val visualTop: Float,
+)
+
 /** Pure calculations kept outside Compose so density, scroll and midpoint behavior are testable. */
 internal object ReorderDragPolicy {
     fun edgeZonePx(density: Float, edgeDp: Float = EDGE_ZONE_DP): Float = edgeDp * density
@@ -102,16 +108,31 @@ internal object ReorderDragPolicy {
         pointerX >= bounds.left && pointerX <= bounds.right &&
             pointerY >= bounds.top && pointerY <= bounds.bottom
 
+    fun dragCoordinates(
+        pointerY: Float,
+        grabOffset: Float,
+        itemHeight: Int,
+        viewportStart: Float,
+        viewportEnd: Float,
+    ): ReorderDragCoordinates {
+        val logicalTop = pointerY - grabOffset
+        return ReorderDragCoordinates(
+            logicalTop = logicalTop,
+            logicalCenter = logicalTop + itemHeight / 2f,
+            visualTop = logicalTop.coerceIn(
+                viewportStart,
+                (viewportEnd - itemHeight).coerceAtLeast(viewportStart),
+            ),
+        )
+    }
+
     fun ghostTop(
         pointerY: Float,
         grabOffset: Float,
         itemHeight: Int,
         viewportStart: Float,
         viewportEnd: Float,
-    ): Float = (pointerY - grabOffset).coerceIn(
-        viewportStart,
-        (viewportEnd - itemHeight).coerceAtLeast(viewportStart),
-    )
+    ): Float = dragCoordinates(pointerY, grabOffset, itemHeight, viewportStart, viewportEnd).visualTop
 }
 
 internal data class ReorderDragSession(
@@ -127,10 +148,11 @@ internal data class ReorderDragSession(
 /**
  * Stable-ID reorder component shared by spaces, favorites, cards and parameters.
  *
- * The pointer and ghost use viewport coordinates. Lazy item offsets are already in the same
- * coordinate space. Scrolling therefore never changes pointerY; the consumed scroll only moves
- * the saved fallback item geometry. Each frame reads fresh LazyList geometry before crossing one
- * adjacent midpoint, so stale offsets cannot produce a multi-move burst or oscillation.
+ * The pointer and Lazy item offsets use viewport coordinates. Logical drag geometry remains
+ * unclamped for midpoint crossing, while only the overlay is clamped inside the viewport.
+ * Scrolling therefore never changes pointerY; the consumed scroll only moves the saved fallback
+ * item geometry. Each frame reads fresh LazyList geometry before crossing one adjacent midpoint,
+ * so stale offsets cannot produce a multi-move burst or oscillation.
  */
 @Composable
 fun <T> ReorderableList(
@@ -173,7 +195,7 @@ fun <T> ReorderableList(
             drag = current.copy(awaitingIndex = null)
         }
         val layout = listState.layoutInfo
-        val top = ReorderDragPolicy.ghostTop(
+        val coordinates = ReorderDragPolicy.dragCoordinates(
             current.pointerY,
             current.grabOffset,
             current.itemHeight,
@@ -182,7 +204,7 @@ fun <T> ReorderableList(
         )
         val target = ReorderDragPolicy.adjacentTarget(
             currentIndex,
-            top + current.itemHeight / 2f,
+            coordinates.logicalCenter,
             direction,
             geometry(),
         ) ?: return
@@ -304,13 +326,13 @@ fun <T> ReorderableList(
         val draggedItem = current?.let { session -> items.firstOrNull { stableId(it) == session.id } }
         if (current != null && draggedItem != null) {
             val layout = listState.layoutInfo
-            val ghostTop = ReorderDragPolicy.ghostTop(
+            val visualGhostTop = ReorderDragPolicy.dragCoordinates(
                 current.pointerY,
                 current.grabOffset,
                 current.itemHeight,
                 layout.viewportStartOffset.toFloat(),
                 layout.viewportEndOffset.toFloat(),
-            )
+            ).visualTop
             val inertHandle: @Composable () -> Unit = {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     Text("⠿", style = MaterialTheme.typography.titleLarge)
@@ -321,7 +343,7 @@ fun <T> ReorderableList(
                 true,
                 Modifier
                     .fillMaxWidth()
-                    .offset { IntOffset(0, ghostTop.roundToInt()) }
+                    .offset { IntOffset(0, visualGhostTop.roundToInt()) }
                     .padding(vertical = 3.dp)
                     .zIndex(3f)
                     .graphicsLayer {
