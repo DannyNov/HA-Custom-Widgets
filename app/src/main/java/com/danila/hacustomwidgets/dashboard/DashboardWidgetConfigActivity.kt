@@ -264,7 +264,7 @@ private fun DashboardOverview(
     val orderedIds = DashboardOrderPolicy.merge(spaceOrder, spaces.map { it.id })
     val orderedSpaces = orderedIds.mapNotNull(byId::get)
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Пространства синхронизируются из Home Assistant. Для изменения порядка удерживайте карточку и перетащите её.")
+        Text("Пространства синхронизируются из Home Assistant. Для изменения порядка удерживайте ⠿ и перетащите карточку.")
         ReorderableList(
             items = orderedSpaces,
             stableId = { it.id },
@@ -274,17 +274,17 @@ private fun DashboardOverview(
                 val moved = moveStable(orderedSpaces, from, to)
                 onSpaceOrderChanged(moved.map { it.id }.filter { it in visibleSpaces })
             },
-        ) { space, dragging, dragModifier ->
+        ) { space, dragging, itemModifier, dragHandle ->
                 val enabled = space.id in visibleSpaces
                 Card(
-                    dragModifier.fillMaxWidth(),
+                    itemModifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = enabled, onCheckedChange = { onToggleSpace(space.id) })
                             Text(space.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                            if (enabled) Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
+                            if (enabled) dragHandle()
                         }
                         if (enabled) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -323,14 +323,14 @@ private fun SpaceCardOrderScreen(
             stableId = { it.key },
             modifier = Modifier.weight(1f),
             onMove = { from, to -> onOrderChanged(moveStable(ordered, from, to).map { it.key }) },
-        ) { group, dragging, dragModifier ->
+        ) { group, dragging, itemModifier, dragHandle ->
                 Card(
-                    dragModifier.fillMaxWidth(),
+                    itemModifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
                     Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(group.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                        Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
+                        dragHandle()
                     }
                 }
         }
@@ -367,10 +367,10 @@ private fun FavoriteCardsScreen(
                 val moved = moveStable(ordered, from, to)
                 onOrderChanged(moved.map { it.key }.filter { it in favorites })
             },
-        ) { group, dragging, dragModifier ->
+        ) { group, dragging, itemModifier, dragHandle ->
                 val selected = group.key in favorites
                 Card(
-                    dragModifier.fillMaxWidth(),
+                    itemModifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -381,7 +381,7 @@ private fun FavoriteCardsScreen(
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
                             Text("${group.entities.size} сущн. · настроить параметры ›", style = MaterialTheme.typography.bodySmall)
                         }
-                        if (selected) Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
+                        if (selected) dragHandle()
                     }
                 }
         }
@@ -409,10 +409,10 @@ private fun EntityOrderScreen(
                 val moved = moveStable(sorted, from, to)
                 onChange(moved.map { it.entityId }.filter { it in selectedOrder })
             },
-        ) { entity, dragging, dragModifier ->
+        ) { entity, dragging, itemModifier, dragHandle ->
                 val selected = entity.entityId in selectedOrder
                 Card(
-                    dragModifier.fillMaxWidth(),
+                    itemModifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -429,7 +429,7 @@ private fun EntityOrderScreen(
                             Text(entity.friendlyName, style = MaterialTheme.typography.titleSmall)
                             Text("${entity.displayState} · ${entity.entityId}", style = MaterialTheme.typography.bodySmall)
                         }
-                        if (selected) Text("Удерживайте ⠿", style = MaterialTheme.typography.labelSmall)
+                        if (selected) dragHandle()
                     }
                 }
         }
