@@ -41,30 +41,30 @@ class ReorderInsertionGapPolicyTest {
 
     @Test fun middleDownOpensGapAroundVirtualInsertionSlot() {
         val offsets = (0..4).map {
-            ReorderGapPolicy.displacement(1, it, 3f, 5, 70f)
+            ReorderGapPolicy.activeTranslation(1, it, 3f, 5, 100f, 1f)
         }
-        assertEquals(listOf(-35f, 0f, -35f, -35f, 35f), offsets)
+        assertEquals(listOf(0f, 0f, -100f, -100f, -30f), offsets)
     }
 
     @Test fun middleUpOpensGapAroundVirtualInsertionSlot() {
         val offsets = (0..4).map {
-            ReorderGapPolicy.displacement(3, it, 1f, 5, 70f)
+            ReorderGapPolicy.activeTranslation(3, it, 1f, 5, 100f, 1f)
         }
-        assertEquals(listOf(-35f, 35f, 35f, 0f, 35f), offsets)
+        assertEquals(listOf(0f, 70f, 70f, 0f, -30f), offsets)
     }
 
     @Test fun terminalFirstSlotUsesFullInViewportGap() {
         val offsets = (0..3).filter { it != 3 }.map {
-            ReorderGapPolicy.displacement(3, it, 0f, 4, 70f)
+            ReorderGapPolicy.activeTranslation(3, it, 0f, 4, 100f, 1f)
         }
         assertTrue(offsets.all { it == 70f })
     }
 
     @Test fun terminalLastSlotUsesFullInViewportGap() {
         val offsets = (0..3).filter { it != 0 }.map {
-            ReorderGapPolicy.displacement(0, it, 3f, 4, 70f)
+            ReorderGapPolicy.activeTranslation(0, it, 3f, 4, 100f, 1f)
         }
-        assertTrue(offsets.all { it == -70f })
+        assertTrue(offsets.all { it == -100f })
     }
 
     @Test fun animationInterpolatesSlotWithoutChangingLogicalGeometry() {
@@ -75,7 +75,7 @@ class ReorderInsertionGapPolicyTest {
         )
         val before = logicalGeometry.map { it.midpoint }
         val visualOffsets = logicalGeometry.indices.map {
-            ReorderGapPolicy.displacement(0, it, 1.5f, 3, 70f)
+            ReorderGapPolicy.activeTranslation(0, it, 1.5f, 3, 100f, 1f)
         }
 
         assertEquals(listOf(50f, 150f, 250f), before)
@@ -103,7 +103,7 @@ class ReorderInsertionGapPolicyTest {
         val ids = listOf("A", "B", "C", "D")
         for (slot in 1..3) {
             (ids.indices).forEach {
-                ReorderGapPolicy.displacement(0, it, slot.toFloat(), ids.size, 70f)
+                ReorderGapPolicy.activeTranslation(0, it, slot.toFloat(), ids.size, 100f, 1f)
             }
             assertEquals(listOf("A", "B", "C", "D"), ids)
         }

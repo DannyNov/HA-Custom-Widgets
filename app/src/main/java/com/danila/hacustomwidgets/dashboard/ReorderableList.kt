@@ -1,5 +1,6 @@
 package com.danila.hacustomwidgets.dashboard
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -46,6 +47,7 @@ private const val MOVEMENT_DEADBAND_DP = 3f
 private const val MAX_EDGE_SPEED_DP_PER_SECOND = 920f
 private const val INSERTION_GAP_FRACTION = 0.70f
 private const val INSERTION_GAP_ANIMATION_MS = 120
+private const val POST_DROP_SETTLING_MS = 150
 
 internal enum class ReorderEdgeZone(val direction: Int) {
     TOP(-1),
@@ -122,28 +124,59 @@ internal object ReorderGapPolicy {
         else -> animatedInsertionIndex
     }
 
-    /** Slot-relative displacement; terminal slots receive the full gap inside the viewport. */
-    fun displacement(
+    /**
+     * Full virtual presentation: close the measured source slot, then open a 70% destination gap.
+     * [presentationProgress] makes return-to-noop continuous without changing Lazy layout geometry.
+     */
+    fun activeTranslation(
         sourceIndex: Int,
         underlyingIndex: Int,
         animatedInsertionIndex: Float,
         itemCount: Int,
-        gapHeight: Float,
+        sourceHeight: Float,
+        presentationProgress: Float,
     ): Float {
-        if (itemCount <= 1 || underlyingIndex == sourceIndex || gapHeight <= 0f) return 0f
+        if (itemCount <= 1 || underlyingIndex == sourceIndex || sourceHeight <= 0f) return 0f
         val clampedInsertion = animatedInsertionIndex.coerceIn(0f, itemCount - 1f)
-        val virtualIndex = underlyingToAnimatedVirtualIndex(
-            sourceIndex,
-            clampedInsertion,
-            underlyingIndex,
-        )
-        val halfGap = gapHeight / 2f
-        val relative = (virtualIndex - clampedInsertion).coerceIn(-1f, 1f)
-        val topTerminal = (1f - clampedInsertion).coerceIn(0f, 1f) * halfGap
-        val bottomTerminal =
-            (clampedInsertion - (itemCount - 2f)).coerceIn(0f, 1f) * -halfGap
-        return relative * halfGap + topTerminal + bottomTerminal
+        val removedRank = underlyingIndex - if (underlyingIndex > sourceIndex) 1 else 0
+        val sourceCompensation = if (underlyingIndex > sourceIndex) -sourceHeight else 0f
+        // At integer t this is exactly [removedRank >= t], while adjacent retargets interpolate.
+        val gapIndicator = (removedRank - clampedInsertion + 1f).coerceIn(0f, 1f)
+        val target = sourceCompensation + gapHeight(sourceHeight) * gapIndicator
+        return target * presentationProgress.coerceIn(0f, 1f)
     }
+}
+
+internal enum class ReorderSettlingPhase { WAITING_FOR_ORDER, ANIMATING_RESIDUAL }
+
+internal data class ReorderSettlingPresentation(
+    val pending: PendingViewportRestore,
+    val preCommitVisualTops: Map<String, Float>,
+    val ghostTop: Float,
+    val itemHeight: Int,
+    val phase: ReorderSettlingPhase = ReorderSettlingPhase.WAITING_FOR_ORDER,
+    val residualTranslations: Map<String, Float> = emptyMap(),
+)
+
+internal data class ReorderReturningPresentation(
+    val session: ReorderDragSession,
+    val animatedInsertionIndex: Float,
+    val animatedPresentationProgress: Float,
+    val ghostStartTop: Float,
+    val sourceTop: Float,
+)
+
+internal object ReorderCommitPresentationPolicy {
+    fun screenTop(layoutTop: Float, translation: Float): Float = layoutTop + translation
+
+    fun residualTranslation(preCommitScreenTop: Float, postCommitLayoutTop: Float): Float =
+        preCommitScreenTop - postCommitLayoutTop
+
+    fun displayedTop(postCommitLayoutTop: Float, residual: Float, progress: Float): Float =
+        postCommitLayoutTop + residual * progress.coerceIn(0f, 1f)
+
+    fun lerp(start: Float, end: Float, progress: Float): Float =
+        start + (end - start) * progress.coerceIn(0f, 1f)
 }
 
 internal data class ReorderViewportSlot(val index: Int, val scrollOffset: Int)
@@ -566,6 +599,10 @@ fun <T> ReorderableList(
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var drag by remember { mutableStateOf<ReorderDragSession?>(null) }
     var pendingViewportRestore by remember { mutableStateOf<PendingViewportRestore?>(null) }
+    var settling by remember { mutableStateOf<ReorderSettlingPresentation?>(null) }
+    var returning by remember { mutableStateOf<ReorderReturningPresentation?>(null) }
+    val settlingProgress = remember { Animatable(0f) }
+    var returnProgressValue by remember { mutableStateOf(0f) }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     val movementDeadbandPx = MOVEMENT_DEADBAND_DP * density
     val gapTargetIndex = drag?.insertionIndex?.toFloat() ?: 0f
@@ -574,11 +611,12 @@ fun <T> ReorderableList(
         animationSpec = tween(durationMillis = INSERTION_GAP_ANIMATION_MS),
         label = "reorder-gap-slot",
     )
-    val gapTargetProgress = if (drag != null && drag!!.insertionIndex != drag!!.sourceIndex) 1f else 0f
-    val animatedGapProgress by animateFloatAsState(
-        targetValue = gapTargetProgress,
+    val presentationTargetProgress =
+        if (drag != null && drag!!.insertionIndex != drag!!.sourceIndex) 1f else 0f
+    val animatedPresentationProgress by animateFloatAsState(
+        targetValue = presentationTargetProgress,
         animationSpec = tween(durationMillis = INSERTION_GAP_ANIMATION_MS),
-        label = "reorder-gap-progress",
+        label = "reorder-presentation-progress",
     )
 
     fun currentEffectiveEdge(): Float {
@@ -630,14 +668,53 @@ fun <T> ReorderableList(
         drag = current.copy(insertionIndex = target)
     }
 
+    fun activeTranslation(session: ReorderDragSession, index: Int): Float =
+        ReorderGapPolicy.activeTranslation(
+            sourceIndex = session.sourceIndex,
+            underlyingIndex = index,
+            animatedInsertionIndex = animatedGapIndex,
+            itemCount = latestItems.size,
+            sourceHeight = session.itemHeight.toFloat(),
+            presentationProgress = animatedPresentationProgress,
+        )
+
+    fun ghostTop(session: ReorderDragSession): Float {
+        val layout = listState.layoutInfo
+        return ReorderDragPolicy.dragCoordinates(
+            session.pointerY,
+            session.grabOffset,
+            session.itemHeight,
+            layout.viewportStartOffset.toFloat(),
+            layout.viewportEndOffset.toFloat(),
+        ).visualTop
+    }
+
     fun finishDrag(commit: Boolean) {
         val completed = drag ?: return
-        drag = null
-        if (!commit || completed.insertionIndex == completed.sourceIndex) return
-        if (latestItems.getOrNull(completed.sourceIndex)?.let { stableId(it) } != completed.id) return
-        if (completed.insertionIndex !in latestItems.indices) return
+        val completedGhostTop = ghostTop(completed)
+        if (!commit || completed.insertionIndex == completed.sourceIndex) {
+            val sourceTop = listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == completed.sourceIndex }?.offset?.toFloat()
+                ?: completedGhostTop
+            returning = ReorderReturningPresentation(
+                session = completed,
+                animatedInsertionIndex = animatedGapIndex,
+                animatedPresentationProgress = animatedPresentationProgress,
+                ghostStartTop = completedGhostTop,
+                sourceTop = sourceTop,
+            )
+            returnProgressValue = 1f
+            drag = null
+            return
+        }
+        if (latestItems.getOrNull(completed.sourceIndex)?.let { stableId(it) } != completed.id ||
+            completed.insertionIndex !in latestItems.indices
+        ) {
+            drag = null
+            return
+        }
         val beforeOrder = latestItems.map(stableId)
-        pendingViewportRestore = ReorderViewportPolicy.plan(
+        val pending = ReorderViewportPolicy.plan(
             commit = true,
             draggedId = completed.id,
             sourceIndex = completed.sourceIndex,
@@ -647,7 +724,26 @@ fun <T> ReorderableList(
                 index = listState.firstVisibleItemIndex,
                 scrollOffset = listState.firstVisibleItemScrollOffset,
             ),
+        ) ?: run {
+            drag = null
+            return
+        }
+        val preCommitTops = listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+            val item = latestItems.getOrNull(info.index) ?: return@mapNotNull null
+            val id = stableId(item)
+            id to ReorderCommitPresentationPolicy.screenTop(
+                info.offset.toFloat(),
+                activeTranslation(completed, info.index),
+            )
+        }.toMap().toMutableMap().apply { put(completed.id, completedGhostTop) }
+        settling = ReorderSettlingPresentation(
+            pending = pending,
+            preCommitVisualTops = preCommitTops,
+            ghostTop = completedGhostTop,
+            itemHeight = completed.itemHeight,
         )
+        pendingViewportRestore = pending
+        drag = null
         latestOnMove(completed.sourceIndex, completed.insertionIndex)
     }
 
@@ -668,15 +764,50 @@ fun <T> ReorderableList(
         val pending = pendingViewportRestore ?: return@LaunchedEffect
         when (ReorderViewportPolicy.decision(pending, itemIds)) {
             ViewportRestoreDecision.WAIT -> Unit
-            ViewportRestoreDecision.CANCEL -> pendingViewportRestore = null
+            ViewportRestoreDecision.CANCEL -> {
+                pendingViewportRestore = null
+                settling = null
+            }
             ViewportRestoreDecision.APPLY -> {
                 val target = ReorderViewportPolicy.target(pending.slot, itemIds.size)
                 if (target != null) {
                     listState.scrollToItem(target.index, target.scrollOffset)
                 }
+                val activeSettling = settling
+                if (activeSettling != null && activeSettling.pending == pending) {
+                    val residual = listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+                        val item = items.getOrNull(info.index) ?: return@mapNotNull null
+                        val id = stableId(item)
+                        val preTop = activeSettling.preCommitVisualTops[id] ?: return@mapNotNull null
+                        id to ReorderCommitPresentationPolicy.residualTranslation(
+                            preTop,
+                            info.offset.toFloat(),
+                        )
+                    }.toMap()
+                    settlingProgress.snapTo(1f)
+                    settling = activeSettling.copy(
+                        phase = ReorderSettlingPhase.ANIMATING_RESIDUAL,
+                        residualTranslations = residual,
+                    )
+                }
                 if (pendingViewportRestore == pending) pendingViewportRestore = null
             }
         }
+    }
+
+    LaunchedEffect(settling?.phase) {
+        val active = settling ?: return@LaunchedEffect
+        if (active.phase != ReorderSettlingPhase.ANIMATING_RESIDUAL) return@LaunchedEffect
+        settlingProgress.animateTo(0f, tween(POST_DROP_SETTLING_MS))
+        if (settling === active || settling?.pending == active.pending) settling = null
+    }
+
+    LaunchedEffect(returning?.session?.id) {
+        val active = returning ?: return@LaunchedEffect
+        Animatable(1f).animateTo(0f, tween(INSERTION_GAP_ANIMATION_MS)) {
+            returnProgressValue = value
+        }
+        if (returning === active || returning?.session == active.session) returning = null
     }
 
     // Exactly one frame-driven job exists for the active drag. It scrolls and re-evaluates reorder
@@ -721,6 +852,9 @@ fun <T> ReorderableList(
         .pointerInput(Unit) {
             detectDragGesturesAfterLongPress(
                 onDragStart = { position ->
+                    if (drag != null || settling != null || returning != null) {
+                        return@detectDragGesturesAfterLongPress
+                    }
                     val hit = handleBounds.entries.lastOrNull {
                         ReorderDragPolicy.startsOnHandle(position.x, position.y, it.value)
                     }
@@ -771,25 +905,39 @@ fun <T> ReorderableList(
                 val id = stableId(item)
                 val dragging = drag?.id == id
                 val insertion = drag
-                val visualGap = if (insertion != null) {
-                    ReorderGapPolicy.displacement(
-                        sourceIndex = insertion.sourceIndex,
+                val returningNow = returning
+                val settlingNow = settling
+                val layoutTop = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == index }?.offset?.toFloat() ?: 0f
+                val visualTranslation = when {
+                    insertion != null -> activeTranslation(insertion, index)
+                    returningNow != null -> ReorderGapPolicy.activeTranslation(
+                        sourceIndex = returningNow.session.sourceIndex,
                         underlyingIndex = index,
-                        animatedInsertionIndex = animatedGapIndex,
+                        animatedInsertionIndex = returningNow.animatedInsertionIndex,
                         itemCount = items.size,
-                        gapHeight = ReorderGapPolicy.targetGapHeight(
-                            insertion.sourceIndex,
-                            insertion.insertionIndex,
-                            insertion.itemHeight.toFloat(),
-                        ) *
-                            animatedGapProgress,
+                        sourceHeight = returningNow.session.itemHeight.toFloat(),
+                        presentationProgress = returningNow.animatedPresentationProgress *
+                            returnProgressValue,
                     )
-                } else 0f
+                    settlingNow?.phase == ReorderSettlingPhase.WAITING_FOR_ORDER ->
+                        settlingNow.preCommitVisualTops[id]?.minus(layoutTop) ?: 0f
+                    settlingNow?.phase == ReorderSettlingPhase.ANIMATING_RESIDUAL ->
+                        (settlingNow.residualTranslations[id] ?: 0f) * settlingProgress.value
+                    else -> 0f
+                }
+                val itemAlpha = when {
+                    dragging -> 0f
+                    returningNow?.session?.id == id -> 1f - returnProgressValue
+                    settlingNow?.phase == ReorderSettlingPhase.WAITING_FOR_ORDER &&
+                        settlingNow.pending.draggedId == id -> 0f
+                    else -> 1f
+                }
                 val itemModifier = Modifier
                     .padding(vertical = 3.dp)
                     .graphicsLayer {
-                        alpha = if (dragging) 0f else 1f
-                        translationY = visualGap
+                        alpha = itemAlpha
+                        translationY = visualTranslation
                     }
                 val handle: @Composable () -> Unit = {
                     DisposableEffect(id) {
@@ -821,16 +969,30 @@ fun <T> ReorderableList(
         }
 
         val current = drag
-        val draggedItem = current?.let { session -> items.firstOrNull { stableId(it) == session.id } }
-        if (current != null && draggedItem != null) {
+        val returnNow = returning
+        val settleNow = settling
+        val presentationId = current?.id ?: returnNow?.session?.id
+            ?: settleNow?.takeIf { it.phase == ReorderSettlingPhase.WAITING_FOR_ORDER }
+                ?.pending?.draggedId
+        val draggedItem = presentationId?.let { id -> items.firstOrNull { stableId(it) == id } }
+        if (draggedItem != null && presentationId != null) {
             val layout = listState.layoutInfo
-            val visualGhostTop = ReorderDragPolicy.dragCoordinates(
-                current.pointerY,
-                current.grabOffset,
-                current.itemHeight,
-                layout.viewportStartOffset.toFloat(),
-                layout.viewportEndOffset.toFloat(),
-            ).visualTop
+            val visualGhostTop = when {
+                current != null -> ReorderDragPolicy.dragCoordinates(
+                    current.pointerY,
+                    current.grabOffset,
+                    current.itemHeight,
+                    layout.viewportStartOffset.toFloat(),
+                    layout.viewportEndOffset.toFloat(),
+                ).visualTop
+                returnNow != null -> ReorderCommitPresentationPolicy.lerp(
+                    returnNow.sourceTop,
+                    returnNow.ghostStartTop,
+                    returnProgressValue,
+                )
+                else -> settleNow!!.ghostTop
+            }
+            val ghostAlpha = if (returnNow != null) returnProgressValue else 1f
             val inertHandle: @Composable () -> Unit = {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     Text("⠿", style = MaterialTheme.typography.titleLarge)
@@ -845,6 +1007,7 @@ fun <T> ReorderableList(
                     .padding(vertical = 3.dp)
                     .zIndex(3f)
                     .graphicsLayer {
+                        alpha = ghostAlpha
                         scaleX = 1.015f
                         scaleY = 1.015f
                         shadowElevation = 14f

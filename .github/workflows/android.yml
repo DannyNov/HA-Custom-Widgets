@@ -54,27 +54,27 @@ jobs:
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
           badging="$($AAPT dump badging "$apk")"
-          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='16' versionName='0.4.2'"
+          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='17' versionName='0.4.3'"
           if printf '%s\n' "$badging" | grep -q '^application-debuggable:'; then
             echo 'APK unexpectedly contains android:debuggable=true' >&2
             exit 1
           fi
           {
             printf 'applicationId=com.danila.hacustomwidgets\n'
-            printf 'versionName=0.4.2\n'
-            printf 'versionCode=16\n'
+            printf 'versionName=0.4.3\n'
+            printf 'versionCode=17\n'
             printf 'debuggable=false\n'
           } | tee app/build/outputs/apk/release/build-info.txt
           sha256sum "$apk" | tee app/build/outputs/apk/release/apk-sha256.txt
           "$AAPT" dump xmltree "$apk" AndroidManifest.xml | grep -F 'RealtimeNotificationListenerService'
           ! grep -REn 'activeNotifications|notification\.extras|onNotificationPosted|onNotificationRemoved' \
               app/src/main/java/com/danila/hacustomwidgets/realtime
-          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.4.2.apk
+          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.4.3.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HA-Custom-Widgets-v0.4.2-release
+          name: HA-Custom-Widgets-v0.4.3-release
           path: |
-            app/build/outputs/apk/release/HAWidgets-v0.4.2.apk
+            app/build/outputs/apk/release/HAWidgets-v0.4.3.apk
             app/build/outputs/apk/release/signature.txt
             app/build/outputs/apk/release/apk-sha256.txt
             app/build/outputs/apk/release/build-info.txt
