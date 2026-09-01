@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +38,6 @@ import kotlin.math.roundToInt
 import kotlin.math.sign
 
 private const val EDGE_ZONE_DP = 72f
-private const val MIN_EDGE_SPEED_DP_PER_SECOND = 80f
 private const val MAX_EDGE_SPEED_DP_PER_SECOND = 920f
 
 internal data class ReorderItemGeometry(
@@ -69,9 +69,9 @@ internal object ReorderDragPolicy {
             else -> return 0f
         }
         val penetration = kotlin.math.abs(signedPenetration)
-        val minSpeed = MIN_EDGE_SPEED_DP_PER_SECOND * density
         val maxSpeed = MAX_EDGE_SPEED_DP_PER_SECOND * density
-        val speed = minSpeed + (maxSpeed - minSpeed) * penetration * penetration
+        // Starts continuously at zero at the inner boundary and accelerates toward the edge.
+        val speed = maxSpeed * (0.15f * penetration + 0.85f * penetration * penetration)
         return speed * signedPenetration.sign
     }
 
@@ -272,6 +272,9 @@ fun <T> ReorderableList(
                     .padding(vertical = 3.dp)
                     .graphicsLayer { alpha = if (dragging) 0f else 1f }
                 val handle: @Composable () -> Unit = {
+                    DisposableEffect(id) {
+                        onDispose { handleBounds.remove(id) }
+                    }
                     Box(
                         Modifier
                             .size(48.dp)
