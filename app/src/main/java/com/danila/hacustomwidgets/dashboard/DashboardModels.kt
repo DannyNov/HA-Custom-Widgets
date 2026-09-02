@@ -2,6 +2,7 @@ package com.danila.hacustomwidgets.dashboard
 
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
+import com.danila.hacustomwidgets.data.model.HaCatalog
 
 enum class DashboardGrouping { ROOMS, TYPES, NONE }
 
@@ -24,9 +25,9 @@ enum class BatteryHealth { NORMAL, LOW, CRITICAL, NOT_BATTERY }
 fun serviceAction(entity: HaEntity): ServiceAction? {
     if (entity.hiddenBy != null || entity.disabledBy != null) return null
     return when (entity.domain) {
-        "light", "switch", "input_boolean" ->
+        "light", "switch", "input_boolean", "automation" ->
             ServiceAction(entity.domain, if (entity.state == "on") "turn_off" else "turn_on")
-        "button" -> ServiceAction("button", "press")
+        "button", "input_button" -> ServiceAction(entity.domain, "press")
         "script" -> ServiceAction("script", "turn_on")
         "scene" -> ServiceAction("scene", "turn_on")
         "timer" -> ServiceAction("timer", if (entity.state == "active") "pause" else "start")
@@ -112,6 +113,53 @@ data class DashboardControl(
     val state: String,
 )
 
+enum class ScenarioActionKind { TOGGLE, RUN, ACTIVATE, PRESS, UNSUPPORTED }
+
+data class DashboardScenarioAction(
+    val entityId: String,
+    val title: String,
+    val domain: String,
+    val state: String,
+    val spaceId: String,
+)
+
+fun scenarioActionKind(domain: String): ScenarioActionKind = when (domain) {
+    "automation" -> ScenarioActionKind.TOGGLE
+    "script" -> ScenarioActionKind.RUN
+    "scene" -> ScenarioActionKind.ACTIVATE
+    "button", "input_button" -> ScenarioActionKind.PRESS
+    else -> ScenarioActionKind.UNSUPPORTED
+}
+
+object ScenarioPolicy {
+    fun resolveSpaceId(entityAreaId: String?, deviceAreaId: String?, catalog: HaCatalog): String =
+        resolveSpaceId(entityAreaId ?: deviceAreaId, catalog)
+
+    fun resolveSpaceId(areaId: String?, catalog: HaCatalog): String = areaId?.let { id ->
+        catalog.spaces().firstOrNull { id in it.areaIds }?.id
+    } ?: HaCatalog.UNASSIGNED_SPACE_ID
+
+    fun orderedIds(saved: List<String>, current: List<String>): List<String> =
+        DashboardOrderPolicy.merge(saved.distinct(), current.distinct())
+}
+
+sealed interface DashboardSettingsDestination {
+    data object Empty : DashboardSettingsDestination
+    data class Direct(val appWidgetId: Int) : DashboardSettingsDestination
+    data class Choose(val appWidgetIds: List<Int>) : DashboardSettingsDestination
+}
+
+object DashboardSettingsLaunchPolicy {
+    fun resolve(ids: List<Int>): DashboardSettingsDestination {
+        val unique = ids.distinct()
+        return when {
+            unique.isEmpty() -> DashboardSettingsDestination.Empty
+            unique.size == 1 -> DashboardSettingsDestination.Direct(unique.first())
+            else -> DashboardSettingsDestination.Choose(unique)
+        }
+    }
+}
+
 enum class DashboardOperationStatus {
     PENDING, RUNNING, CONFIRMED, FAILED, TIMEOUT, CANCELLED;
 
@@ -180,12 +228,17 @@ data class DashboardConfig(
     val showLastUpdated: Boolean,
     val compactDensity: Boolean,
     val spaceOrderIds: List<String> = visibleSpaceIds,
+    val scenariosEnabled: Boolean = true,
+    val scenarioAutomationVisible: Boolean = true,
+    val scenarioScriptVisible: Boolean = true,
+    val scenarioOrderBySpaceAndDomain: Map<String, List<String>> = emptyMap(),
 )
 
 data class DashboardState(
     val config: DashboardConfig,
     val spaces: List<DashboardSpace>,
     val cards: List<DashboardCard>,
+    val scenarioActions: List<DashboardScenarioAction>,
     val selectedTabId: String,
     val collapsedSections: Set<String>,
     val inFlightDeviceKeys: Set<String>,
@@ -198,8 +251,99 @@ data class DashboardState(
     val tabs: List<DashboardSpace> = listOf(DashboardSpace(MAIN_TAB_ID, "Главное", emptyList())) +
         DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })
             .filter { it in config.visibleSpaceIds }
-            .mapNotNull { id -> spaces.firstOrNull { it.id == id } }
+            .mapNotNull { id -> spaces.firstOrNull { it.id == id } } +
+        listOfNotNull(DashboardSpace(SCENARIOS_TAB_ID, "Сценарии", emptyList()).takeIf { config.scenariosEnabled })
     val selectedTab: DashboardSpace get() = tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first()
 }
 
 const val MAIN_TAB_ID = "__main__"
+const val SCENARIOS_TAB_ID = "__scenarios__"
+
+enum class HaSemanticIcon {
+    LIGHT, SWITCH, SENSOR, BINARY_SENSOR, BUTTON, TOGGLE, THERMOSTAT, FAN, COVER, LOCK,
+    MEDIA, CAMERA, AUTOMATION, SCRIPT, SCENE, TIMER, TEMPERATURE, HUMIDITY, BATTERY,
+    DOOR, WINDOW, MOTION, OCCUPANCY, MOISTURE, SMOKE, CONNECTIVITY, SPACE, GENERIC,
+}
+
+object HaEntityIconPolicy {
+    fun resolve(domain: String, deviceClass: String?): HaSemanticIcon = when (deviceClass) {
+        "temperature" -> HaSemanticIcon.TEMPERATURE
+        "humidity" -> HaSemanticIcon.HUMIDITY
+        "battery" -> HaSemanticIcon.BATTERY
+        "door", "garage_door", "opening" -> HaSemanticIcon.DOOR
+        "window" -> HaSemanticIcon.WINDOW
+        "motion" -> HaSemanticIcon.MOTION
+        "occupancy", "presence" -> HaSemanticIcon.OCCUPANCY
+        "moisture" -> HaSemanticIcon.MOISTURE
+        "smoke", "gas" -> HaSemanticIcon.SMOKE
+        "connectivity", "problem" -> HaSemanticIcon.CONNECTIVITY
+        else -> when (domain) {
+            "light" -> HaSemanticIcon.LIGHT
+            "switch" -> HaSemanticIcon.SWITCH
+            "sensor" -> HaSemanticIcon.SENSOR
+            "binary_sensor" -> HaSemanticIcon.BINARY_SENSOR
+            "button", "input_button" -> HaSemanticIcon.BUTTON
+            "input_boolean" -> HaSemanticIcon.TOGGLE
+            "climate" -> HaSemanticIcon.THERMOSTAT
+            "fan" -> HaSemanticIcon.FAN
+            "cover" -> HaSemanticIcon.COVER
+            "lock" -> HaSemanticIcon.LOCK
+            "media_player" -> HaSemanticIcon.MEDIA
+            "camera" -> HaSemanticIcon.CAMERA
+            "automation" -> HaSemanticIcon.AUTOMATION
+            "script" -> HaSemanticIcon.SCRIPT
+            "scene" -> HaSemanticIcon.SCENE
+            "timer" -> HaSemanticIcon.TIMER
+            else -> HaSemanticIcon.GENERIC
+        }
+    }
+
+    fun primary(entities: List<HaEntity>): HaSemanticIcon = entities
+        .filterNot { it.entityCategory == "diagnostic" }
+        .minByOrNull { primaryRank(it) }
+        ?.let { resolve(it.domain, it.deviceClass) }
+        ?: entities.minByOrNull { primaryRank(it) }?.let { resolve(it.domain, it.deviceClass) }
+        ?: HaSemanticIcon.GENERIC
+
+    fun label(icon: HaSemanticIcon): String = when (icon) {
+        HaSemanticIcon.LIGHT -> "Свет"
+        HaSemanticIcon.SWITCH -> "Выключатель"
+        HaSemanticIcon.SENSOR -> "Датчик"
+        HaSemanticIcon.BINARY_SENSOR -> "Бинарный датчик"
+        HaSemanticIcon.BUTTON -> "Кнопка"
+        HaSemanticIcon.TOGGLE -> "Переключатель"
+        HaSemanticIcon.THERMOSTAT -> "Климат"
+        HaSemanticIcon.FAN -> "Вентилятор"
+        HaSemanticIcon.COVER -> "Шторы и ворота"
+        HaSemanticIcon.LOCK -> "Замок"
+        HaSemanticIcon.MEDIA -> "Мультимедиа"
+        HaSemanticIcon.CAMERA -> "Камера"
+        HaSemanticIcon.AUTOMATION -> "Автоматизация"
+        HaSemanticIcon.SCRIPT -> "Скрипт"
+        HaSemanticIcon.SCENE -> "Сцена"
+        HaSemanticIcon.TIMER -> "Таймер"
+        HaSemanticIcon.TEMPERATURE -> "Температура"
+        HaSemanticIcon.HUMIDITY -> "Влажность"
+        HaSemanticIcon.BATTERY -> "Батарея"
+        HaSemanticIcon.DOOR -> "Дверь"
+        HaSemanticIcon.WINDOW -> "Окно"
+        HaSemanticIcon.MOTION -> "Движение"
+        HaSemanticIcon.OCCUPANCY -> "Присутствие"
+        HaSemanticIcon.MOISTURE -> "Протечка"
+        HaSemanticIcon.SMOKE -> "Дым"
+        HaSemanticIcon.CONNECTIVITY -> "Связь"
+        HaSemanticIcon.SPACE -> "Пространство"
+        HaSemanticIcon.GENERIC -> "Сущность"
+    }
+
+    private fun primaryRank(entity: HaEntity): Int = when {
+        entity.domain in setOf("light", "switch", "input_boolean", "button", "input_button", "climate", "fan", "cover", "lock", "media_player", "camera") -> 10
+        entity.deviceClass == "temperature" -> 20
+        entity.deviceClass == "humidity" -> 21
+        entity.domain == "binary_sensor" && entity.deviceClass !in setOf("battery", "connectivity", "problem") -> 30
+        entity.domain == "sensor" && entity.deviceClass !in setOf("battery", "connectivity") -> 40
+        entity.entityCategory == "diagnostic" -> 90
+        entity.deviceClass in setOf("battery", "connectivity") -> 100
+        else -> 50
+    }
+}

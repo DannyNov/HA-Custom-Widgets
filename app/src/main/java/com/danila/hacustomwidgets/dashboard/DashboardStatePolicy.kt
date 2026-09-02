@@ -73,7 +73,7 @@ data class DashboardOperationPlan(
 
 object DashboardOperationPlanner {
     fun plan(domain: String, currentState: String?): DashboardOperationPlan = when (domain) {
-        "light", "switch", "input_boolean" -> {
+        "light", "switch", "input_boolean", "automation" -> {
             val desired = if (currentState == "on") "off" else "on"
             DashboardOperationPlan(
                 service = if (desired == "on") "turn_on" else "turn_off",

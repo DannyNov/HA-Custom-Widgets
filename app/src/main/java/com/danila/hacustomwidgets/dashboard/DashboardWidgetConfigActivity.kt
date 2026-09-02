@@ -20,6 +20,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -42,15 +43,18 @@ import com.danila.hacustomwidgets.data.AppContainer
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
+import com.danila.hacustomwidgets.data.model.HaCatalog.Companion.UNASSIGNED_SPACE_ID
 import com.danila.hacustomwidgets.ui.HaCustomWidgetsTheme
 import kotlinx.coroutines.launch
 
 class DashboardWidgetConfigActivity : ComponentActivity() {
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
+    private var inAppMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setResult(Activity.RESULT_CANCELED)
+        inAppMode = intent?.getBooleanExtra(EXTRA_IN_APP_SETTINGS, false) == true
+        if (!inAppMode) setResult(Activity.RESULT_CANCELED)
         appWidgetId = intent?.getIntExtra(
             AppWidgetManager.EXTRA_APPWIDGET_ID,
             AppWidgetManager.INVALID_APPWIDGET_ID,
@@ -78,19 +82,23 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
                             appWidgetId,
                             "configuration",
                         )
-                        setResult(
-                            Activity.RESULT_OK,
-                            Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
-                        )
+                        if (!inAppMode) {
+                            setResult(
+                                Activity.RESULT_OK,
+                                Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
+                            )
+                        }
                         finish()
                     },
                 )
             }
         }
     }
+
+    companion object { const val EXTRA_IN_APP_SETTINGS = "dashboard_in_app_settings" }
 }
 
-private enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, SPACE_CARDS }
+private enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, SPACE_CARDS, SCENARIOS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,6 +122,10 @@ private fun DashboardConfigurator(
     var cardOrder by remember { mutableStateOf(existing?.cardOrderBySpace.orEmpty()) }
     var showUpdated by remember { mutableStateOf(existing?.showLastUpdated ?: true) }
     var compact by remember { mutableStateOf(existing?.compactDensity ?: true) }
+    var scenariosEnabled by remember { mutableStateOf(existing?.scenariosEnabled ?: true) }
+    var automationVisible by remember { mutableStateOf(existing?.scenarioAutomationVisible ?: true) }
+    var scriptVisible by remember { mutableStateOf(existing?.scenarioScriptVisible ?: true) }
+    var scenarioOrder by remember { mutableStateOf(existing?.scenarioOrderBySpaceAndDomain.orEmpty()) }
     val connection = remember { container.connectionStore.load() }
     val scope = rememberCoroutineScope()
 
@@ -145,6 +157,7 @@ private fun DashboardConfigurator(
         ConfigScreen.FAVORITES -> "Главное и карточки"
         ConfigScreen.ENTITIES -> currentDevice?.title ?: "Параметры устройства"
         ConfigScreen.SPACE_CARDS -> "Порядок карточек"
+        ConfigScreen.SCENARIOS -> "Сценарии"
     }
     Scaffold(
         topBar = {
@@ -187,11 +200,12 @@ private fun DashboardConfigurator(
                 onShowUpdated = { showUpdated = it },
                 onCompact = { compact = it },
                 onFavorites = { screen = ConfigScreen.FAVORITES },
+                onScenarios = { screen = ConfigScreen.SCENARIOS },
                 onOrderCards = { spaceId ->
                     currentSpaceId = spaceId
                     if (cardOrder[spaceId].isNullOrEmpty()) {
                         val space = loaded.spaces().first { it.id == spaceId }
-                        cardOrder = cardOrder + (spaceId to loaded.groupsForSpace(space).map { it.key })
+                        cardOrder = cardOrder + (spaceId to loaded.groupsForSpace(space).dashboardGroups().map { it.key })
                     }
                     screen = ConfigScreen.SPACE_CARDS
                 },
@@ -201,7 +215,7 @@ private fun DashboardConfigurator(
                             DashboardConfig(
                                 appWidgetId, visibleSpaces, grouping, favorites, entityOrder,
                                 cardOrder, showUpdated, compact,
-                                spaceOrder,
+                                spaceOrder, scenariosEnabled, automationVisible, scriptVisible, scenarioOrder,
                             ),
                             loaded,
                         )
@@ -210,7 +224,7 @@ private fun DashboardConfigurator(
             )
             ConfigScreen.FAVORITES -> FavoriteCardsScreen(
                 modifier = Modifier.padding(padding),
-                groups = loaded.groups,
+                groups = loaded.groups.dashboardGroups(),
                 favorites = favorites,
                 query = query,
                 onQuery = { query = it },
@@ -232,11 +246,23 @@ private fun DashboardConfigurator(
                 SpaceCardOrderScreen(
                     modifier = Modifier.padding(padding),
                     spaceName = space.name,
-                    groups = loaded.groupsForSpace(space),
+                    groups = loaded.groupsForSpace(space).dashboardGroups(),
                     order = cardOrder[spaceId].orEmpty(),
                     onOrderChanged = { cardOrder = cardOrder + (spaceId to it) },
                 )
             }
+            ConfigScreen.SCENARIOS -> ScenarioSettingsScreen(
+                modifier = Modifier.padding(padding),
+                catalog = loaded,
+                enabled = scenariosEnabled,
+                automationVisible = automationVisible,
+                scriptVisible = scriptVisible,
+                order = scenarioOrder,
+                onEnabled = { scenariosEnabled = it },
+                onAutomationVisible = { automationVisible = it },
+                onScriptVisible = { scriptVisible = it },
+                onOrderChanged = { key, value -> scenarioOrder = scenarioOrder + (key to value) },
+            )
         }
     }
 }
@@ -256,6 +282,7 @@ private fun DashboardOverview(
     onShowUpdated: (Boolean) -> Unit,
     onCompact: (Boolean) -> Unit,
     onFavorites: () -> Unit,
+    onScenarios: () -> Unit,
     onOrderCards: (String) -> Unit,
     onSave: () -> Unit,
 ) {
@@ -295,6 +322,7 @@ private fun DashboardOverview(
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = enabled, onCheckedChange = { onToggleSpace(space.id) })
+                            Icon(HaSemanticIcon.SPACE.imageVector(), contentDescription = "Пространство")
                             Text(space.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                             if (enabled) dragHandle()
                         }
@@ -310,6 +338,7 @@ private fun DashboardOverview(
                 }
         }
         Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Настроить ★ Главное и параметры") }
+        Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text("Настроить Сценарии") }
         SettingSwitch("Показывать время обновления", showUpdated, onShowUpdated)
         SettingSwitch("Компактная плотность карточек", compact, onCompact)
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
@@ -341,7 +370,12 @@ private fun SpaceCardOrderScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
                     Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(group.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                        val type = HaEntityIconPolicy.primary(group.entities)
+                        Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text(group.title, style = MaterialTheme.typography.titleSmall)
+                            Text(cardTypeLabel(group), style = MaterialTheme.typography.bodySmall)
+                        }
                         dragHandle()
                     }
                 }
@@ -387,11 +421,13 @@ private fun FavoriteCardsScreen(
                 ) {
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(selected, { onToggle(group.key) })
+                        val type = HaEntityIconPolicy.primary(group.entities)
+                        Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
                         Column(
-                            Modifier.weight(1f).clickable { onOpenEntities(group) }.padding(vertical = 7.dp),
+                            Modifier.weight(1f).clickable { onOpenEntities(group) }.padding(start = 10.dp, top = 7.dp, bottom = 7.dp),
                         ) {
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
-                            Text("${group.entities.size} сущн. · настроить параметры ›", style = MaterialTheme.typography.bodySmall)
+                            Text("${cardTypeLabel(group)} · настроить параметры ›", style = MaterialTheme.typography.bodySmall)
                         }
                         if (selected) dragHandle()
                     }
@@ -437,15 +473,99 @@ private fun EntityOrderScreen(
                                 )
                             },
                         )
-                        Column(Modifier.weight(1f)) {
+                        val type = HaEntityIconPolicy.resolve(entity.domain, entity.deviceClass)
+                        Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
                             Text(entity.friendlyName, style = MaterialTheme.typography.titleSmall)
-                            Text("${entity.displayState} · ${entity.entityId}", style = MaterialTheme.typography.bodySmall)
+                            Text("${HaEntityIconPolicy.label(type)} · ${entity.displayState}", style = MaterialTheme.typography.bodySmall)
                         }
                         if (selected) dragHandle()
                     }
                 }
         }
     }
+}
+
+@Composable
+private fun ScenarioSettingsScreen(
+    modifier: Modifier,
+    catalog: HaCatalog,
+    enabled: Boolean,
+    automationVisible: Boolean,
+    scriptVisible: Boolean,
+    order: Map<String, List<String>>,
+    onEnabled: (Boolean) -> Unit,
+    onAutomationVisible: (Boolean) -> Unit,
+    onScriptVisible: (Boolean) -> Unit,
+    onOrderChanged: (String, List<String>) -> Unit,
+) {
+    val spaces = catalog.spaces()
+    val spaceById = spaces.associateBy { it.id }
+    val actions = catalog.groups.flatMap { group ->
+        group.entities.filter { it.domain in setOf("automation", "script") }.map { entity ->
+            val spaceId = ScenarioPolicy.resolveSpaceId(entity.areaId, group.device?.areaId, catalog)
+            DashboardScenarioAction(entity.entityId, entity.friendlyName, entity.domain, entity.state, spaceId)
+        }
+    }.distinctBy { it.entityId }
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingSwitch("Показывать вкладку «Сценарии»", enabled, onEnabled)
+        SettingSwitch("Показывать автоматизации", automationVisible, onAutomationVisible)
+        SettingSwitch("Показывать скрипты", scriptVisible, onScriptVisible)
+        val sections = (spaces.map { it.id } + UNASSIGNED_SPACE_ID).distinct().flatMap { spaceId ->
+            listOf("automation", "script").mapNotNull { domain ->
+                val values = actions.filter { it.spaceId == spaceId && it.domain == domain }
+                values.takeIf { it.isNotEmpty() }?.let { Triple(spaceId, domain, it) }
+            }
+        }
+        ReorderableList(
+            items = sections.flatMap { (spaceId, domain, values) ->
+                val key = "$spaceId:$domain"
+                val byId = values.associateBy { it.entityId }
+                DashboardOrderPolicy.merge(order[key].orEmpty(), values.map { it.entityId }).mapNotNull(byId::get)
+            },
+            stableId = { it.entityId },
+            modifier = Modifier.weight(1f),
+            onMove = { from, to ->
+                val flat = sections.flatMap { (spaceId, domain, values) ->
+                    val key = "$spaceId:$domain"
+                    val byId = values.associateBy { it.entityId }
+                    DashboardOrderPolicy.merge(order[key].orEmpty(), values.map { it.entityId }).mapNotNull(byId::get)
+                }
+                val source = flat.getOrNull(from) ?: return@ReorderableList
+                val target = flat.getOrNull(to) ?: return@ReorderableList
+                if (source.spaceId != target.spaceId || source.domain != target.domain) return@ReorderableList
+                val key = "${source.spaceId}:${source.domain}"
+                val subsection = flat.filter { it.spaceId == source.spaceId && it.domain == source.domain }
+                val localFrom = subsection.indexOfFirst { it.entityId == source.entityId }
+                val localTo = subsection.indexOfFirst { it.entityId == target.entityId }
+                onOrderChanged(key, moveStable(subsection, localFrom, localTo).map { it.entityId })
+            },
+        ) { action, dragging, itemModifier, dragHandle ->
+            val type = HaEntityIconPolicy.resolve(action.domain, null)
+            Card(itemModifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(if (dragging) 10.dp else 1.dp)) {
+                Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Text(action.title, style = MaterialTheme.typography.titleSmall)
+                        Text("${spaceById[action.spaceId]?.name ?: "Без пространства"} · ${HaEntityIconPolicy.label(type)}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    dragHandle()
+                }
+            }
+        }
+    }
+}
+
+private fun cardTypeLabel(group: HaDeviceGroup): String {
+    val labels = group.entities.sortedBy(::semanticMetricRank).map {
+        HaEntityIconPolicy.label(HaEntityIconPolicy.resolve(it.domain, it.deviceClass))
+    }.distinct().take(2)
+    return labels.joinToString(" · ").ifBlank { "Устройство" }
+}
+
+private fun List<HaDeviceGroup>.dashboardGroups(): List<HaDeviceGroup> = mapNotNull { group ->
+    group.copy(entities = group.entities.filterNot { it.domain in setOf("automation", "script") })
+        .takeIf { it.entities.isNotEmpty() }
 }
 
 @Composable

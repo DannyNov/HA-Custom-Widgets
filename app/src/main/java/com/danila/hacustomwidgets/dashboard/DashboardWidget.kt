@@ -46,6 +46,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.R
+import com.danila.hacustomwidgets.data.model.HaCatalog
 import java.text.DateFormat
 import java.util.Date
 
@@ -117,6 +118,7 @@ private fun DashboardContent(
         if (sections.isEmpty()) {
             Text(
                 if (state.selectedTabId == MAIN_TAB_ID) "Добавьте устройства во вкладку «Главное»"
+                else if (state.selectedTabId == SCENARIOS_TAB_ID) "Нет доступных автоматизаций и скриптов"
                 else "В этом пространстве нет доступных устройств",
                 style = TextStyle(color = secondary, fontSize = 13.sp),
             )
@@ -457,6 +459,7 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
 
 private fun dashboardSections(state: DashboardState): List<DashboardSection> {
     val tab = state.selectedTab
+    if (tab.id == SCENARIOS_TAB_ID) return scenarioSections(state)
     val cards = if (tab.id == MAIN_TAB_ID) {
         state.config.favoriteDeviceKeys.mapNotNull { key -> state.cards.firstOrNull { it.key == key } }
     } else {
@@ -484,6 +487,43 @@ private fun dashboardSections(state: DashboardState): List<DashboardSection> {
             .map { (category, items) ->
                 DashboardSection("${tab.id}:type:${category.name}", category.title, category.icon, items)
             }
+    }
+}
+
+private fun scenarioSections(state: DashboardState): List<DashboardSection> {
+    val spacesById = state.spaces.associateBy { it.id }
+    val orderedSpaceIds = DashboardOrderPolicy.merge(state.config.spaceOrderIds, state.spaces.map { it.id })
+        .plus(HaCatalog.UNASSIGNED_SPACE_ID).distinct()
+    val visibleDomains = buildSet {
+        if (state.config.scenarioAutomationVisible) add("automation")
+        if (state.config.scenarioScriptVisible) add("script")
+    }
+    return orderedSpaceIds.flatMap { spaceId ->
+        val actions = state.scenarioActions.filter { it.spaceId == spaceId && it.domain in visibleDomains }
+        if (actions.isEmpty()) return@flatMap emptyList()
+        listOf("automation" to "Автоматизации", "script" to "Скрипты").mapNotNull { (domain, label) ->
+            val domainActions = actions.filter { it.domain == domain }
+            if (domainActions.isEmpty()) return@mapNotNull null
+            val orderKey = "$spaceId:$domain"
+            val order = DashboardOrderPolicy.merge(
+                state.config.scenarioOrderBySpaceAndDomain[orderKey].orEmpty(),
+                domainActions.map { it.entityId },
+            )
+            val byId = domainActions.associateBy { it.entityId }
+            val cards = order.mapNotNull(byId::get).map { action ->
+                DashboardCard(
+                    key = "scenario:${action.entityId}", title = action.title, areaId = null,
+                    roomName = null, category = DeviceCategory.OTHER, metrics = emptyList(),
+                    controls = listOf(DashboardControl(action.entityId, action.title, action.domain, action.state)),
+                )
+            }
+            DashboardSection(
+                "scenario:$orderKey",
+                "${spacesById[spaceId]?.name ?: "Без пространства"} · $label",
+                null,
+                cards,
+            )
+        }
     }
 }
 

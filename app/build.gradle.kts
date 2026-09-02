@@ -23,8 +23,8 @@ android {
         applicationId = "com.danila.hacustomwidgets"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.4.3"
+        versionCode = 18
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -77,6 +77,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.glance:glance-appwidget:1.1.1")

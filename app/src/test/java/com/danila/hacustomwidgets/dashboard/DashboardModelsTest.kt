@@ -35,7 +35,10 @@ class DashboardModelsTest {
 
     @Test fun mainOnlyDashboardStillHasMainTab() {
         val config = DashboardConfig(1, emptyList(), emptyMap(), emptyList(), emptyMap(), emptyMap(), true, true)
-        val state = DashboardState(config, emptyList(), emptyList(), MAIN_TAB_ID, emptySet(), emptySet(), emptyMap(), 0, false, 0, null)
+        val state = DashboardState(
+            config, emptyList(), emptyList(), emptyList(), MAIN_TAB_ID,
+            emptySet(), emptySet(), emptyMap(), 0, false, 0, null,
+        )
         assertEquals(listOf(MAIN_TAB_ID), state.tabs.map { it.id })
     }
 

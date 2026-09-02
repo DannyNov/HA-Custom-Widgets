@@ -17,6 +17,7 @@ import org.json.JSONObject
 private data class DashboardStructureSnapshot(
     val spaces: List<DashboardSpace>,
     val cards: List<DashboardCard>,
+    val scenarioActions: List<DashboardScenarioAction>,
     val entityIds: List<String>,
     val cardKeysBySpace: Map<String, List<String>>,
     val areaCardKeys: Map<String, List<String>>,
@@ -115,11 +116,27 @@ class DashboardRepository(context: Context) {
         }
         val spaces = catalog.spaces().map { DashboardSpace(it.id, it.name, it.areaIds) }
         val areaNames = catalog.areas.associate { it.id to it.name }
-        val cards = catalog.groups.map { group -> group.toDashboardCard(config, areaNames) }
+        val cards = catalog.groups.mapNotNull { group ->
+            group.copy(entities = group.entities.filterNot { it.domain in SCENARIO_DOMAINS })
+                .takeIf { it.entities.isNotEmpty() }
+                ?.toDashboardCard(config, areaNames)
+        }
+        val scenarios = catalog.groups.flatMap { group ->
+            group.entities.filter { it.domain in SCENARIO_DOMAINS }.map { entity ->
+                DashboardScenarioAction(
+                    entityId = entity.entityId,
+                    title = entity.friendlyName,
+                    domain = entity.domain,
+                    state = entity.state,
+                    spaceId = ScenarioPolicy.resolveSpaceId(entity.areaId, group.device?.areaId, catalog),
+                )
+            }
+        }.distinctBy { it.entityId }
         val structure = JSONObject()
             .put("schema", STORAGE_SCHEMA_VERSION)
             .put("spaces", spacesJson(spaces))
             .put("cards", cardsJson(cards))
+            .put("scenarios", scenariosJson(scenarios))
         structurePrefs.edit().putString(structureKey(appWidgetId), structure.toString()).apply()
         invalidateStructure(appWidgetId)
         configurationChanged?.invoke("DASHBOARD_STRUCTURE_CHANGED")
@@ -408,12 +425,16 @@ class DashboardRepository(context: Context) {
                 },
             )
         }
+        val scenarios = structure.scenarioActions.map { action ->
+            atomic.entities[action.entityId]?.let { action.copy(state = it.rawState) } ?: action
+        }
         val operations = atomic.operations.filterKeys { it in structure.entityIds }
         val now = System.currentTimeMillis()
         val visibleOperations = operations.filterValues {
             it.status.isActive || (it.completedAt ?: 0L) + TERMINAL_STATUS_VISIBLE_MS > now
         }
-        val visibleTabs = config.visibleSpaceIds.filter { id -> spaces.any { it.id == id } }
+        val visibleTabs = config.visibleSpaceIds.filter { id -> spaces.any { it.id == id } } +
+            listOfNotNull(SCENARIOS_TAB_ID.takeIf { config.scenariosEnabled })
         val storedTab = configPrefs.getString(key(appWidgetId, "selected_tab"), MAIN_TAB_ID) ?: MAIN_TAB_ID
         val selectedTab = DashboardStatePolicy.resolveSelectedTab(storedTab, visibleTabs)
         if (selectedTab != storedTab) {
@@ -423,6 +444,7 @@ class DashboardRepository(context: Context) {
             config = config,
             spaces = spaces,
             cards = cards,
+            scenarioActions = scenarios,
             selectedTabId = selectedTab,
             collapsedSections = configPrefs.getStringSet(key(appWidgetId, "collapsed"), emptySet())
                 ?.toSet().orEmpty(),
@@ -512,16 +534,17 @@ class DashboardRepository(context: Context) {
                 val json = JSONObject(raw)
                 val spaces = parseSpaces(json.optJSONArray("spaces") ?: JSONArray())
                 val cards = parseCards(json.optJSONArray("cards") ?: JSONArray())
+                val scenarios = parseScenarios(json.optJSONArray("scenarios") ?: JSONArray())
                 val ids = cards.flatMap { card ->
                     card.metrics.map { it.entityId } + card.controls.map { it.entityId }
-                }.distinct()
+                }.plus(scenarios.map { it.entityId }).distinct()
                 val areaCards = cards.filter { it.areaId != null }.groupBy { requireNotNull(it.areaId) }
                     .mapValues { (_, values) -> values.map { it.key } }
                 val spaceCards = spaces.associate { space ->
                     space.id to space.roomAreaIds.flatMap { areaCards[it].orEmpty() }.distinct()
                 } + ("__unassigned_space__" to cards.filter { it.areaId == null }.map { it.key })
                 DashboardStructureSnapshot(
-                    spaces, cards, ids, spaceCards, areaCards,
+                    spaces, cards, scenarios, ids, spaceCards, areaCards,
                     raw.toByteArray(Charsets.UTF_8).size,
                 )
             }.getOrNull()?.also { registerStructure(appWidgetId, it) }
@@ -709,6 +732,10 @@ class DashboardRepository(context: Context) {
         .put("card_order", mapOfListsJson(cardOrderBySpace))
         .put("show_updated", showLastUpdated)
         .put("compact", compactDensity)
+        .put("scenarios_enabled", scenariosEnabled)
+        .put("scenario_automation_visible", scenarioAutomationVisible)
+        .put("scenario_script_visible", scenarioScriptVisible)
+        .put("scenario_order", mapOfListsJson(scenarioOrderBySpaceAndDomain))
 
     private fun parseConfig(json: JSONObject, appWidgetId: Int) = DashboardConfig(
         appWidgetId = appWidgetId,
@@ -724,7 +751,25 @@ class DashboardRepository(context: Context) {
         spaceOrderIds = json.optJSONArray("space_order").stringList().ifEmpty {
             json.optJSONArray("spaces").stringList()
         },
+        scenariosEnabled = json.optBoolean("scenarios_enabled", true),
+        scenarioAutomationVisible = json.optBoolean("scenario_automation_visible", true),
+        scenarioScriptVisible = json.optBoolean("scenario_script_visible", true),
+        scenarioOrderBySpaceAndDomain = json.optJSONObject("scenario_order").mapOfLists(),
     )
+
+    private fun scenariosJson(items: List<DashboardScenarioAction>) = JSONArray().also { array ->
+        items.forEach { action ->
+            array.put(JSONObject().put("id", action.entityId).put("title", action.title)
+                .put("domain", action.domain).put("state", action.state).put("space", action.spaceId))
+        }
+    }
+
+    private fun parseScenarios(array: JSONArray) = buildList {
+        for (i in 0 until array.length()) array.getJSONObject(i).let { item ->
+            add(DashboardScenarioAction(item.getString("id"), item.optString("title"),
+                item.optString("domain"), item.optString("state"), item.optString("space")))
+        }
+    }
 
     private fun spacesJson(items: List<DashboardSpace>) = JSONArray().also { array ->
         items.forEach {
@@ -847,8 +892,9 @@ class DashboardRepository(context: Context) {
     companion object {
         private const val TAG = "HAWidgetDashboard"
         private const val KEY_IDS = "configured_dashboard_ids"
-        private const val STORAGE_SCHEMA_VERSION = 3
+        private const val STORAGE_SCHEMA_VERSION = 4
         private const val DEFAULT_METRIC_LIMIT = 5
+        private val SCENARIO_DOMAINS = setOf("automation", "script")
         private const val TERMINAL_STATUS_VISIBLE_MS = 4_000L
     }
 }
