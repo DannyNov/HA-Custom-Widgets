@@ -169,6 +169,11 @@ object CompositeTimerActionPolicy {
             })
 }
 
+object CompositeTimerPresentationPolicy {
+    fun assignedTimerIds(configs: Map<String, AutoOffTimerConfig>): Set<String> = configs.values
+        .filter { it.enabled }.mapNotNull { it.timerEntityId }.toSet()
+}
+
 enum class HaTimerStatus { IDLE, ACTIVE, PAUSED, UNAVAILABLE, UNKNOWN }
 
 data class HaTimerPresentation(

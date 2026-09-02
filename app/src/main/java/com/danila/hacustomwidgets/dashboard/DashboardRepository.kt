@@ -135,8 +135,11 @@ class DashboardRepository(context: Context) {
         val areaNames = catalog.areas.associate { it.id to it.name }
         val allEntities = catalog.groups.flatMap { it.entities }.distinctBy { it.entityId }
         val entitiesById = allEntities.associateBy { it.entityId }
+        val assignedTimerIds = CompositeTimerPresentationPolicy.assignedTimerIds(config.autoOffTimersByDevice)
         val cards = catalog.groups.mapNotNull { group ->
-            group.copy(entities = group.entities.filterNot { it.domain in SCENARIO_DOMAINS })
+            group.copy(entities = group.entities.filterNot {
+                it.domain in SCENARIO_DOMAINS || it.entityId in assignedTimerIds
+            })
                 .takeIf { it.entities.isNotEmpty() }
                 ?.toDashboardCard(config, areaNames, entitiesById)
         }

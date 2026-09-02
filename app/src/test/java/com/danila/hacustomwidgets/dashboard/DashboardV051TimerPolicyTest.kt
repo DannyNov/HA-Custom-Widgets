@@ -109,4 +109,10 @@ class DashboardV051TimerPolicyTest {
         assertEquals("p0", edited.first().id)
         assertEquals(listOf("p1", "p2", "p0"), moveStable(edited, 0, 2).map { it.id })
     }
+
+    @Test fun assignedTimerIsHiddenOnlyFromDuplicatePresentation() {
+        val configs = mapOf("dryer" to AutoOffTimerConfig(true, "timer.dryer", preset(30)))
+        assertEquals(setOf("timer.dryer"), CompositeTimerPresentationPolicy.assignedTimerIds(configs))
+        assertTrue("timer remains an authoritative subscribed id", "timer.dryer" in configs.values.mapNotNull { it.timerEntityId })
+    }
 }

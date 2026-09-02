@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
@@ -389,24 +391,30 @@ private fun DashboardDeviceCard(
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "⏻ ${controlLabel(primary, operationStatuses[primary.entityId])}",
+                        Row(
                             modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp, vertical = 6.dp)
                                 .clickable(actionRunCallback<DashboardControlAction>(actionParametersOf(
                                     DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
                                     DashboardEntityKey to primary.entityId, DashboardDomainKey to primary.domain,
-                                ))),
-                            style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                        )
-                        Text(
-                            "⏱ ${selectedMinutes?.let { "$it мин" } ?: "—"}",
+                                ))), verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Image(ImageProvider(R.drawable.ic_power), contentDescription = "Питание",
+                                modifier = GlanceModifier.width(18.dp).height(18.dp))
+                            Text(" ${controlLabel(primary, operationStatuses[primary.entityId])}",
+                                style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                        }
+                        Row(
                             modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp, vertical = 6.dp)
                                 .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
                                     DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
-                                ))),
-                            style = TextStyle(color = ColorProvider(R.color.widget_accent), fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold),
-                        )
+                                ))), verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Image(ImageProvider(R.drawable.ic_timer), contentDescription = "Таймер",
+                                modifier = GlanceModifier.width(18.dp).height(18.dp))
+                            Text(" ${selectedMinutes?.let { "$it мин" } ?: "—"}",
+                                style = TextStyle(color = ColorProvider(R.color.widget_accent), fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold))
+                        }
                     }
                     timerPresentation?.formattedRemaining?.takeIf {
                         timerPresentation.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
