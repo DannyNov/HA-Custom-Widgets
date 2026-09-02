@@ -419,16 +419,34 @@ private fun DashboardDeviceCard(
                             }
                         }
                         Row(
-                            modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp, vertical = 6.dp)
+                            modifier = GlanceModifier.defaultWeight().padding(horizontal = 4.dp, vertical = 4.dp)
                                 .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
                                     DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
-                                ))), verticalAlignment = Alignment.CenterVertically,
+                                ))),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Image(ImageProvider(R.drawable.ic_timer), contentDescription = "Таймер",
-                                modifier = GlanceModifier.width(18.dp).height(18.dp))
-                            Text(" ${selectedMinutes?.let { "$it мин" } ?: "—"}",
-                                style = TextStyle(color = ColorProvider(R.color.widget_accent), fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold))
+                            Box(
+                                modifier = GlanceModifier
+                                    .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                                    .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                                    .background(ColorProvider(R.color.widget_accent))
+                                    .cornerRadius((PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP / 2).dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Image(
+                                    ImageProvider(R.drawable.ic_timer),
+                                    contentDescription = "Таймер",
+                                    modifier = GlanceModifier.width(28.dp).height(28.dp),
+                                )
+                            }
+                            Text(
+                                " ${selectedMinutes?.let { "$it мин" } ?: "—"}",
+                                style = TextStyle(
+                                    color = ColorProvider(R.color.widget_accent),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
                         }
                     }
                     timerPresentation?.formattedRemaining?.takeIf {
@@ -501,8 +519,8 @@ private fun PrimaryPowerButton(
     val tone = PrimaryPowerButtonPolicy.tone(control)
     val circleColor = when (tone) {
         PrimaryPowerButtonTone.OFF -> ColorProvider(R.color.widget_secondary)
-        PrimaryPowerButtonTone.LIGHT_ON_GREEN -> ColorProvider(R.color.widget_switch_on)
-        PrimaryPowerButtonTone.SWITCH_ON_YELLOW -> ColorProvider(R.color.widget_light_on)
+        PrimaryPowerButtonTone.LIGHT_ON_GREEN -> ColorProvider(R.color.widget_active_surface)
+        PrimaryPowerButtonTone.SWITCH_ON_YELLOW -> ColorProvider(R.color.widget_light_surface)
     }
     Box(
         modifier = GlanceModifier
@@ -528,20 +546,32 @@ private fun PrimaryPowerButton(
                 .cornerRadius((PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP / 2).dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                when {
-                    operationStatus?.isActive == true -> "…"
-                    operationStatus == DashboardOperationStatus.FAILED ||
-                        operationStatus == DashboardOperationStatus.TIMEOUT -> "!"
-                    else -> "⏻"
-                },
-                style = TextStyle(
-                    color = ColorProvider(R.color.widget_background),
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                ),
-            )
+            when {
+                operationStatus?.isActive == true -> Text(
+                    "…",
+                    style = TextStyle(
+                        color = ColorProvider(R.color.widget_primary),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    ),
+                )
+                operationStatus == DashboardOperationStatus.FAILED ||
+                    operationStatus == DashboardOperationStatus.TIMEOUT -> Text(
+                    "!",
+                    style = TextStyle(
+                        color = ColorProvider(R.color.widget_primary),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    ),
+                )
+                else -> Image(
+                    ImageProvider(R.drawable.ic_power),
+                    contentDescription = if (control.state == "on") "Выключить" else "Включить",
+                    modifier = GlanceModifier.width(28.dp).height(28.dp),
+                )
+            }
         }
     }
 }
