@@ -88,6 +88,20 @@ class DashboardV0512PresentationPolicyTest {
         assertEquals(48, PrimaryPowerButtonPolicy.TOUCH_SIZE_DP)
     }
 
+    @Test fun batteryRangesUseGreenYellowRedAndUnknownBands() {
+        fun battery(raw: String) = DashboardMetric(
+            "sensor.battery", "Battery", "$raw %", raw, "sensor", "battery",
+        )
+        assertEquals(BatteryHealth.NORMAL, batteryHealth(battery("100")))
+        assertEquals(BatteryHealth.NORMAL, batteryHealth(battery("31")))
+        assertEquals(BatteryHealth.LOW, batteryHealth(battery("30")))
+        assertEquals(BatteryHealth.LOW, batteryHealth(battery("11")))
+        assertEquals(BatteryHealth.CRITICAL, batteryHealth(battery("10")))
+        assertEquals(BatteryHealth.CRITICAL, batteryHealth(battery("0")))
+        assertEquals(BatteryHealth.UNKNOWN, batteryHealth(battery("unknown")))
+        assertEquals(BatteryHealth.UNKNOWN, batteryHealth(battery("101")))
+    }
+
     @Test fun semanticMappingsAndLabelSuppressionRemainUnchanged() {
         val classes = listOf("temperature", "humidity", "battery", "voltage", "power", "current", "energy", "pressure", "illuminance")
         classes.forEach { deviceClass -> assertFalse(deviceClass, MetricPresentationPolicy.resolve(metric("42", deviceClass)).showLabel) }

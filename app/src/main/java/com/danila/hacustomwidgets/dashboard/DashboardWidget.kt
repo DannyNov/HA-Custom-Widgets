@@ -589,11 +589,32 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
                 modifier = GlanceModifier.width(cellWidth.dp).padding(end = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!presentation.showLabel) Image(
-                    ImageProvider(metricIconResource(presentation.semantic)),
-                    contentDescription = HaEntityIconPolicy.label(presentation.semantic),
-                    modifier = GlanceModifier.width(15.dp).height(15.dp),
-                )
+                if (!presentation.showLabel) {
+                    when (presentation.semantic) {
+                        HaSemanticIcon.TEMPERATURE -> Text(
+                            "🌡",
+                            modifier = GlanceModifier.width(16.dp),
+                            maxLines = 1,
+                            style = TextStyle(fontSize = 13.sp),
+                        )
+                        HaSemanticIcon.HUMIDITY -> Text(
+                            "💧",
+                            modifier = GlanceModifier.width(16.dp),
+                            maxLines = 1,
+                            style = TextStyle(fontSize = 13.sp),
+                        )
+                        HaSemanticIcon.BATTERY -> Image(
+                            ImageProvider(batteryIconResource(metric)),
+                            contentDescription = "Батарея",
+                            modifier = GlanceModifier.width(15.dp).height(15.dp),
+                        )
+                        else -> Image(
+                            ImageProvider(metricIconResource(presentation.semantic)),
+                            contentDescription = HaEntityIconPolicy.label(presentation.semantic),
+                            modifier = GlanceModifier.width(15.dp).height(15.dp),
+                        )
+                    }
+                }
                 Text(
                     if (presentation.showLabel) "${metric.label}: ${metric.state}" else " ${metric.state}",
                     modifier = GlanceModifier.defaultWeight(),
@@ -611,6 +632,13 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
             }
         }
     }
+}
+
+private fun batteryIconResource(metric: DashboardMetric): Int = when (batteryHealth(metric)) {
+    BatteryHealth.NORMAL -> R.drawable.ic_metric_battery
+    BatteryHealth.LOW -> R.drawable.ic_metric_battery_half
+    BatteryHealth.CRITICAL -> R.drawable.ic_metric_battery_low
+    BatteryHealth.UNKNOWN, BatteryHealth.NOT_BATTERY -> R.drawable.ic_metric_battery_unknown
 }
 
 private fun metricIconResource(semantic: HaSemanticIcon): Int = when (semantic) {

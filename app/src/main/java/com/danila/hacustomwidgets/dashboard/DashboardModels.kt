@@ -23,7 +23,7 @@ enum class DeviceCategory(val title: String, val icon: String, val rank: Int) {
 
 data class ServiceAction(val domain: String, val service: String)
 
-enum class BatteryHealth { NORMAL, LOW, CRITICAL, NOT_BATTERY }
+enum class BatteryHealth { NORMAL, LOW, CRITICAL, UNKNOWN, NOT_BATTERY }
 
 fun serviceAction(entity: HaEntity): ServiceAction? {
     if (entity.hiddenBy != null || entity.disabledBy != null) return null
@@ -90,10 +90,11 @@ fun batteryHealth(metric: DashboardMetric): BatteryHealth {
     if (metric.deviceClass != "battery" && "battery" !in value && "батар" !in value && "заряд" !in value) {
         return BatteryHealth.NOT_BATTERY
     }
-    val percent = metric.rawState.replace(',', '.').toDoubleOrNull() ?: return BatteryHealth.NORMAL
+    val percent = metric.rawState.replace(',', '.').toDoubleOrNull() ?: return BatteryHealth.UNKNOWN
     return when {
+        percent !in 0.0..100.0 -> BatteryHealth.UNKNOWN
         percent <= 10.0 -> BatteryHealth.CRITICAL
-        percent <= 20.0 -> BatteryHealth.LOW
+        percent <= 30.0 -> BatteryHealth.LOW
         else -> BatteryHealth.NORMAL
     }
 }
