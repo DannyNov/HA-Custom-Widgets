@@ -18,7 +18,7 @@ class DashboardV0522CorrectivePolicyTest {
 
     private fun metric(index: Int) = DashboardMetric(
         entityId = "sensor.air_$index",
-        label = "Air $index",
+        label = "Части летучих органических соединений $index",
         state = "$index ppb",
         rawState = "$index",
         domain = "sensor",
