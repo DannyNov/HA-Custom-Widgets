@@ -33,13 +33,13 @@ class DashboardModelsTest {
         assertEquals(null, serviceAction(entity("switch.disabled").copy(disabledBy = "integration")))
     }
 
-    @Test fun mainOnlyDashboardStillHasMainTab() {
+    @Test fun mainOnlyDashboardKeepsMainAndDefaultScenariosTab() {
         val config = DashboardConfig(1, emptyList(), emptyMap(), emptyList(), emptyMap(), emptyMap(), true, true)
         val state = DashboardState(
             config, emptyList(), emptyList(), emptyList(), MAIN_TAB_ID,
             emptySet(), emptySet(), emptyMap(), 0, false, 0, null,
         )
-        assertEquals(listOf(MAIN_TAB_ID), state.tabs.map { it.id })
+        assertEquals(listOf(MAIN_TAB_ID, SCENARIOS_TAB_ID), state.tabs.map { it.id })
     }
 
     @Test fun catalogKeepsFloorsAndAreas() {
