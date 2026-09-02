@@ -182,7 +182,7 @@ private fun DashboardConfigurator(
 
     val title = when (screen) {
         ConfigScreen.OVERVIEW -> "Настройка HA Dashboard"
-        ConfigScreen.FAVORITES -> "Главное и карточки"
+        ConfigScreen.FAVORITES -> "Вкладка «Главное»"
         ConfigScreen.ENTITIES -> currentDevice?.title ?: "Параметры устройства"
         ConfigScreen.TIMER -> "Таймер автоотключения"
         ConfigScreen.SPACE_CARDS -> "Порядок карточек"
@@ -263,11 +263,7 @@ private fun DashboardConfigurator(
                 onQuery = { query = it },
                 onToggle = { key -> favorites = if (key in favorites) favorites - key else favorites + key },
                 onOrderChanged = { favorites = it },
-                hiddenDevices = hiddenDevices[MAIN_TAB_ID].orEmpty(),
                 listState = favoriteCardsListState,
-                onToggleVisibility = { key ->
-                    hiddenDevices = DashboardCustomizationPolicy.toggleHidden(hiddenDevices, MAIN_TAB_ID, key)
-                },
                 onOpenEntities = { group -> currentSpaceId = null; currentDevice = group; screen = ConfigScreen.ENTITIES },
             )
             ConfigScreen.ENTITIES -> currentDevice?.let { group ->
@@ -413,7 +409,7 @@ private fun DashboardOverview(
                     }
                 }
         }
-        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Карточки, параметры и таймеры") }
+        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Настроить вкладку «Главное»") }
         Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text("Настроить Сценарии") }
         SettingSwitch("Показывать время обновления", showUpdated, onShowUpdated)
         SettingSwitch("Компактная плотность карточек", compact, onCompact)
@@ -474,9 +470,7 @@ private fun FavoriteCardsScreen(
     onQuery: (String) -> Unit,
     onToggle: (String) -> Unit,
     onOrderChanged: (List<String>) -> Unit,
-    hiddenDevices: List<String>,
     listState: LazyListState,
-    onToggleVisibility: (String) -> Unit,
     onOpenEntities: (HaDeviceGroup) -> Unit,
 ) {
     val filtered = groups.filter { group ->
@@ -514,9 +508,6 @@ private fun FavoriteCardsScreen(
                         ) {
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
                             Text("${cardTypeLabel(group)} · настроить параметры ›", style = MaterialTheme.typography.bodySmall)
-                        }
-                        TextButton(onClick = { onToggleVisibility(group.key) }) {
-                            Text(if (group.key in hiddenDevices) "Показать" else "Скрыть")
                         }
                         if (selected) dragHandle()
                     }

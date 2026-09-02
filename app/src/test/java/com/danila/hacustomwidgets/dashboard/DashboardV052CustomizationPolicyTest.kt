@@ -85,6 +85,12 @@ class DashboardV052CustomizationPolicyTest {
         assertTrue(DashboardCustomizationPolicy.isDeviceVisible(value, MAIN_TAB_ID, "dryer"))
     }
 
+    @Test fun legacyHiddenDeviceFlagCannotOverrideMainCheckbox() {
+        val value = config(hiddenDevices = mapOf(MAIN_TAB_ID to listOf("dryer")))
+        assertTrue(DashboardCustomizationPolicy.isDeviceVisible(value, MAIN_TAB_ID, "dryer"))
+        assertNotNull(DashboardCustomizationPolicy.presentCard(value, MAIN_TAB_ID, card()))
+    }
+
     @Test fun toggleHiddenIsReversibleAndDropsEmptyContext() {
         val hidden = DashboardCustomizationPolicy.toggleHidden(emptyMap(), "home", "dryer")
         assertEquals(listOf("dryer"), hidden["home"])

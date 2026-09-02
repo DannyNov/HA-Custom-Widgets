@@ -489,7 +489,7 @@ object DashboardCustomizationPolicy {
     }
 
     fun isDeviceVisible(config: DashboardConfig, contextId: String, deviceKey: String): Boolean =
-        deviceKey !in config.hiddenDeviceIdsByContext[contextId].orEmpty()
+        contextId == MAIN_TAB_ID || deviceKey !in config.hiddenDeviceIdsByContext[contextId].orEmpty()
 
     fun isEntityVisible(config: DashboardConfig, contextId: String, entityId: String): Boolean =
         entityId !in config.hiddenEntityIdsByContext[contextId].orEmpty()
