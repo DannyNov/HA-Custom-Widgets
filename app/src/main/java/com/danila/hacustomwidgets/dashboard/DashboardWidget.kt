@@ -317,13 +317,13 @@ private fun DashboardDeviceCard(
     compact: Boolean,
     operationStatuses: Map<String, DashboardOperationStatus>,
 ) {
-    val primaryControl = card.controls.firstOrNull()
+    val primaryControl = card.visibleControls.firstOrNull()
     val unavailable = card.metrics.any { it.rawState == "unavailable" } ||
-        card.controls.any { it.state == "unavailable" }
+        card.visibleControls.any { it.state == "unavailable" }
     val unknown = !unavailable && (
-        card.metrics.any { it.rawState == "unknown" } || card.controls.any { it.state == "unknown" }
+        card.metrics.any { it.rawState == "unknown" } || card.visibleControls.any { it.state == "unknown" }
     )
-    val active = card.controls.any { it.state in ACTIVE_STATES }
+    val active = card.visibleControls.any { it.state in ACTIVE_STATES }
     val semantic = when {
         unavailable -> ColorProvider(R.color.widget_problem)
         primaryControl?.domain == "light" && active -> ColorProvider(R.color.widget_light_on)
@@ -361,8 +361,8 @@ private fun DashboardDeviceCard(
                     Text("⚠ Недоступно", style = TextStyle(color = semantic, fontSize = 10.sp))
                 } else if (unknown) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
-                } else if (card.controls.size == 1 && card.autoOffTimer == null) {
-                    val control = card.controls.first()
+                } else if (card.visibleControls.size == 1 && card.autoOffTimer == null) {
+                    val control = card.visibleControls.first()
                     Text(
                         controlLabel(control, operationStatuses[control.entityId]),
                         modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
@@ -383,11 +383,11 @@ private fun DashboardDeviceCard(
             if (timerConfig != null && !unavailable) {
                 val primary = AutoOffTimerPolicy.resolveControl(card.controls, timerConfig)
                 val timerPresentation = card.timerState?.let { HaTimerPresentationPolicy.resolve(it, Instant.now()) }
-                val actualMinutes = timerPresentation?.actualDurationMinutes
-                val selectedMinutes = if (timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)) {
-                    actualMinutes
-                } else timerConfig.durations.getOrNull(timerConfig.selectedDurationIndex)?.minutes
-                    ?: timerConfig.durations.firstOrNull()?.minutes
+                val selectedMinutes = AutoOffTimerPolicy.displayedPresetMinutes(
+                    timerConfig,
+                    timerPresentation?.status ?: HaTimerStatus.UNKNOWN,
+                    timerPresentation?.actualDurationMinutes,
+                )
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -428,11 +428,11 @@ private fun DashboardDeviceCard(
                     }
                 }
             }
-            if (card.controls.size > 1 && !unavailable) {
+            if (card.visibleControls.size > 1 && !unavailable) {
                 Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                 val controlColumns = if (widthDp >= 320) 3 else 2
                 val controlWidth = ((widthDp - 36) / controlColumns).coerceAtLeast(76)
-                card.controls.chunked(controlColumns).forEachIndexed { index, controls ->
+                card.visibleControls.chunked(controlColumns).forEachIndexed { index, controls ->
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         controls.forEach { control ->
                             val controlActive = control.state in ACTIVE_STATES
@@ -460,7 +460,7 @@ private fun DashboardDeviceCard(
                             )
                         }
                     }
-                    if (index < card.controls.chunked(controlColumns).lastIndex) {
+                    if (index < card.visibleControls.chunked(controlColumns).lastIndex) {
                         Spacer(GlanceModifier.height(2.dp))
                     }
                 }

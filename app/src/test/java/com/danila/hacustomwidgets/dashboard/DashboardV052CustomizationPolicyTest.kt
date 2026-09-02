@@ -103,7 +103,30 @@ class DashboardV052CustomizationPolicyTest {
         )!!
         assertEquals(listOf("sensor.energy"), shown.metrics.map { it.entityId })
         assertEquals("switch.dryer", shown.controls.single().entityId)
+        assertTrue(shown.visibleControls.isEmpty())
         assertEquals("timer.dryer", shown.autoOffTimer?.timerEntityId)
+    }
+
+    @Test fun selectedControlIsRenderedOnceWithoutDuplicateMetric() {
+        val source = card().copy(
+            metrics = card().metrics + DashboardMetric("switch.dryer", "Dryer", "ВКЛ", "on", "switch", null),
+        )
+        val shown = DashboardCustomizationPolicy.presentCard(config(), "home", source)!!
+        assertEquals(listOf("switch.dryer"), shown.visibleControls.map { it.entityId })
+        assertFalse(shown.metrics.any { it.entityId == "switch.dryer" })
+        assertEquals(listOf("sensor.power", "sensor.energy"), shown.metrics.map { it.entityId })
+    }
+
+    @Test fun hiddenControlRemainsFunctionalButNotVisible() {
+        val source = card().copy(
+            metrics = card().metrics + DashboardMetric("switch.dryer", "Dryer", "ВКЛ", "on", "switch", null),
+        )
+        val shown = DashboardCustomizationPolicy.presentCard(
+            config(hiddenEntities = mapOf("home" to listOf("switch.dryer"))), "home", source,
+        )!!
+        assertEquals("switch.dryer", shown.controls.single().entityId)
+        assertTrue(shown.visibleControls.isEmpty())
+        assertFalse(shown.metrics.any { it.entityId == "switch.dryer" })
     }
 
     @Test fun cardWithAllMetricsHiddenRemainsWhenControllable() {
@@ -114,8 +137,16 @@ class DashboardV052CustomizationPolicyTest {
         assertTrue(shown!!.metrics.isEmpty())
     }
 
+    @Test fun fiveSelectedMetricsAreNeverSilentlyDropped() {
+        val metrics = (1..5).map {
+            DashboardMetric("sensor.air.$it", "Air $it", "$it ppb", "$it", "sensor", null)
+        }
+        val shown = DashboardCustomizationPolicy.presentCard(config(), "home", card().copy(metrics = metrics))!!
+        assertEquals(5, shown.metrics.size)
+    }
+
     @Test fun emptyPresentationCardIsOmitted() {
-        val empty = card().copy(controls = emptyList(), autoOffTimer = null)
+        val empty = card().copy(controls = emptyList(), visibleControls = emptyList(), autoOffTimer = null)
         assertNull(DashboardCustomizationPolicy.presentCard(
             config(hiddenEntities = mapOf("home" to listOf("sensor.power", "sensor.energy"))), "home", empty,
         ))

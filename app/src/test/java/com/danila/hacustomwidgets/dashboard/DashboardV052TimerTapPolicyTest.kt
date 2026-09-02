@@ -25,9 +25,25 @@ class DashboardV052TimerTapPolicyTest {
         assertEquals(3, tap(90, actual = 90))
     }
 
+    @Test fun ninetyCanAdvanceToOneHundredTwentyDuringItsFirstMinute() {
+        assertEquals(3, tap(89, 59, actual = 90))
+        assertEquals(2, tap(89, 0, actual = 90))
+    }
+
+    @Test fun oneHundredTwentyWrapsDuringItsFirstMinute() {
+        assertEquals(0, tap(119, 59, actual = 120))
+    }
+
+    @Test fun idlePresentationResetsToFirstPreset() {
+        val stale = config.copy(selectedDurationIndex = 2)
+        assertEquals(30, AutoOffTimerPolicy.displayedPresetMinutes(stale, HaTimerStatus.IDLE, 90))
+        assertEquals(90, AutoOffTimerPolicy.displayedPresetMinutes(stale, HaTimerStatus.ACTIVE, 90))
+    }
+
     @Test fun hourFormattingBoundaryMatchesDisplayedMinutePolicy() {
         assertEquals(60, HaTimerPresentationPolicy.displayedRemainingMinutes(3_599_000L))
         assertEquals(60, HaTimerPresentationPolicy.displayedRemainingMinutes(3_600_000L))
-        assertEquals(89, HaTimerPresentationPolicy.displayedRemainingMinutes(5_399_000L))
+        assertEquals(90, HaTimerPresentationPolicy.displayedRemainingMinutes(5_399_000L))
+        assertEquals(89, HaTimerPresentationPolicy.displayedRemainingMinutes(5_340_000L))
     }
 }

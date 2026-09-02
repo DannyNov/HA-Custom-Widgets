@@ -522,7 +522,7 @@ private fun EntityOrderScreen(
     val sorted = selectedOrder.mapNotNull(byId::get) +
         defaultMetricOrder(group.entities.filter { it.entityId !in selectedOrder })
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Выберите параметры. Для изменения порядка удерживайте выбранный параметр; батарея по умолчанию последняя.")
+        Text("Отметьте параметры, которые нужно показывать. Для изменения порядка удерживайте выбранный параметр; батарея по умолчанию последняя.")
         ReorderableList(
             items = sorted,
             stableId = { it.entityId },
@@ -533,7 +533,7 @@ private fun EntityOrderScreen(
                 onChange(moved.map { it.entityId }.filter { it in selectedOrder })
             },
         ) { entity, dragging, itemModifier, dragHandle ->
-                val selected = entity.entityId in selectedOrder
+                val selected = entity.entityId in selectedOrder && entity.entityId !in hiddenEntityIds
                 Card(
                     itemModifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
@@ -542,10 +542,12 @@ private fun EntityOrderScreen(
                         Checkbox(
                             selected,
                             {
-                                onChange(
-                                    if (selected) selectedOrder - entity.entityId
-                                    else selectedOrder + entity.entityId,
-                                )
+                                if (selected) {
+                                    onToggleVisibility(entity.entityId)
+                                } else {
+                                    if (entity.entityId !in selectedOrder) onChange(selectedOrder + entity.entityId)
+                                    if (entity.entityId in hiddenEntityIds) onToggleVisibility(entity.entityId)
+                                }
                             },
                         )
                         val type = HaEntityIconPolicy.resolve(entity.domain, entity.deviceClass)
@@ -553,9 +555,6 @@ private fun EntityOrderScreen(
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
                             Text(entity.friendlyName, style = MaterialTheme.typography.titleSmall)
                             Text("${HaEntityIconPolicy.label(type)} · ${entity.displayState}", style = MaterialTheme.typography.bodySmall)
-                        }
-                        TextButton(onClick = { onToggleVisibility(entity.entityId) }) {
-                            Text(if (entity.entityId in hiddenEntityIds) "Показать" else "Скрыть")
                         }
                         if (selected) dragHandle()
                     }

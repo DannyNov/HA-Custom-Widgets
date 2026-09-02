@@ -156,6 +156,18 @@ object AutoOffTimerPolicy {
         else (current + 1) % config.durations.size
     }
 
+    fun displayedPresetMinutes(
+        config: AutoOffTimerConfig,
+        status: HaTimerStatus,
+        actualDurationMinutes: Int?,
+    ): Int? = if (status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)) {
+        actualDurationMinutes
+            ?: config.durations.getOrNull(config.selectedDurationIndex)?.minutes
+            ?: config.durations.firstOrNull()?.minutes
+    } else {
+        config.durations.firstOrNull()?.minutes
+    }
+
     fun durationPayload(minutes: Int): String {
         val seconds = minutes * 60
         return "%02d:%02d:%02d".format(seconds / 3600, (seconds % 3600) / 60, seconds % 60)
@@ -226,17 +238,16 @@ object HaTimerPresentationPolicy {
     fun formatRemaining(millis: Long): String {
         val totalSeconds = millis.coerceAtLeast(0) / 1_000
         if (totalSeconds < 60) return "< 1 мин"
-        if (totalSeconds < 3600) return "${(totalSeconds + 59) / 60} мин"
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
-        return if (minutes == 0L) "$hours ч" else "$hours ч $minutes мин"
+        val displayedMinutes = displayedRemainingMinutes(millis)
+        if (displayedMinutes < 60) return "$displayedMinutes мин"
+        val hours = displayedMinutes / 60
+        val minutes = displayedMinutes % 60
+        return if (minutes == 0) "$hours ч" else "$hours ч $minutes мин"
     }
 
     fun displayedRemainingMinutes(millis: Long): Int {
         val totalSeconds = millis.coerceAtLeast(0) / 1_000
-        return if (totalSeconds < 3600) {
-            if (totalSeconds < 60) 0 else ((totalSeconds + 59) / 60).toInt()
-        } else (totalSeconds / 60).toInt()
+        return if (totalSeconds < 60) 0 else ((totalSeconds + 59) / 60).toInt()
     }
 }
 
@@ -258,15 +269,21 @@ object MetricPresentationPolicy {
 object MetricLayoutPolicy {
     private const val CARD_HORIZONTAL_INSETS_DP = 36
     private const val MIN_TWO_COLUMN_WIDGET_DP = 200
+    private const val MIN_THREE_COLUMN_WIDGET_DP = 300
     private const val ICON_AND_GAP_DP = 20
     private const val CHARACTER_WIDTH_DP = 7
     private const val CELL_PADDING_DP = 6
 
     /** Glance cannot pre-measure RemoteViews text, so layout uses a conservative deterministic estimate. */
     fun columns(metrics: List<DashboardMetric>, availableWidgetWidthDp: Int): Int {
-        if (metrics.size <= 1 || availableWidgetWidthDp < MIN_TWO_COLUMN_WIDGET_DP) return 1
-        val cellWidth = ((availableWidgetWidthDp - CARD_HORIZONTAL_INSETS_DP) / 2).coerceAtLeast(1)
-        return if (metrics.all { estimatedWidthDp(it) <= cellWidth }) 2 else 1
+        if (metrics.size <= 1) return 1
+        fun fits(columns: Int): Boolean {
+            val cellWidth = ((availableWidgetWidthDp - CARD_HORIZONTAL_INSETS_DP) / columns).coerceAtLeast(1)
+            return metrics.all { estimatedWidthDp(it) <= cellWidth }
+        }
+        if (metrics.size == 3 && availableWidgetWidthDp >= MIN_THREE_COLUMN_WIDGET_DP && fits(3)) return 3
+        if (availableWidgetWidthDp < MIN_TWO_COLUMN_WIDGET_DP) return 1
+        return if (fits(2)) 2 else 1
     }
 
     fun estimatedWidthDp(metric: DashboardMetric): Int {
@@ -386,6 +403,8 @@ data class DashboardCard(
     val controls: List<DashboardControl>,
     val autoOffTimer: AutoOffTimerConfig? = null,
     val timerState: DashboardMetric? = null,
+    /** Controls rendered by the widget; [controls] remains the functional dependency set. */
+    val visibleControls: List<DashboardControl> = controls,
 )
 
 data class DashboardSpace(
@@ -441,8 +460,16 @@ object DashboardCustomizationPolicy {
     /** Presentation filtering only: controls and timer dependencies deliberately stay intact. */
     fun presentCard(config: DashboardConfig, contextId: String, card: DashboardCard): DashboardCard? {
         if (!isDeviceVisible(config, contextId, card.key)) return null
-        return card.copy(metrics = card.metrics.filter { isEntityVisible(config, contextId, it.entityId) })
-            .takeIf { it.metrics.isNotEmpty() || it.controls.isNotEmpty() || it.autoOffTimer != null }
+        val selectedIds = card.metrics.mapTo(linkedSetOf()) { it.entityId }
+        val visibleControls = card.controls.filter {
+            it.entityId in selectedIds && isEntityVisible(config, contextId, it.entityId)
+        }
+        val renderedControlIds = visibleControls.mapTo(hashSetOf()) { it.entityId }
+        val visibleMetrics = card.metrics.filter {
+            isEntityVisible(config, contextId, it.entityId) && it.entityId !in renderedControlIds
+        }
+        return card.copy(metrics = visibleMetrics, visibleControls = visibleControls)
+            .takeIf { it.metrics.isNotEmpty() || it.visibleControls.isNotEmpty() || it.autoOffTimer != null }
     }
 
     fun isDeviceVisible(config: DashboardConfig, contextId: String, deviceKey: String): Boolean =

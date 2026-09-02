@@ -1020,7 +1020,7 @@ class DashboardRepository(context: Context) {
     companion object {
         private const val TAG = "HAWidgetDashboard"
         private const val KEY_IDS = "configured_dashboard_ids"
-        private const val STORAGE_SCHEMA_VERSION = 4
+        private const val STORAGE_SCHEMA_VERSION = 5
         private const val DEFAULT_METRIC_LIMIT = 5
         private val SCENARIO_DOMAINS = setOf("automation", "script")
         private const val TERMINAL_STATUS_VISIBLE_MS = 4_000L

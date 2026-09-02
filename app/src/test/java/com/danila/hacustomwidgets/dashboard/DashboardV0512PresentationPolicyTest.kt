@@ -24,10 +24,10 @@ class DashboardV0512PresentationPolicyTest {
         assertEquals("< 1 мин", HaTimerPresentationPolicy.formatRemaining(1_000L))
     }
 
-    @Test fun hourCountdownUsesHoursAndWholeElapsedMinutePart() {
+    @Test fun hourCountdownRoundsUpConsistentlyWithTimerTapPolicy() {
         assertEquals("1 ч", HaTimerPresentationPolicy.formatRemaining(3_600_000L))
-        assertEquals("1 ч 27 мин", HaTimerPresentationPolicy.formatRemaining((3600 + 27 * 60 + 14) * 1_000L))
-        assertEquals("2 ч 14 мин", HaTimerPresentationPolicy.formatRemaining((2 * 3600 + 14 * 60 + 59) * 1_000L))
+        assertEquals("1 ч 28 мин", HaTimerPresentationPolicy.formatRemaining((3600 + 27 * 60 + 14) * 1_000L))
+        assertEquals("2 ч 15 мин", HaTimerPresentationPolicy.formatRemaining((2 * 3600 + 14 * 60 + 59) * 1_000L))
     }
 
     @Test fun idleUnavailableAndUnknownHaveNoRemainingPresentation() {
@@ -46,9 +46,9 @@ class DashboardV0512PresentationPolicyTest {
         assertEquals(1, MetricLayoutPolicy.columns(listOf(metric("9.8 W")), 400))
     }
 
-    @Test fun shortMetricsUseAtMostTwoColumns() {
+    @Test fun threeShortMetricsUseOneRowWhenTheyFit() {
         val metrics = listOf(metric("0 W"), metric("234 V", "voltage"), metric("21 °C", "temperature"))
-        assertEquals(2, MetricLayoutPolicy.columns(metrics, 300))
+        assertEquals(3, MetricLayoutPolicy.columns(metrics, 300))
     }
 
     @Test fun narrowWidgetFallsBackToOneColumn() {
