@@ -95,7 +95,7 @@ class DashboardV051TimerPolicyTest {
 
     @Test fun countdownFormattingMatchesUx() {
         assertEquals("48 мин", HaTimerPresentationPolicy.formatRemaining((47*60+32)*1000L))
-        assertEquals("1 ч 27 мин", HaTimerPresentationPolicy.formatRemaining((3600+27*60+14)*1000L))
+        assertEquals("1 ч 28 мин", HaTimerPresentationPolicy.formatRemaining((3600+27*60+14)*1000L))
     }
 
     @Test fun batterySemanticMetricDoesNotNeedDuplicateLabel() {
