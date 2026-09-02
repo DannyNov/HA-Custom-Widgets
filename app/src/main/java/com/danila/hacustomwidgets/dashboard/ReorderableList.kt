@@ -587,6 +587,7 @@ fun <T> ReorderableList(
     stableId: (T) -> String,
     onMove: (fromIndex: Int, toIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
+    listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
     canDrag: (T) -> Boolean = { true },
     itemContent: @Composable (
         item: T,
@@ -595,7 +596,6 @@ fun <T> ReorderableList(
         dragHandle: @Composable () -> Unit,
     ) -> Unit,
 ) {
-    val listState = rememberLazyListState()
     val latestItems by rememberUpdatedState(items)
     val latestCanDrag by rememberUpdatedState(canDrag)
     val latestOnMove by rememberUpdatedState(onMove)

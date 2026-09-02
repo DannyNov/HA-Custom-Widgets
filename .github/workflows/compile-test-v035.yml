@@ -1,4 +1,4 @@
-name: v0.5.2.2 compile and tests
+name: v0.5.2.3 compile and tests
 
 on:
   push:
@@ -39,6 +39,6 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: v0.5.2.2-test-results
+          name: v0.5.2.3-test-results
           path: app/build/test-results/testDebugUnitTest
           if-no-files-found: error

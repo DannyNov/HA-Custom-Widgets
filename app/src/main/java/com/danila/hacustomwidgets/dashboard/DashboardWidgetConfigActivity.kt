@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -23,7 +25,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -141,6 +146,10 @@ private fun DashboardConfigurator(
     var hiddenEntities by remember { mutableStateOf(existing?.hiddenEntityIdsByContext.orEmpty()) }
     val connection = remember { container.connectionStore.load() }
     val scope = rememberCoroutineScope()
+    // These states live above the conditional sub-screens, so opening entity settings does not
+    // dispose the list position that the user must return to.
+    val favoriteCardsListState = rememberLazyListState()
+    val spaceCardsListState = rememberLazyListState()
 
     LaunchedEffect(connection) {
         if (connection == null) {
@@ -255,6 +264,7 @@ private fun DashboardConfigurator(
                 onToggle = { key -> favorites = if (key in favorites) favorites - key else favorites + key },
                 onOrderChanged = { favorites = it },
                 hiddenDevices = hiddenDevices[MAIN_TAB_ID].orEmpty(),
+                listState = favoriteCardsListState,
                 onToggleVisibility = { key ->
                     hiddenDevices = DashboardCustomizationPolicy.toggleHidden(hiddenDevices, MAIN_TAB_ID, key)
                 },
@@ -294,6 +304,7 @@ private fun DashboardConfigurator(
                     order = cardOrder[spaceId].orEmpty(),
                     onOrderChanged = { cardOrder = cardOrder + (spaceId to it) },
                     hiddenDeviceIds = hiddenDevices[spaceId].orEmpty(),
+                    listState = spaceCardsListState,
                     onToggleVisibility = { key ->
                         hiddenDevices = DashboardCustomizationPolicy.toggleHidden(hiddenDevices, spaceId, key)
                     },
@@ -391,7 +402,9 @@ private fun DashboardOverview(
                                 TextButton(onClick = { onCycleGrouping(space.id) }) {
                                     Text("Группировка: ${grouping[space.id].label()}")
                                 }
-                                TextButton(onClick = { onOrderCards(space.id) }) { Text("Порядок ›") }
+                                IconButton(onClick = { onOrderCards(space.id) }) {
+                                    Icon(Icons.Default.SwapVert, contentDescription = "Порядок карточек")
+                                }
                             }
                             if (grouping[space.id] == DashboardGrouping.TYPES) {
                                 TextButton(onClick = { onOrderGroups(space.id) }) { Text("Порядок групп ›") }
@@ -418,6 +431,7 @@ private fun SpaceCardOrderScreen(
     order: List<String>,
     onOrderChanged: (List<String>) -> Unit,
     hiddenDeviceIds: List<String>,
+    listState: LazyListState,
     onToggleVisibility: (String) -> Unit,
     onOpenEntities: (HaDeviceGroup) -> Unit,
 ) {
@@ -429,6 +443,7 @@ private fun SpaceCardOrderScreen(
             items = ordered,
             stableId = { it.key },
             modifier = Modifier.weight(1f),
+            listState = listState,
             onMove = { from, to -> onOrderChanged(moveStable(ordered, from, to).map { it.key }) },
         ) { group, dragging, itemModifier, dragHandle ->
                 Card(
@@ -460,6 +475,7 @@ private fun FavoriteCardsScreen(
     onToggle: (String) -> Unit,
     onOrderChanged: (List<String>) -> Unit,
     hiddenDevices: List<String>,
+    listState: LazyListState,
     onToggleVisibility: (String) -> Unit,
     onOpenEntities: (HaDeviceGroup) -> Unit,
 ) {
@@ -477,6 +493,7 @@ private fun FavoriteCardsScreen(
             items = ordered,
             stableId = { it.key },
             modifier = Modifier.weight(1f),
+            listState = listState,
             canDrag = { query.isBlank() && it.key in favorites },
             onMove = { from, to ->
                 val moved = moveStable(ordered, from, to)
