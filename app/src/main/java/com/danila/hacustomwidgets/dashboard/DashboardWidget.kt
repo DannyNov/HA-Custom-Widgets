@@ -530,7 +530,7 @@ private fun metricIconResource(semantic: HaSemanticIcon): Int = when (semantic) 
 private fun dashboardSections(state: DashboardState): List<DashboardSection> {
     val tab = state.selectedTab
     if (tab.id == SCENARIOS_TAB_ID) return scenarioSections(state)
-    val cards = if (tab.id == MAIN_TAB_ID) {
+    val contextCards = if (tab.id == MAIN_TAB_ID) {
         state.config.favoriteDeviceKeys.mapNotNull { key -> state.cards.firstOrNull { it.key == key } }
     } else {
         val areaIds = tab.roomAreaIds.toSet()
@@ -541,6 +541,7 @@ private fun dashboardSections(state: DashboardState): List<DashboardSection> {
         }
             .orderedBy(state.config.cardOrderBySpace[tab.id])
     }
+    val cards = contextCards.mapNotNull { DashboardCustomizationPolicy.presentCard(state.config, tab.id, it) }
     val grouping = if (tab.id == MAIN_TAB_ID) DashboardGrouping.NONE
     else state.config.groupingBySpace[tab.id] ?: DashboardGrouping.TYPES
     return when (grouping) {
@@ -552,11 +553,14 @@ private fun dashboardSections(state: DashboardState): List<DashboardSection> {
                 DashboardSection("${tab.id}:room:$room", room, "🏠", items)
             }
         }
-        DashboardGrouping.TYPES -> cards.groupBy { it.category }.entries
-            .sortedBy { it.key.rank }
-            .map { (category, items) ->
+        DashboardGrouping.TYPES -> cards.groupBy { it.category }.let { grouped ->
+            DashboardCustomizationPolicy.orderedCategories(
+                state.config.typeGroupOrderByContext[tab.id].orEmpty(), grouped.keys,
+            ).map { category ->
+                val items = grouped.getValue(category)
                 DashboardSection("${tab.id}:type:${category.name}", category.title, category.icon, items)
             }
+        }
     }
 }
 

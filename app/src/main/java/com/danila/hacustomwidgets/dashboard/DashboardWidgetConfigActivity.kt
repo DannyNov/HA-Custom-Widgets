@@ -101,7 +101,7 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
     companion object { const val EXTRA_IN_APP_SETTINGS = "dashboard_in_app_settings" }
 }
 
-internal enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, SCENARIOS }
+internal enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, GROUP_ORDER, SCENARIOS }
 
 internal fun previousConfigScreen(screen: ConfigScreen): ConfigScreen = when (screen) {
     ConfigScreen.TIMER -> ConfigScreen.ENTITIES
@@ -136,6 +136,9 @@ private fun DashboardConfigurator(
     var scriptVisible by remember { mutableStateOf(existing?.scenarioScriptVisible ?: true) }
     var scenarioOrder by remember { mutableStateOf(existing?.scenarioOrderBySpaceAndDomain.orEmpty()) }
     var autoOffTimers by remember { mutableStateOf(existing?.autoOffTimersByDevice.orEmpty()) }
+    var typeGroupOrder by remember { mutableStateOf(existing?.typeGroupOrderByContext.orEmpty()) }
+    var hiddenDevices by remember { mutableStateOf(existing?.hiddenDeviceIdsByContext.orEmpty()) }
+    var hiddenEntities by remember { mutableStateOf(existing?.hiddenEntityIdsByContext.orEmpty()) }
     val connection = remember { container.connectionStore.load() }
     val scope = rememberCoroutineScope()
 
@@ -155,12 +158,15 @@ private fun DashboardConfigurator(
     }
 
     fun closeSubscreen() {
-        val destination = previousConfigScreen(screen)
-        if (screen != ConfigScreen.TIMER) {
-            currentDevice = null
-            currentSpaceId = null
+        screen = when (screen) {
+            ConfigScreen.TIMER -> ConfigScreen.ENTITIES
+            ConfigScreen.ENTITIES -> if (currentSpaceId == null) ConfigScreen.FAVORITES else ConfigScreen.SPACE_CARDS
+            else -> ConfigScreen.OVERVIEW
         }
-        screen = destination
+        if (screen == ConfigScreen.OVERVIEW || screen == ConfigScreen.FAVORITES) {
+            currentDevice = null
+            if (screen == ConfigScreen.OVERVIEW) currentSpaceId = null
+        }
         query = ""
     }
     BackHandler(enabled = screen != ConfigScreen.OVERVIEW) { closeSubscreen() }
@@ -171,6 +177,7 @@ private fun DashboardConfigurator(
         ConfigScreen.ENTITIES -> currentDevice?.title ?: "Параметры устройства"
         ConfigScreen.TIMER -> "Таймер автоотключения"
         ConfigScreen.SPACE_CARDS -> "Порядок карточек"
+        ConfigScreen.GROUP_ORDER -> "Порядок групп"
         ConfigScreen.SCENARIOS -> "Сценарии"
     }
     Scaffold(
@@ -223,6 +230,7 @@ private fun DashboardConfigurator(
                     }
                     screen = ConfigScreen.SPACE_CARDS
                 },
+                onOrderGroups = { spaceId -> currentSpaceId = spaceId; screen = ConfigScreen.GROUP_ORDER },
                 onSave = {
                     scope.launch {
                         onSave(
@@ -231,6 +239,7 @@ private fun DashboardConfigurator(
                                 cardOrder, showUpdated, compact,
                                 spaceOrder, scenariosEnabled, automationVisible, scriptVisible, scenarioOrder,
                                 autoOffTimers,
+                                typeGroupOrder, hiddenDevices, hiddenEntities,
                             ),
                             loaded,
                         )
@@ -245,7 +254,11 @@ private fun DashboardConfigurator(
                 onQuery = { query = it },
                 onToggle = { key -> favorites = if (key in favorites) favorites - key else favorites + key },
                 onOrderChanged = { favorites = it },
-                onOpenEntities = { group -> currentDevice = group; screen = ConfigScreen.ENTITIES },
+                hiddenDevices = hiddenDevices[MAIN_TAB_ID].orEmpty(),
+                onToggleVisibility = { key ->
+                    hiddenDevices = DashboardCustomizationPolicy.toggleHidden(hiddenDevices, MAIN_TAB_ID, key)
+                },
+                onOpenEntities = { group -> currentSpaceId = null; currentDevice = group; screen = ConfigScreen.ENTITIES },
             )
             ConfigScreen.ENTITIES -> currentDevice?.let { group ->
                 EntityOrderScreen(
@@ -254,6 +267,12 @@ private fun DashboardConfigurator(
                     selectedOrder = entityOrder[group.key]
                         ?: defaultMetricOrder(group.entities).take(5).map { it.entityId },
                     onChange = { order -> entityOrder = entityOrder + (group.key to order) },
+                    hiddenEntityIds = hiddenEntities[currentSpaceId ?: MAIN_TAB_ID].orEmpty(),
+                    onToggleVisibility = { id ->
+                        hiddenEntities = DashboardCustomizationPolicy.toggleHidden(
+                            hiddenEntities, currentSpaceId ?: MAIN_TAB_ID, id,
+                        )
+                    },
                     onOpenTimer = { screen = ConfigScreen.TIMER },
                 )
             }
@@ -274,6 +293,21 @@ private fun DashboardConfigurator(
                     groups = loaded.groupsForSpace(space).dashboardGroups(),
                     order = cardOrder[spaceId].orEmpty(),
                     onOrderChanged = { cardOrder = cardOrder + (spaceId to it) },
+                    hiddenDeviceIds = hiddenDevices[spaceId].orEmpty(),
+                    onToggleVisibility = { key ->
+                        hiddenDevices = DashboardCustomizationPolicy.toggleHidden(hiddenDevices, spaceId, key)
+                    },
+                    onOpenEntities = { group -> currentDevice = group; screen = ConfigScreen.ENTITIES },
+                )
+            }
+            ConfigScreen.GROUP_ORDER -> currentSpaceId?.let { spaceId ->
+                val space = loaded.spaces().firstOrNull { it.id == spaceId } ?: return@let
+                TypeGroupOrderScreen(
+                    modifier = Modifier.padding(padding),
+                    spaceName = space.name,
+                    groups = loaded.groupsForSpace(space).dashboardGroups(),
+                    savedOrder = typeGroupOrder[spaceId].orEmpty(),
+                    onOrderChanged = { typeGroupOrder = typeGroupOrder + (spaceId to it) },
                 )
             }
             ConfigScreen.SCENARIOS -> ScenarioSettingsScreen(
@@ -309,6 +343,7 @@ private fun DashboardOverview(
     onFavorites: () -> Unit,
     onScenarios: () -> Unit,
     onOrderCards: (String) -> Unit,
+    onOrderGroups: (String) -> Unit,
     onSave: () -> Unit,
 ) {
     val spaces = catalog.spaces()
@@ -358,6 +393,9 @@ private fun DashboardOverview(
                                 }
                                 TextButton(onClick = { onOrderCards(space.id) }) { Text("Порядок ›") }
                             }
+                            if (grouping[space.id] == DashboardGrouping.TYPES) {
+                                TextButton(onClick = { onOrderGroups(space.id) }) { Text("Порядок групп ›") }
+                            }
                         }
                     }
                 }
@@ -379,11 +417,14 @@ private fun SpaceCardOrderScreen(
     groups: List<HaDeviceGroup>,
     order: List<String>,
     onOrderChanged: (List<String>) -> Unit,
+    hiddenDeviceIds: List<String>,
+    onToggleVisibility: (String) -> Unit,
+    onOpenEntities: (HaDeviceGroup) -> Unit,
 ) {
     val byKey = groups.associateBy { it.key }
     val ordered = order.mapNotNull(byKey::get) + groups.filter { it.key !in order }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("$spaceName: порядок используется внутри секций и в режиме без группировки.")
+        Text("$spaceName: настройте отображаемые устройства и их порядок.")
         ReorderableList(
             items = ordered,
             stableId = { it.key },
@@ -395,11 +436,12 @@ private fun SpaceCardOrderScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
                     Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(group.key !in hiddenDeviceIds, { onToggleVisibility(group.key) })
                         val type = HaEntityIconPolicy.primary(group.entities)
                         Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
-                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Column(Modifier.weight(1f).clickable { onOpenEntities(group) }.padding(start = 10.dp)) {
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
-                            Text(cardTypeLabel(group), style = MaterialTheme.typography.bodySmall)
+                            Text("${cardTypeLabel(group)} · параметры ›", style = MaterialTheme.typography.bodySmall)
                         }
                         dragHandle()
                     }
@@ -417,6 +459,8 @@ private fun FavoriteCardsScreen(
     onQuery: (String) -> Unit,
     onToggle: (String) -> Unit,
     onOrderChanged: (List<String>) -> Unit,
+    hiddenDevices: List<String>,
+    onToggleVisibility: (String) -> Unit,
     onOpenEntities: (HaDeviceGroup) -> Unit,
 ) {
     val filtered = groups.filter { group ->
@@ -454,6 +498,9 @@ private fun FavoriteCardsScreen(
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
                             Text("${cardTypeLabel(group)} · настроить параметры ›", style = MaterialTheme.typography.bodySmall)
                         }
+                        TextButton(onClick = { onToggleVisibility(group.key) }) {
+                            Text(if (group.key in hiddenDevices) "Показать" else "Скрыть")
+                        }
                         if (selected) dragHandle()
                     }
                 }
@@ -467,6 +514,8 @@ private fun EntityOrderScreen(
     group: HaDeviceGroup,
     selectedOrder: List<String>,
     onChange: (List<String>) -> Unit,
+    hiddenEntityIds: List<String>,
+    onToggleVisibility: (String) -> Unit,
     onOpenTimer: () -> Unit,
 ) {
     val byId = group.entities.associateBy { it.entityId }
@@ -505,12 +554,49 @@ private fun EntityOrderScreen(
                             Text(entity.friendlyName, style = MaterialTheme.typography.titleSmall)
                             Text("${HaEntityIconPolicy.label(type)} · ${entity.displayState}", style = MaterialTheme.typography.bodySmall)
                         }
+                        TextButton(onClick = { onToggleVisibility(entity.entityId) }) {
+                            Text(if (entity.entityId in hiddenEntityIds) "Показать" else "Скрыть")
+                        }
                         if (selected) dragHandle()
                     }
                 }
         }
         if (AutoOffTimerPolicy.controls(group.entities).isNotEmpty()) Button(onClick = onOpenTimer, modifier = Modifier.fillMaxWidth()) {
             Text("Таймер автоотключения")
+        }
+    }
+}
+
+@Composable
+private fun TypeGroupOrderScreen(
+    modifier: Modifier,
+    spaceName: String,
+    groups: List<HaDeviceGroup>,
+    savedOrder: List<String>,
+    onOrderChanged: (List<String>) -> Unit,
+) {
+    val categories = groups.map(::deviceCategory).distinct()
+    val ordered = DashboardCustomizationPolicy.orderedCategories(savedOrder, categories)
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("$spaceName: удерживайте ⠿ и перетащите группу. Пустые группы автоматически не показываются.")
+        ReorderableList(
+            items = ordered,
+            stableId = DashboardCustomizationPolicy::groupId,
+            modifier = Modifier.weight(1f),
+            onMove = { from, to ->
+                onOrderChanged(DashboardCustomizationPolicy.reorderCategories(savedOrder, categories, from, to))
+            },
+        ) { category, dragging, itemModifier, dragHandle ->
+            Card(
+                itemModifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
+            ) {
+                Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(category.icon)
+                    Text(category.title, Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.titleSmall)
+                    dragHandle()
+                }
+            }
         }
     }
 }

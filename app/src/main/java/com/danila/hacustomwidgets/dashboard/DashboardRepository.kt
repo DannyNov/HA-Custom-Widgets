@@ -82,8 +82,13 @@ class DashboardRepository(context: Context) {
         val config = state.config.autoOffTimersByDevice[deviceKey]?.takeIf {
             it.enabled && it.timerEntityId != null && AutoOffTimerPolicy.validate(it.durations)
         } ?: return null
-        val actual = card.timerState?.let { HaTimerPresentationPolicy.resolve(it, Instant.now()).actualDurationMinutes }
-        val next = AutoOffTimerPolicy.nextIndex(config, actual.takeIf { card.timerState?.rawState in setOf("active", "paused") })
+        val presentation = card.timerState?.let { HaTimerPresentationPolicy.resolve(it, Instant.now()) }
+        val next = AutoOffTimerPolicy.tapIndex(
+            config,
+            presentation?.status ?: HaTimerStatus.UNKNOWN,
+            presentation?.remainingMillis,
+            presentation?.actualDurationMinutes,
+        )
         if (next !in config.durations.indices) return null
         val updated = state.config.copy(autoOffTimersByDevice = state.config.autoOffTimersByDevice +
             (deviceKey to config.copy(selectedDurationIndex = next)))
@@ -790,6 +795,9 @@ class DashboardRepository(context: Context) {
         .put("auto_off_timers", JSONObject().also { out ->
             autoOffTimersByDevice.forEach { (deviceKey, timer) -> out.put(deviceKey, timer.toJson()) }
         })
+        .put("type_group_order", mapOfListsJson(typeGroupOrderByContext))
+        .put("hidden_devices", mapOfListsJson(hiddenDeviceIdsByContext))
+        .put("hidden_entities", mapOfListsJson(hiddenEntityIdsByContext))
 
     private fun parseConfig(json: JSONObject, appWidgetId: Int) = DashboardConfig(
         appWidgetId = appWidgetId,
@@ -810,6 +818,9 @@ class DashboardRepository(context: Context) {
         scenarioScriptVisible = json.optBoolean("scenario_script_visible", true),
         scenarioOrderBySpaceAndDomain = json.optJSONObject("scenario_order").mapOfLists(),
         autoOffTimersByDevice = json.optJSONObject("auto_off_timers").timerConfigMap(),
+        typeGroupOrderByContext = json.optJSONObject("type_group_order").mapOfLists(),
+        hiddenDeviceIdsByContext = json.optJSONObject("hidden_devices").mapOfLists(),
+        hiddenEntityIdsByContext = json.optJSONObject("hidden_entities").mapOfLists(),
     )
 
     private fun AutoOffTimerConfig.toJson() = JSONObject()

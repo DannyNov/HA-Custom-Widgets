@@ -1,0 +1,128 @@
+package com.danila.hacustomwidgets.dashboard
+
+import org.junit.Assert.*
+import org.junit.Test
+
+class DashboardV052CustomizationPolicyTest {
+    private fun config(
+        hiddenDevices: Map<String, List<String>> = emptyMap(),
+        hiddenEntities: Map<String, List<String>> = emptyMap(),
+    ) = DashboardConfig(
+        1, listOf("home"), mapOf("home" to DashboardGrouping.TYPES), emptyList(),
+        emptyMap(), emptyMap(), true, true,
+        hiddenDeviceIdsByContext = hiddenDevices,
+        hiddenEntityIdsByContext = hiddenEntities,
+    )
+
+    private fun card() = DashboardCard(
+        key = "dryer", title = "Dryer", areaId = null, roomName = null,
+        category = DeviceCategory.SWITCHES,
+        metrics = listOf(
+            DashboardMetric("sensor.power", "Power", "10 W", "10", "sensor", "power"),
+            DashboardMetric("sensor.energy", "Energy", "2 kWh", "2", "sensor", "energy"),
+        ),
+        controls = listOf(DashboardControl("switch.dryer", "Dryer", "switch", "on")),
+        autoOffTimer = AutoOffTimerConfig(enabled = true, timerEntityId = "timer.dryer"),
+    )
+
+    @Test fun groupIdentityUsesStableEnumId() {
+        assertEquals("SWITCHES", DashboardCustomizationPolicy.groupId(DeviceCategory.SWITCHES))
+    }
+
+    @Test fun defaultGroupOrderUsesRanks() {
+        assertEquals(
+            listOf(DeviceCategory.CLIMATE_SENSORS, DeviceCategory.LIGHTING, DeviceCategory.OTHER),
+            DashboardCustomizationPolicy.orderedCategories(
+                emptyList(), listOf(DeviceCategory.OTHER, DeviceCategory.LIGHTING, DeviceCategory.CLIMATE_SENSORS),
+            ),
+        )
+    }
+
+    @Test fun savedGroupOrderWins() {
+        assertEquals(
+            listOf(DeviceCategory.OTHER, DeviceCategory.LIGHTING),
+            DashboardCustomizationPolicy.orderedCategories(
+                listOf("OTHER", "LIGHTING"), listOf(DeviceCategory.LIGHTING, DeviceCategory.OTHER),
+            ),
+        )
+    }
+
+    @Test fun newGroupIsAppended() {
+        assertEquals(
+            listOf(DeviceCategory.SWITCHES, DeviceCategory.LIGHTING),
+            DashboardCustomizationPolicy.orderedCategories(
+                listOf("SWITCHES"), listOf(DeviceCategory.LIGHTING, DeviceCategory.SWITCHES),
+            ),
+        )
+    }
+
+    @Test fun temporarilyMissingGroupIsRetainedAndRestored() {
+        val saved = listOf("OTHER", "LIGHTING", "SWITCHES")
+        assertEquals(listOf(DeviceCategory.OTHER, DeviceCategory.SWITCHES),
+            DashboardCustomizationPolicy.orderedCategories(saved, listOf(DeviceCategory.OTHER, DeviceCategory.SWITCHES)))
+        assertEquals(listOf(DeviceCategory.OTHER, DeviceCategory.LIGHTING, DeviceCategory.SWITCHES),
+            DashboardCustomizationPolicy.orderedCategories(saved, listOf(DeviceCategory.SWITCHES, DeviceCategory.LIGHTING, DeviceCategory.OTHER)))
+    }
+
+    @Test fun reorderingVisibleGroupsKeepsMissingId() {
+        assertEquals(
+            listOf("OTHER", "SWITCHES", "LIGHTING"),
+            DashboardCustomizationPolicy.reorderCategories(
+                listOf("LIGHTING", "SWITCHES", "OTHER"),
+                listOf(DeviceCategory.LIGHTING, DeviceCategory.OTHER), 0, 1,
+            ),
+        )
+    }
+
+    @Test fun visibilityDefaultsToVisible() {
+        assertTrue(DashboardCustomizationPolicy.isDeviceVisible(config(), "home", "dryer"))
+        assertTrue(DashboardCustomizationPolicy.isEntityVisible(config(), "home", "sensor.power"))
+    }
+
+    @Test fun hiddenStateIsIndependentPerContext() {
+        val value = config(hiddenDevices = mapOf("home" to listOf("dryer")))
+        assertFalse(DashboardCustomizationPolicy.isDeviceVisible(value, "home", "dryer"))
+        assertTrue(DashboardCustomizationPolicy.isDeviceVisible(value, MAIN_TAB_ID, "dryer"))
+    }
+
+    @Test fun toggleHiddenIsReversibleAndDropsEmptyContext() {
+        val hidden = DashboardCustomizationPolicy.toggleHidden(emptyMap(), "home", "dryer")
+        assertEquals(listOf("dryer"), hidden["home"])
+        assertEquals(emptyMap<String, List<String>>(), DashboardCustomizationPolicy.toggleHidden(hidden, "home", "dryer"))
+    }
+
+    @Test fun hidingDeviceRemovesWholeCard() {
+        assertNull(DashboardCustomizationPolicy.presentCard(
+            config(hiddenDevices = mapOf("home" to listOf("dryer"))), "home", card(),
+        ))
+    }
+
+    @Test fun hidingMetricDoesNotRemoveControlOrTimerDependency() {
+        val shown = DashboardCustomizationPolicy.presentCard(
+            config(hiddenEntities = mapOf("home" to listOf("sensor.power"))), "home", card(),
+        )!!
+        assertEquals(listOf("sensor.energy"), shown.metrics.map { it.entityId })
+        assertEquals("switch.dryer", shown.controls.single().entityId)
+        assertEquals("timer.dryer", shown.autoOffTimer?.timerEntityId)
+    }
+
+    @Test fun cardWithAllMetricsHiddenRemainsWhenControllable() {
+        val shown = DashboardCustomizationPolicy.presentCard(
+            config(hiddenEntities = mapOf("home" to listOf("sensor.power", "sensor.energy"))), "home", card(),
+        )
+        assertNotNull(shown)
+        assertTrue(shown!!.metrics.isEmpty())
+    }
+
+    @Test fun emptyPresentationCardIsOmitted() {
+        val empty = card().copy(controls = emptyList(), autoOffTimer = null)
+        assertNull(DashboardCustomizationPolicy.presentCard(
+            config(hiddenEntities = mapOf("home" to listOf("sensor.power", "sensor.energy"))), "home", empty,
+        ))
+    }
+
+    @Test fun dragHandleTargetIsLargerWithoutChangingEngineConstants() {
+        assertEquals(64, REORDER_HANDLE_WIDTH_DP)
+        assertEquals(56, REORDER_HANDLE_HEIGHT_DP)
+    }
+}

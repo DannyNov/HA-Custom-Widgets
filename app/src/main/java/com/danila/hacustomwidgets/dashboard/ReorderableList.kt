@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -48,6 +50,8 @@ private const val MAX_EDGE_SPEED_DP_PER_SECOND = 920f
 private const val INSERTION_GAP_FRACTION = 0.70f
 private const val INSERTION_GAP_ANIMATION_MS = 120
 private const val POST_DROP_SETTLING_MS = 150
+internal const val REORDER_HANDLE_WIDTH_DP = 64
+internal const val REORDER_HANDLE_HEIGHT_DP = 56
 
 internal enum class ReorderEdgeZone(val direction: Int) {
     TOP(-1),
@@ -945,7 +949,8 @@ fun <T> ReorderableList(
                     }
                     Box(
                         Modifier
-                            .size(48.dp)
+                            .width(REORDER_HANDLE_WIDTH_DP.dp)
+                            .height(REORDER_HANDLE_HEIGHT_DP.dp)
                             .onGloballyPositioned { coordinates ->
                                 val root = rootCoordinates
                                 if (root != null && coordinates.isAttached && root.isAttached) {
@@ -994,7 +999,10 @@ fun <T> ReorderableList(
             }
             val ghostAlpha = if (returnNow != null) returnProgressValue else 1f
             val inertHandle: @Composable () -> Unit = {
-                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.width(REORDER_HANDLE_WIDTH_DP.dp).height(REORDER_HANDLE_HEIGHT_DP.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text("⠿", style = MaterialTheme.typography.titleLarge)
                 }
             }

@@ -139,6 +139,23 @@ object AutoOffTimerPolicy {
         return 0
     }
 
+    fun tapIndex(
+        config: AutoOffTimerConfig,
+        status: HaTimerStatus,
+        remainingMillis: Long?,
+        actualDurationMinutes: Int?,
+    ): Int {
+        if (config.durations.isEmpty()) return -1
+        if (status !in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)) return 0
+        val current = config.durations.indexOfFirst { it.minutes == actualDurationMinutes }.takeIf { it >= 0 }
+            ?: config.selectedDurationIndex.takeIf { it in config.durations.indices }
+            ?: nextIndex(config, actualDurationMinutes)
+        if (current !in config.durations.indices) return -1
+        val shownMinutes = remainingMillis?.let(HaTimerPresentationPolicy::displayedRemainingMinutes)
+        return if (shownMinutes != null && shownMinutes < config.durations[current].minutes) current
+        else (current + 1) % config.durations.size
+    }
+
     fun durationPayload(minutes: Int): String {
         val seconds = minutes * 60
         return "%02d:%02d:%02d".format(seconds / 3600, (seconds % 3600) / 60, seconds % 60)
@@ -213,6 +230,13 @@ object HaTimerPresentationPolicy {
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60
         return if (minutes == 0L) "$hours ч" else "$hours ч $minutes мин"
+    }
+
+    fun displayedRemainingMinutes(millis: Long): Int {
+        val totalSeconds = millis.coerceAtLeast(0) / 1_000
+        return if (totalSeconds < 3600) {
+            if (totalSeconds < 60) 0 else ((totalSeconds + 59) / 60).toInt()
+        } else (totalSeconds / 60).toInt()
     }
 }
 
@@ -385,7 +409,54 @@ data class DashboardConfig(
     val scenarioScriptVisible: Boolean = true,
     val scenarioOrderBySpaceAndDomain: Map<String, List<String>> = emptyMap(),
     val autoOffTimersByDevice: Map<String, AutoOffTimerConfig> = emptyMap(),
+    val typeGroupOrderByContext: Map<String, List<String>> = emptyMap(),
+    val hiddenDeviceIdsByContext: Map<String, List<String>> = emptyMap(),
+    val hiddenEntityIdsByContext: Map<String, List<String>> = emptyMap(),
 )
+
+object DashboardCustomizationPolicy {
+    fun groupId(category: DeviceCategory): String = category.name
+
+    /** Retains temporarily absent IDs while appending genuinely new IDs in default order. */
+    fun mergeRetainingMissing(saved: List<String>, current: List<String>): List<String> =
+        saved.distinct() + current.filter { it !in saved }
+
+    fun orderedCategories(saved: List<String>, current: Collection<DeviceCategory>): List<DeviceCategory> {
+        val byId = current.associateBy(::groupId)
+        val defaults = current.distinct().sortedBy { it.rank }.map(::groupId)
+        return mergeRetainingMissing(saved, defaults).mapNotNull(byId::get)
+    }
+
+    fun reorderCategories(
+        saved: List<String>,
+        current: Collection<DeviceCategory>,
+        from: Int,
+        to: Int,
+    ): List<String> {
+        val currentIds = orderedCategories(saved, current).map(::groupId)
+        val full = mergeRetainingMissing(saved, current.distinct().sortedBy { it.rank }.map(::groupId))
+        return DashboardOrderPolicy.reorderVisibleSubset(full, currentIds, from, to)
+    }
+
+    /** Presentation filtering only: controls and timer dependencies deliberately stay intact. */
+    fun presentCard(config: DashboardConfig, contextId: String, card: DashboardCard): DashboardCard? {
+        if (!isDeviceVisible(config, contextId, card.key)) return null
+        return card.copy(metrics = card.metrics.filter { isEntityVisible(config, contextId, it.entityId) })
+            .takeIf { it.metrics.isNotEmpty() || it.controls.isNotEmpty() || it.autoOffTimer != null }
+    }
+
+    fun isDeviceVisible(config: DashboardConfig, contextId: String, deviceKey: String): Boolean =
+        deviceKey !in config.hiddenDeviceIdsByContext[contextId].orEmpty()
+
+    fun isEntityVisible(config: DashboardConfig, contextId: String, entityId: String): Boolean =
+        entityId !in config.hiddenEntityIdsByContext[contextId].orEmpty()
+
+    fun toggleHidden(map: Map<String, List<String>>, contextId: String, id: String): Map<String, List<String>> {
+        val hidden = map[contextId].orEmpty()
+        val updated = if (id in hidden) hidden - id else hidden + id
+        return if (updated.isEmpty()) map - contextId else map + (contextId to updated.distinct())
+    }
+}
 
 data class DashboardState(
     val config: DashboardConfig,
