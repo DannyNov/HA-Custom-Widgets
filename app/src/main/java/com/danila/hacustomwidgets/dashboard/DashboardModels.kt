@@ -317,6 +317,21 @@ data class DashboardControl(
     val state: String,
 )
 
+enum class PrimaryPowerButtonTone { OFF, LIGHT_ON_GREEN, SWITCH_ON_YELLOW }
+
+object PrimaryPowerButtonPolicy {
+    const val VISIBLE_SIZE_DP = 40
+    const val TOUCH_SIZE_DP = 48
+
+    fun supports(control: DashboardControl): Boolean = control.domain in setOf("light", "switch")
+
+    fun tone(control: DashboardControl): PrimaryPowerButtonTone = when {
+        control.state != "on" -> PrimaryPowerButtonTone.OFF
+        control.domain == "light" -> PrimaryPowerButtonTone.LIGHT_ON_GREEN
+        else -> PrimaryPowerButtonTone.SWITCH_ON_YELLOW
+    }
+}
+
 enum class ScenarioActionKind { TOGGLE, RUN, ACTIVATE, PRESS, UNSUPPORTED }
 
 data class DashboardScenarioAction(

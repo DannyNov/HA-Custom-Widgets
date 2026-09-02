@@ -74,6 +74,20 @@ class DashboardV0512PresentationPolicyTest {
         assertEquals(1, MetricLayoutPolicy.columns(listOf(generic, metric("0 W")), 320))
     }
 
+    @Test fun primaryPowerButtonUsesRequestedTypeColorsAndFixedSize() {
+        val lightOff = DashboardControl("light.kitchen", "Kitchen", "light", "off")
+        val lightOn = lightOff.copy(state = "on")
+        val switchOn = DashboardControl("switch.socket", "Socket", "switch", "on")
+        assertTrue(PrimaryPowerButtonPolicy.supports(lightOff))
+        assertTrue(PrimaryPowerButtonPolicy.supports(switchOn))
+        assertFalse(PrimaryPowerButtonPolicy.supports(DashboardControl("button.x", "X", "button", "off")))
+        assertEquals(PrimaryPowerButtonTone.OFF, PrimaryPowerButtonPolicy.tone(lightOff))
+        assertEquals(PrimaryPowerButtonTone.LIGHT_ON_GREEN, PrimaryPowerButtonPolicy.tone(lightOn))
+        assertEquals(PrimaryPowerButtonTone.SWITCH_ON_YELLOW, PrimaryPowerButtonPolicy.tone(switchOn))
+        assertEquals(40, PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP)
+        assertEquals(48, PrimaryPowerButtonPolicy.TOUCH_SIZE_DP)
+    }
+
     @Test fun semanticMappingsAndLabelSuppressionRemainUnchanged() {
         val classes = listOf("temperature", "humidity", "battery", "voltage", "power", "current", "energy", "pressure", "illuminance")
         classes.forEach { deviceClass -> assertFalse(deviceClass, MetricPresentationPolicy.resolve(metric("42", deviceClass)).showLabel) }

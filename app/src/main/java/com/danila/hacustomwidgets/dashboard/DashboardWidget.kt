@@ -357,20 +357,29 @@ private fun DashboardDeviceCard(
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
                 } else if (card.visibleControls.size == 1 && card.autoOffTimer == null) {
                     val control = card.visibleControls.first()
-                    Text(
-                        controlLabel(control, operationStatuses[control.entityId]),
-                        modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
-                            actionRunCallback<DashboardControlAction>(
-                                actionParametersOf(
-                                    DashboardWidgetIdKey to appWidgetId,
-                                    DashboardDeviceKey to card.key,
-                                    DashboardEntityKey to control.entityId,
-                                    DashboardDomainKey to control.domain,
+                    if (PrimaryPowerButtonPolicy.supports(control)) {
+                        PrimaryPowerButton(
+                            cardKey = card.key,
+                            control = control,
+                            appWidgetId = appWidgetId,
+                            operationStatus = operationStatuses[control.entityId],
+                        )
+                    } else {
+                        Text(
+                            controlLabel(control, operationStatuses[control.entityId]),
+                            modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
+                                actionRunCallback<DashboardControlAction>(
+                                    actionParametersOf(
+                                        DashboardWidgetIdKey to appWidgetId,
+                                        DashboardDeviceKey to card.key,
+                                        DashboardEntityKey to control.entityId,
+                                        DashboardDomainKey to control.domain,
+                                    ),
                                 ),
                             ),
-                        ),
-                        style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                    )
+                            style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                        )
+                    }
                 }
             }
             val timerConfig = card.autoOffTimer
@@ -385,17 +394,29 @@ private fun DashboardDeviceCard(
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Row(
-                            modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp, vertical = 6.dp)
-                                .clickable(actionRunCallback<DashboardControlAction>(actionParametersOf(
-                                    DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
-                                    DashboardEntityKey to primary.entityId, DashboardDomainKey to primary.domain,
-                                ))), verticalAlignment = Alignment.CenterVertically,
+                        Box(
+                            modifier = GlanceModifier.defaultWeight(),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Image(ImageProvider(R.drawable.ic_power), contentDescription = "Питание",
-                                modifier = GlanceModifier.width(18.dp).height(18.dp))
-                            Text(" ${controlLabel(primary, operationStatuses[primary.entityId])}",
-                                style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                            if (PrimaryPowerButtonPolicy.supports(primary)) {
+                                PrimaryPowerButton(
+                                    cardKey = card.key,
+                                    control = primary,
+                                    appWidgetId = appWidgetId,
+                                    operationStatus = operationStatuses[primary.entityId],
+                                )
+                            } else {
+                                Text(
+                                    controlLabel(primary, operationStatuses[primary.entityId]),
+                                    modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
+                                        actionRunCallback<DashboardControlAction>(actionParametersOf(
+                                            DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
+                                            DashboardEntityKey to primary.entityId, DashboardDomainKey to primary.domain,
+                                        )),
+                                    ),
+                                    style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                                )
+                            }
                         }
                         Row(
                             modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp, vertical = 6.dp)
@@ -466,6 +487,61 @@ private fun DashboardDeviceCard(
                     MetricLine(rowMetrics, columns, widthDp, compact)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PrimaryPowerButton(
+    cardKey: String,
+    control: DashboardControl,
+    appWidgetId: Int,
+    operationStatus: DashboardOperationStatus?,
+) {
+    val tone = PrimaryPowerButtonPolicy.tone(control)
+    val circleColor = when (tone) {
+        PrimaryPowerButtonTone.OFF -> ColorProvider(R.color.widget_secondary)
+        PrimaryPowerButtonTone.LIGHT_ON_GREEN -> ColorProvider(R.color.widget_switch_on)
+        PrimaryPowerButtonTone.SWITCH_ON_YELLOW -> ColorProvider(R.color.widget_light_on)
+    }
+    Box(
+        modifier = GlanceModifier
+            .width(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp)
+            .height(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp)
+            .clickable(
+                actionRunCallback<DashboardControlAction>(
+                    actionParametersOf(
+                        DashboardWidgetIdKey to appWidgetId,
+                        DashboardDeviceKey to cardKey,
+                        DashboardEntityKey to control.entityId,
+                        DashboardDomainKey to control.domain,
+                    ),
+                ),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = GlanceModifier
+                .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                .background(circleColor)
+                .cornerRadius((PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP / 2).dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                when {
+                    operationStatus?.isActive == true -> "…"
+                    operationStatus == DashboardOperationStatus.FAILED ||
+                        operationStatus == DashboardOperationStatus.TIMEOUT -> "!"
+                    else -> "⏻"
+                },
+                style = TextStyle(
+                    color = ColorProvider(R.color.widget_background),
+                    fontSize = 23.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                ),
+            )
         }
     }
 }
