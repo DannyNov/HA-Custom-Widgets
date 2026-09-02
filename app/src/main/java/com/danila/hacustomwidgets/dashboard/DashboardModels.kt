@@ -219,8 +219,9 @@ object HaTimerPresentationPolicy {
 }
 
 object MetricPresentationPolicy {
-    fun showLabel(metric: DashboardMetric): Boolean =
-        HaEntityIconPolicy.resolve(metric.domain, metric.deviceClass) == HaSemanticIcon.GENERIC
+    fun showLabel(metric: DashboardMetric): Boolean = HaEntityIconPolicy.resolve(
+        metric.domain, metric.deviceClass,
+    ) in setOf(HaSemanticIcon.GENERIC, HaSemanticIcon.SENSOR)
 }
 
 data class DashboardControl(
