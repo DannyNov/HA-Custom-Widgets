@@ -566,8 +566,11 @@ class DashboardRepository(context: Context) {
                 val cards = parseCards(json.optJSONArray("cards") ?: JSONArray())
                 val scenarios = parseScenarios(json.optJSONArray("scenarios") ?: JSONArray())
                 val ids = cards.flatMap { card ->
-                    card.metrics.map { it.entityId } + card.controls.map { it.entityId }
-                        + listOfNotNull(card.autoOffTimer?.timerEntityId)
+                    buildList {
+                        addAll(card.metrics.map { it.entityId })
+                        addAll(card.controls.map { it.entityId })
+                        card.autoOffTimer?.timerEntityId?.let(::add)
+                    }
                 }.plus(scenarios.map { it.entityId }).distinct()
                 val areaCards = cards.filter { it.areaId != null }.groupBy { requireNotNull(it.areaId) }
                     .mapValues { (_, values) -> values.map { it.key } }
