@@ -226,7 +226,7 @@ object MetricPresentationPolicy {
     )
     fun resolve(metric: DashboardMetric): MetricPresentation {
         val semantic = HaEntityIconPolicy.resolve(metric.domain, metric.deviceClass)
-        return MetricPresentation(semantic, semantic !in compactMeasurements)
+        return MetricPresentation(semantic, metric.domain != "sensor" || semantic !in compactMeasurements)
     }
     fun showLabel(metric: DashboardMetric): Boolean = resolve(metric).showLabel
 }

@@ -63,6 +63,11 @@ class DashboardV0511CorrectivePolicyTest {
         assertEquals(HaSemanticIcon.SENSOR, MetricPresentationPolicy.resolve(metric("future_measurement")).semantic)
     }
 
+    @Test fun compactSuppressionIsLimitedToSensorMeasurements() {
+        val metric = DashboardMetric("binary_sensor.battery", "Battery warning", "off", "off", "binary_sensor", "battery")
+        assertTrue(MetricPresentationPolicy.resolve(metric).showLabel)
+    }
+
     @Test fun misleadingFriendlyNameDoesNotChangeSemanticClassification() {
         val result = MetricPresentationPolicy.resolve(metric(null, "Температура батареи 230 V"))
         assertEquals(HaSemanticIcon.SENSOR, result.semantic)
