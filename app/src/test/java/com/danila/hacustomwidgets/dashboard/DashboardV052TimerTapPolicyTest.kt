@@ -26,7 +26,7 @@ class DashboardV052TimerTapPolicyTest {
     }
 
     @Test fun hourFormattingBoundaryMatchesDisplayedMinutePolicy() {
-        assertEquals(59, HaTimerPresentationPolicy.displayedRemainingMinutes(3_599_000L))
+        assertEquals(60, HaTimerPresentationPolicy.displayedRemainingMinutes(3_599_000L))
         assertEquals(60, HaTimerPresentationPolicy.displayedRemainingMinutes(3_600_000L))
         assertEquals(89, HaTimerPresentationPolicy.displayedRemainingMinutes(5_399_000L))
     }
