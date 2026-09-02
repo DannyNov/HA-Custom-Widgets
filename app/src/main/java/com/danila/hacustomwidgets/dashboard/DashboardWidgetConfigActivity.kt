@@ -101,7 +101,13 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
     companion object { const val EXTRA_IN_APP_SETTINGS = "dashboard_in_app_settings" }
 }
 
-private enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, SCENARIOS }
+internal enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, SCENARIOS }
+
+internal fun previousConfigScreen(screen: ConfigScreen): ConfigScreen = when (screen) {
+    ConfigScreen.TIMER -> ConfigScreen.ENTITIES
+    ConfigScreen.ENTITIES -> ConfigScreen.FAVORITES
+    else -> ConfigScreen.OVERVIEW
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,13 +155,12 @@ private fun DashboardConfigurator(
     }
 
     fun closeSubscreen() {
-        currentDevice = null
-        currentSpaceId = null
-        screen = when (screen) {
-            ConfigScreen.TIMER -> ConfigScreen.ENTITIES
-            ConfigScreen.ENTITIES -> ConfigScreen.FAVORITES
-            else -> ConfigScreen.OVERVIEW
+        val destination = previousConfigScreen(screen)
+        if (screen != ConfigScreen.TIMER) {
+            currentDevice = null
+            currentSpaceId = null
         }
+        screen = destination
         query = ""
     }
     BackHandler(enabled = screen != ConfigScreen.OVERVIEW) { closeSubscreen() }
@@ -357,7 +362,7 @@ private fun DashboardOverview(
                     }
                 }
         }
-        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Настроить ★ Главное и параметры") }
+        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Карточки, параметры и таймеры") }
         Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text("Настроить Сценарии") }
         SettingSwitch("Показывать время обновления", showUpdated, onShowUpdated)
         SettingSwitch("Компактная плотность карточек", compact, onCompact)
@@ -504,8 +509,7 @@ private fun EntityOrderScreen(
                     }
                 }
         }
-        val primary = group.entities.firstOrNull { serviceAction(it) != null && AutoOffTimerPolicy.eligible(it.domain) }
-        if (primary != null) Button(onClick = onOpenTimer, modifier = Modifier.fillMaxWidth()) {
+        if (AutoOffTimerPolicy.controls(group.entities).isNotEmpty()) Button(onClick = onOpenTimer, modifier = Modifier.fillMaxWidth()) {
             Text("Таймер автоотключения")
         }
     }
@@ -520,14 +524,40 @@ private fun TimerSettingsScreen(
     config: AutoOffTimerConfig,
     onChange: (AutoOffTimerConfig) -> Unit,
 ) {
+    val eligibleControls = AutoOffTimerPolicy.controls(group.entities)
+    val selectedControl = config.controlEntityId?.let { id -> eligibleControls.firstOrNull { it.entityId == id } }
+        ?: eligibleControls.singleOrNull()
     val selectedTimer = timers.firstOrNull { it.entityId == config.timerEntityId }
     var timerMenuExpanded by remember { mutableStateOf(false) }
+    var controlMenuExpanded by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (eligibleControls.size > 1) {
+            Text("Управляемая сущность", style = MaterialTheme.typography.titleSmall)
+            ExposedDropdownMenuBox(
+                expanded = controlMenuExpanded,
+                onExpandedChange = { controlMenuExpanded = !controlMenuExpanded },
+            ) {
+                OutlinedTextField(
+                    value = selectedControl?.let { "${it.friendlyName} · ${it.entityId}" } ?: "Выбрать сущность",
+                    onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(controlMenuExpanded) },
+                )
+                ExposedDropdownMenu(expanded = controlMenuExpanded, onDismissRequest = { controlMenuExpanded = false }) {
+                    eligibleControls.forEach { control -> DropdownMenuItem(
+                        text = { Text("${control.friendlyName}\n${control.entityId}") },
+                        onClick = { onChange(config.copy(controlEntityId = control.entityId)); controlMenuExpanded = false },
+                    ) }
+                }
+            }
+        }
         SettingSwitch("Использовать таймер", config.enabled) { enabled ->
-            onChange(config.copy(enabled = enabled && (config.timerEntityId != null || timers.isNotEmpty()),
-                timerEntityId = config.timerEntityId ?: timers.firstOrNull()?.entityId))
+            onChange(config.copy(enabled = enabled && selectedControl != null &&
+                (config.timerEntityId != null || timers.isNotEmpty()),
+                timerEntityId = config.timerEntityId ?: timers.firstOrNull()?.entityId,
+                controlEntityId = config.controlEntityId ?: eligibleControls.singleOrNull()?.entityId))
         }
         Text("Таймер Home Assistant", style = MaterialTheme.typography.titleSmall)
+        if (timers.isEmpty()) Text("В Home Assistant не найдено ни одного timer.*")
         ExposedDropdownMenuBox(
             expanded = timerMenuExpanded,
             onExpandedChange = { if (timers.isNotEmpty()) timerMenuExpanded = !timerMenuExpanded },

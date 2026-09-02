@@ -40,7 +40,8 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
             container.client.callService(connection, operation.domain, operation.service, entityId)
             if (operation.desiredState == "off" && deviceKey != null) {
                 val card = container.dashboards.get(appWidgetId)?.cards?.firstOrNull { it.key == deviceKey }
-                val timerId = card?.autoOffTimer?.timerEntityId
+                val selectedControl = card?.let { AutoOffTimerPolicy.resolveControl(it.controls, it.autoOffTimer) }
+                val timerId = card?.autoOffTimer?.timerEntityId?.takeIf { selectedControl?.entityId == entityId }
                 if (timerId != null && card.timerState?.rawState in setOf("active", "paused")) {
                     container.client.callService(connection, "timer", "cancel", timerId)
                 }

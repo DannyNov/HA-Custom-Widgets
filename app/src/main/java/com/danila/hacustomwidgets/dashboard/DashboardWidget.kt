@@ -381,7 +381,7 @@ private fun DashboardDeviceCard(
             }
             val timerConfig = card.autoOffTimer
             if (timerConfig != null && !unavailable) {
-                val primary = card.controls.firstOrNull { AutoOffTimerPolicy.eligible(it.domain) }
+                val primary = AutoOffTimerPolicy.resolveControl(card.controls, timerConfig)
                 val timerPresentation = card.timerState?.let { HaTimerPresentationPolicy.resolve(it, Instant.now()) }
                 val actualMinutes = timerPresentation?.actualDurationMinutes
                 val selectedMinutes = if (timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)) {
@@ -489,13 +489,20 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
     val cellWidth = ((widthDp - 36) / columns).coerceAtLeast(70)
     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         metrics.forEach { metric ->
-            val icon = metricIcon(metric)
-            val text = if (MetricPresentationPolicy.showLabel(metric)) "${metric.label}: ${metric.state}" else "$icon ${metric.state}"
-            Text(
-                text,
+            val presentation = MetricPresentationPolicy.resolve(metric)
+            Row(
                 modifier = GlanceModifier.width(cellWidth.dp).padding(end = 3.dp),
-                maxLines = 1,
-                style = TextStyle(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!presentation.showLabel) Image(
+                    ImageProvider(metricIconResource(presentation.semantic)),
+                    contentDescription = HaEntityIconPolicy.label(presentation.semantic),
+                    modifier = GlanceModifier.width(15.dp).height(15.dp),
+                )
+                Text(
+                    if (presentation.showLabel) "${metric.label}: ${metric.state}" else " ${metric.state}",
+                    maxLines = 1,
+                    style = TextStyle(
                     color = when {
                         metric.rawState == "unavailable" -> ColorProvider(R.color.widget_problem)
                         batteryHealth(metric) == BatteryHealth.CRITICAL -> ColorProvider(R.color.widget_problem)
@@ -503,10 +510,24 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
                         else -> ColorProvider(R.color.widget_primary)
                     },
                     fontSize = if (compact) 11.sp else 12.sp,
-                ),
-            )
+                    ),
+                )
+            }
         }
     }
+}
+
+private fun metricIconResource(semantic: HaSemanticIcon): Int = when (semantic) {
+    HaSemanticIcon.TEMPERATURE -> R.drawable.ic_metric_temperature
+    HaSemanticIcon.HUMIDITY -> R.drawable.ic_metric_humidity
+    HaSemanticIcon.BATTERY -> R.drawable.ic_metric_battery
+    HaSemanticIcon.VOLTAGE -> R.drawable.ic_metric_voltage
+    HaSemanticIcon.POWER -> R.drawable.ic_metric_power
+    HaSemanticIcon.CURRENT -> R.drawable.ic_metric_current
+    HaSemanticIcon.ENERGY -> R.drawable.ic_metric_energy
+    HaSemanticIcon.PRESSURE -> R.drawable.ic_metric_pressure
+    HaSemanticIcon.ILLUMINANCE -> R.drawable.ic_metric_illuminance
+    else -> R.drawable.ic_metric_sensor
 }
 
 private fun dashboardSections(state: DashboardState): List<DashboardSection> {

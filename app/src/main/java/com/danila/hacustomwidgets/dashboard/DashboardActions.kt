@@ -82,7 +82,7 @@ class DashboardTimerAction : ActionCallback {
         val container = (context.applicationContext as HaWidgetApplication).container
         val selection = container.dashboards.selectNextTimerDuration(appWidgetId, deviceKey) ?: return
         val (card, preset) = selection
-        val primary = card.controls.firstOrNull { AutoOffTimerPolicy.eligible(it.domain) } ?: return
+        val primary = AutoOffTimerPolicy.resolveControl(card.controls, card.autoOffTimer) ?: return
         val timerId = card.autoOffTimer?.timerEntityId ?: return
         DashboardTimerActionWorker.enqueue(
             context, appWidgetId, primary.entityId, primary.domain, primary.state in setOf("on", "active"),

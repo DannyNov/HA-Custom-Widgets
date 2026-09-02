@@ -73,20 +73,6 @@ fun defaultMetricOrder(entities: List<HaEntity>): List<HaEntity> = entities
     .filterNot { it.entityCategory == "config" || it.hiddenBy != null || it.disabledBy != null }
     .sortedWith(compareBy<HaEntity>(::semanticMetricRank).thenBy { it.friendlyName.lowercase() })
 
-fun metricIcon(metric: DashboardMetric): String {
-    val value = "${metric.deviceClass.orEmpty()} ${metric.entityId} ${metric.label}".lowercase()
-    return when {
-        metric.deviceClass == "temperature" || "temperature" in value || "температур" in value -> "🌡"
-        metric.deviceClass == "humidity" || "humidity" in value || "влажност" in value -> "💧"
-        metric.deviceClass == "battery" || "battery" in value || "батар" in value || "заряд" in value -> "🔋"
-        metric.deviceClass in setOf("door", "window", "garage_door", "opening") -> "🚪"
-        metric.domain == "light" -> "💡"
-        metric.domain in setOf("switch", "input_boolean") -> "🔌"
-        metric.domain == "timer" -> "⏱"
-        else -> "•"
-    }
-}
-
 fun batteryHealth(metric: DashboardMetric): BatteryHealth {
     val value = "${metric.deviceClass.orEmpty()} ${metric.entityId} ${metric.label}".lowercase()
     if (metric.deviceClass != "battery" && "battery" !in value && "батар" !in value && "заряд" !in value) {
@@ -123,6 +109,7 @@ data class AutoOffTimerConfig(
     val timerEntityId: String? = null,
     val durations: List<TimerDurationPreset> = DEFAULT_TIMER_PRESETS,
     val selectedDurationIndex: Int = -1,
+    val controlEntityId: String? = null,
 ) {
     companion object {
         val DEFAULT_TIMER_PRESETS = listOf(30, 60, 90, 120).mapIndexed { index, minutes ->
@@ -134,6 +121,12 @@ data class AutoOffTimerConfig(
 object AutoOffTimerPolicy {
     fun eligible(domain: String): Boolean = domain in setOf("switch", "input_boolean", "light")
     fun validMinutes(value: Int): Boolean = value in 1..1440
+    fun controls(entities: List<HaEntity>): List<HaEntity> = entities.filter {
+        eligible(it.domain) && serviceAction(it) != null
+    }
+    fun resolveControl(controls: List<DashboardControl>, config: AutoOffTimerConfig?): DashboardControl? =
+        config?.controlEntityId?.let { id -> controls.firstOrNull { it.entityId == id && eligible(it.domain) } }
+            ?: controls.firstOrNull { eligible(it.domain) }
     fun validate(values: List<TimerDurationPreset>): Boolean = values.isNotEmpty() &&
         values.all { validMinutes(it.minutes) } && values.map { it.minutes }.distinct().size == values.size
 
@@ -223,10 +216,19 @@ object HaTimerPresentationPolicy {
     }
 }
 
+data class MetricPresentation(val semantic: HaSemanticIcon, val showLabel: Boolean)
+
 object MetricPresentationPolicy {
-    fun showLabel(metric: DashboardMetric): Boolean = HaEntityIconPolicy.resolve(
-        metric.domain, metric.deviceClass,
-    ) in setOf(HaSemanticIcon.GENERIC, HaSemanticIcon.SENSOR)
+    private val compactMeasurements = setOf(
+        HaSemanticIcon.TEMPERATURE, HaSemanticIcon.HUMIDITY, HaSemanticIcon.BATTERY,
+        HaSemanticIcon.VOLTAGE, HaSemanticIcon.POWER, HaSemanticIcon.CURRENT,
+        HaSemanticIcon.ENERGY, HaSemanticIcon.PRESSURE, HaSemanticIcon.ILLUMINANCE,
+    )
+    fun resolve(metric: DashboardMetric): MetricPresentation {
+        val semantic = HaEntityIconPolicy.resolve(metric.domain, metric.deviceClass)
+        return MetricPresentation(semantic, semantic !in compactMeasurements)
+    }
+    fun showLabel(metric: DashboardMetric): Boolean = resolve(metric).showLabel
 }
 
 data class DashboardControl(
@@ -391,6 +393,7 @@ const val SCENARIOS_TAB_ID = "__scenarios__"
 enum class HaSemanticIcon {
     LIGHT, SWITCH, SENSOR, BINARY_SENSOR, BUTTON, TOGGLE, THERMOSTAT, FAN, COVER, LOCK,
     MEDIA, CAMERA, AUTOMATION, SCRIPT, SCENE, TIMER, TEMPERATURE, HUMIDITY, BATTERY,
+    VOLTAGE, POWER, CURRENT, ENERGY, PRESSURE, ILLUMINANCE,
     DOOR, WINDOW, MOTION, OCCUPANCY, MOISTURE, SMOKE, CONNECTIVITY, SPACE, GENERIC,
 }
 
@@ -399,6 +402,12 @@ object HaEntityIconPolicy {
         "temperature" -> HaSemanticIcon.TEMPERATURE
         "humidity" -> HaSemanticIcon.HUMIDITY
         "battery" -> HaSemanticIcon.BATTERY
+        "voltage" -> HaSemanticIcon.VOLTAGE
+        "power" -> HaSemanticIcon.POWER
+        "current" -> HaSemanticIcon.CURRENT
+        "energy" -> HaSemanticIcon.ENERGY
+        "pressure", "atmospheric_pressure" -> HaSemanticIcon.PRESSURE
+        "illuminance" -> HaSemanticIcon.ILLUMINANCE
         "door", "garage_door", "opening" -> HaSemanticIcon.DOOR
         "window" -> HaSemanticIcon.WINDOW
         "motion" -> HaSemanticIcon.MOTION
@@ -454,6 +463,12 @@ object HaEntityIconPolicy {
         HaSemanticIcon.TEMPERATURE -> "Температура"
         HaSemanticIcon.HUMIDITY -> "Влажность"
         HaSemanticIcon.BATTERY -> "Батарея"
+        HaSemanticIcon.VOLTAGE -> "Напряжение"
+        HaSemanticIcon.POWER -> "Мощность"
+        HaSemanticIcon.CURRENT -> "Ток"
+        HaSemanticIcon.ENERGY -> "Энергия"
+        HaSemanticIcon.PRESSURE -> "Давление"
+        HaSemanticIcon.ILLUMINANCE -> "Освещённость"
         HaSemanticIcon.DOOR -> "Дверь"
         HaSemanticIcon.WINDOW -> "Окно"
         HaSemanticIcon.MOTION -> "Движение"

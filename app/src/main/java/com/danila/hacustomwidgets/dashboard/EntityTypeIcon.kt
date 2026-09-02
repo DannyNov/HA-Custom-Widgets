@@ -23,6 +23,10 @@ import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material.icons.filled.Window
+import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.ElectricMeter
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.ui.graphics.vector.ImageVector
 
 fun HaSemanticIcon.imageVector(): ImageVector = when (this) {
@@ -42,6 +46,10 @@ fun HaSemanticIcon.imageVector(): ImageVector = when (this) {
     HaSemanticIcon.TIMER -> Icons.Default.Timer
     HaSemanticIcon.HUMIDITY, HaSemanticIcon.MOISTURE -> Icons.Default.WaterDrop
     HaSemanticIcon.BATTERY -> Icons.Default.BatteryFull
+    HaSemanticIcon.VOLTAGE, HaSemanticIcon.CURRENT -> Icons.Default.ElectricBolt
+    HaSemanticIcon.POWER, HaSemanticIcon.ENERGY -> Icons.Default.ElectricMeter
+    HaSemanticIcon.PRESSURE -> Icons.Default.Speed
+    HaSemanticIcon.ILLUMINANCE -> Icons.Default.LightMode
     HaSemanticIcon.DOOR -> Icons.Default.DoorFront
     HaSemanticIcon.WINDOW -> Icons.Default.Window
     HaSemanticIcon.MOTION, HaSemanticIcon.OCCUPANCY -> Icons.Default.MotionPhotosOn

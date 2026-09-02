@@ -815,6 +815,7 @@ class DashboardRepository(context: Context) {
     private fun AutoOffTimerConfig.toJson() = JSONObject()
         .put("enabled", enabled)
         .put("timer_entity_id", timerEntityId)
+        .put("control_entity_id", controlEntityId)
         .put("selected_index", selectedDurationIndex)
         .put("durations", JSONArray().also { array -> durations.forEach { preset ->
             array.put(JSONObject().put("id", preset.id).put("minutes", preset.minutes))
@@ -834,6 +835,7 @@ class DashboardRepository(context: Context) {
                 timerEntityId = value.optNullable("timer_entity_id"),
                 durations = durations,
                 selectedDurationIndex = value.optInt("selected_index", -1),
+                controlEntityId = value.optNullable("control_entity_id"),
             )
         }
     }.orEmpty()
@@ -960,6 +962,7 @@ class DashboardRepository(context: Context) {
                             timer.optBoolean("enabled"), timer.optNullable("timer_entity_id"),
                             durations.takeIf(AutoOffTimerPolicy::validate) ?: AutoOffTimerConfig.DEFAULT_TIMER_PRESETS,
                             timer.optInt("selected_index", -1),
+                            timer.optNullable("control_entity_id"),
                         )
                     },
                     item.optJSONObject("timer_state")?.let { metric -> DashboardMetric(
