@@ -467,11 +467,7 @@ private fun DashboardDeviceCard(
             }
             if (card.metrics.isNotEmpty()) {
                 Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
-                val columns = when {
-                    widthDp >= 340 -> 3
-                    widthDp >= 230 -> 2
-                    else -> 1
-                }
+                val columns = MetricLayoutPolicy.columns(card.metrics, widthDp)
                 val metricRows = card.metrics.chunked(columns)
                 metricRows.forEachIndexed { index, rowMetrics ->
                     MetricLine(rowMetrics, columns, widthDp, compact)
@@ -501,7 +497,8 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
                 )
                 Text(
                     if (presentation.showLabel) "${metric.label}: ${metric.state}" else " ${metric.state}",
-                    maxLines = 1,
+                    modifier = GlanceModifier.defaultWeight(),
+                    maxLines = if (presentation.showLabel) 2 else 1,
                     style = TextStyle(
                     color = when {
                         metric.rawState == "unavailable" -> ColorProvider(R.color.widget_problem)

@@ -207,12 +207,12 @@ object HaTimerPresentationPolicy {
     }
 
     fun formatRemaining(millis: Long): String {
-        val total = (millis.coerceAtLeast(0) / 1_000)
-        val hours = total / 3600
-        val minutes = (total % 3600) / 60
-        val seconds = total % 60
-        return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
-        else "%d:%02d".format(minutes, seconds)
+        val totalSeconds = millis.coerceAtLeast(0) / 1_000
+        if (totalSeconds < 60) return "< 1 мин"
+        if (totalSeconds < 3600) return "${(totalSeconds + 59) / 60} мин"
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        return if (minutes == 0L) "$hours ч" else "$hours ч $minutes мин"
     }
 }
 
@@ -229,6 +229,28 @@ object MetricPresentationPolicy {
         return MetricPresentation(semantic, metric.domain != "sensor" || semantic !in compactMeasurements)
     }
     fun showLabel(metric: DashboardMetric): Boolean = resolve(metric).showLabel
+}
+
+object MetricLayoutPolicy {
+    private const val CARD_HORIZONTAL_INSETS_DP = 36
+    private const val MIN_TWO_COLUMN_WIDGET_DP = 200
+    private const val ICON_AND_GAP_DP = 20
+    private const val CHARACTER_WIDTH_DP = 7
+    private const val CELL_PADDING_DP = 6
+
+    /** Glance cannot pre-measure RemoteViews text, so layout uses a conservative deterministic estimate. */
+    fun columns(metrics: List<DashboardMetric>, availableWidgetWidthDp: Int): Int {
+        if (metrics.size <= 1 || availableWidgetWidthDp < MIN_TWO_COLUMN_WIDGET_DP) return 1
+        val cellWidth = ((availableWidgetWidthDp - CARD_HORIZONTAL_INSETS_DP) / 2).coerceAtLeast(1)
+        return if (metrics.all { estimatedWidthDp(it) <= cellWidth }) 2 else 1
+    }
+
+    fun estimatedWidthDp(metric: DashboardMetric): Int {
+        val presentation = MetricPresentationPolicy.resolve(metric)
+        val text = if (presentation.showLabel) "${metric.label}: ${metric.state}" else metric.state
+        return text.length * CHARACTER_WIDTH_DP + CELL_PADDING_DP +
+            if (presentation.showLabel) 0 else ICON_AND_GAP_DP
+    }
 }
 
 data class DashboardControl(
