@@ -149,20 +149,6 @@ private fun DashboardContent(
                         }
                     }
                 }
-                if (height >= 180 && (state.config.showLastUpdated || state.error != null)) {
-                    item(itemId = stableItemId("footer")) {
-                        val footer = state.error?.let { "⚠ Ошибка обновления: $it" }
-                            ?: "↻ ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(state.lastUpdatedMillis))}"
-                        Text(
-                            footer,
-                            maxLines = 1,
-                            style = TextStyle(
-                                color = if (state.error == null) secondary else ColorProvider(R.color.widget_problem),
-                                fontSize = 9.sp,
-                            ),
-                        )
-                    }
-                }
             }
         }
     }
@@ -187,6 +173,14 @@ private fun DashboardHeader(
             maxLines = 1,
             style = TextStyle(color = primary, fontSize = 14.sp, fontWeight = FontWeight.Bold),
         )
+        if (state != null && state.config.showLastUpdated && widthDp >= 240) {
+            Text(
+                DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(state.lastUpdatedMillis)),
+                modifier = GlanceModifier.padding(end = 2.dp),
+                maxLines = 1,
+                style = TextStyle(color = primary, fontSize = 9.sp),
+            )
+        }
         Text(
             if (state?.error == null) "↻" else "⚠",
             modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 4.dp).clickable(
@@ -468,12 +462,8 @@ private fun DashboardDeviceCard(
             if (card.metrics.isNotEmpty()) {
                 Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                 val columns = MetricLayoutPolicy.columns(card.metrics, widthDp)
-                val metricRows = card.metrics.chunked(columns)
-                metricRows.forEachIndexed { index, rowMetrics ->
+                MetricLayoutPolicy.rows(card.metrics, widthDp).forEach { rowMetrics ->
                     MetricLine(rowMetrics, columns, widthDp, compact)
-                    if (index < metricRows.lastIndex) {
-                        Spacer(GlanceModifier.height(2.dp))
-                    }
                 }
             }
         }
@@ -482,8 +472,11 @@ private fun DashboardDeviceCard(
 
 @Composable
 private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: Int, compact: Boolean) {
-    val cellWidth = ((widthDp - 36) / columns).coerceAtLeast(70)
-    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val cellWidth = MetricLayoutPolicy.cellWidthDp(widthDp, columns)
+    Row(
+        modifier = GlanceModifier.fillMaxWidth().padding(vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         metrics.forEach { metric ->
             val presentation = MetricPresentationPolicy.resolve(metric)
             Row(

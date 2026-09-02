@@ -42,7 +42,19 @@ fun deviceCategory(group: HaDeviceGroup): DeviceCategory {
     val entities = group.entities
     fun hasDomain(vararg domains: String) = entities.any { it.domain in domains }
     fun hasClass(vararg classes: String) = entities.any { it.deviceClass in classes }
+    val identity = buildString {
+        append(group.title)
+        entities.forEach {
+            append(' ')
+            append(it.entityId)
+            append(' ')
+            append(it.friendlyName)
+        }
+    }.lowercase()
+    val isDoorbellOrCamera = hasDomain("camera") ||
+        listOf("doorbell", "video_doorbell", "видеоглаз", "видеозвон").any { it in identity }
     return when {
+        isDoorbellOrCamera -> DeviceCategory.SECURITY
         hasDomain("light") -> DeviceCategory.LIGHTING
         hasClass("door", "window", "garage_door", "opening") -> DeviceCategory.OPENINGS
         hasDomain("climate", "fan", "humidifier", "water_heater") -> DeviceCategory.HVAC
@@ -267,7 +279,7 @@ object MetricPresentationPolicy {
 }
 
 object MetricLayoutPolicy {
-    private const val CARD_HORIZONTAL_INSETS_DP = 36
+    private const val CARD_HORIZONTAL_INSETS_DP = 60
     private const val MIN_TWO_COLUMN_WIDGET_DP = 200
     private const val MIN_THREE_COLUMN_WIDGET_DP = 300
     private const val ICON_AND_GAP_DP = 20
@@ -277,14 +289,18 @@ object MetricLayoutPolicy {
     /** Glance cannot pre-measure RemoteViews text, so layout uses a conservative deterministic estimate. */
     fun columns(metrics: List<DashboardMetric>, availableWidgetWidthDp: Int): Int {
         if (metrics.size <= 1) return 1
-        fun fits(columns: Int): Boolean {
-            val cellWidth = ((availableWidgetWidthDp - CARD_HORIZONTAL_INSETS_DP) / columns).coerceAtLeast(1)
-            return metrics.all { estimatedWidthDp(it) <= cellWidth }
-        }
+        fun fits(columns: Int): Boolean =
+            metrics.all { estimatedWidthDp(it) <= cellWidthDp(availableWidgetWidthDp, columns) }
         if (metrics.size == 3 && availableWidgetWidthDp >= MIN_THREE_COLUMN_WIDGET_DP && fits(3)) return 3
         if (availableWidgetWidthDp < MIN_TWO_COLUMN_WIDGET_DP) return 1
         return if (fits(2)) 2 else 1
     }
+
+    fun rows(metrics: List<DashboardMetric>, availableWidgetWidthDp: Int): List<List<DashboardMetric>> =
+        metrics.chunked(columns(metrics, availableWidgetWidthDp))
+
+    fun cellWidthDp(availableWidgetWidthDp: Int, columns: Int): Int =
+        ((availableWidgetWidthDp - CARD_HORIZONTAL_INSETS_DP) / columns.coerceAtLeast(1)).coerceAtLeast(70)
 
     fun estimatedWidthDp(metric: DashboardMetric): Int {
         val presentation = MetricPresentationPolicy.resolve(metric)
