@@ -13,6 +13,7 @@ val DashboardSectionKey = ActionParameters.Key<String>("dashboard_section")
 val DashboardDeviceKey = ActionParameters.Key<String>("dashboard_device")
 val DashboardEntityKey = ActionParameters.Key<String>("dashboard_entity")
 val DashboardDomainKey = ActionParameters.Key<String>("dashboard_domain")
+val DashboardTimerEntityKey = ActionParameters.Key<String>("dashboard_timer_entity")
 
 class DashboardRefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
@@ -52,6 +53,7 @@ class DashboardControlAction : ActionCallback {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
         val entityId = parameters[DashboardEntityKey] ?: return
         val domain = parameters[DashboardDomainKey] ?: return
+        val deviceKey = parameters[DashboardDeviceKey]
         val container = (context.applicationContext as HaWidgetApplication).container
         if (container.connectionStore.load() == null) {
             container.dashboards.saveError(appWidgetId, "Подключение не настроено")
@@ -68,8 +70,25 @@ class DashboardControlAction : ActionCallback {
             "CONTROL_TAP processStartId=${DashboardDiagnostics.processStartId} operationId=${operation.operationId} " +
                 "appWidgetId=$appWidgetId entityId=$entityId source=ACTION desiredState=${operation.desiredState}",
         )
-        DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId)
+        DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId, deviceKey)
         container.dashboardEvents.wakeAsync("CONTROL")
+    }
+}
+
+class DashboardTimerAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
+        val deviceKey = parameters[DashboardDeviceKey] ?: return
+        val container = (context.applicationContext as HaWidgetApplication).container
+        val selection = container.dashboards.selectNextTimerDuration(appWidgetId, deviceKey) ?: return
+        val (card, preset) = selection
+        val primary = card.controls.firstOrNull { AutoOffTimerPolicy.eligible(it.domain) } ?: return
+        val timerId = card.autoOffTimer?.timerEntityId ?: return
+        DashboardTimerActionWorker.enqueue(
+            context, appWidgetId, primary.entityId, primary.domain, primary.state in setOf("on", "active"),
+            timerId, preset.minutes,
+        )
+        container.dashboardEvents.wakeAsync("TIMER_CONTROL")
     }
 }
 

@@ -14,6 +14,9 @@ data class HaEntity(
     val hiddenBy: String? = null,
     val disabledBy: String? = null,
     val lastChanged: String? = null,
+    val timerDuration: String? = null,
+    val timerRemaining: String? = null,
+    val timerFinishesAt: String? = null,
 ) {
     val domain: String get() = entityId.substringBefore('.')
     val displayState: String get() = if (unit.isNullOrBlank()) state else "$state $unit"

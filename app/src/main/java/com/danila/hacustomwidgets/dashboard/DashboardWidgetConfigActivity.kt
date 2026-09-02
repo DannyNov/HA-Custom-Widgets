@@ -98,7 +98,7 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
     companion object { const val EXTRA_IN_APP_SETTINGS = "dashboard_in_app_settings" }
 }
 
-private enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, SPACE_CARDS, SCENARIOS }
+private enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, SCENARIOS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +126,7 @@ private fun DashboardConfigurator(
     var automationVisible by remember { mutableStateOf(existing?.scenarioAutomationVisible ?: true) }
     var scriptVisible by remember { mutableStateOf(existing?.scenarioScriptVisible ?: true) }
     var scenarioOrder by remember { mutableStateOf(existing?.scenarioOrderBySpaceAndDomain.orEmpty()) }
+    var autoOffTimers by remember { mutableStateOf(existing?.autoOffTimersByDevice.orEmpty()) }
     val connection = remember { container.connectionStore.load() }
     val scope = rememberCoroutineScope()
 
@@ -147,7 +148,11 @@ private fun DashboardConfigurator(
     fun closeSubscreen() {
         currentDevice = null
         currentSpaceId = null
-        screen = if (screen == ConfigScreen.ENTITIES) ConfigScreen.FAVORITES else ConfigScreen.OVERVIEW
+        screen = when (screen) {
+            ConfigScreen.TIMER -> ConfigScreen.ENTITIES
+            ConfigScreen.ENTITIES -> ConfigScreen.FAVORITES
+            else -> ConfigScreen.OVERVIEW
+        }
         query = ""
     }
     BackHandler(enabled = screen != ConfigScreen.OVERVIEW) { closeSubscreen() }
@@ -156,6 +161,7 @@ private fun DashboardConfigurator(
         ConfigScreen.OVERVIEW -> "Настройка HA Dashboard"
         ConfigScreen.FAVORITES -> "Главное и карточки"
         ConfigScreen.ENTITIES -> currentDevice?.title ?: "Параметры устройства"
+        ConfigScreen.TIMER -> "Таймер автоотключения"
         ConfigScreen.SPACE_CARDS -> "Порядок карточек"
         ConfigScreen.SCENARIOS -> "Сценарии"
     }
@@ -216,6 +222,7 @@ private fun DashboardConfigurator(
                                 appWidgetId, visibleSpaces, grouping, favorites, entityOrder,
                                 cardOrder, showUpdated, compact,
                                 spaceOrder, scenariosEnabled, automationVisible, scriptVisible, scenarioOrder,
+                                autoOffTimers,
                             ),
                             loaded,
                         )
@@ -239,6 +246,16 @@ private fun DashboardConfigurator(
                     selectedOrder = entityOrder[group.key]
                         ?: defaultMetricOrder(group.entities).take(5).map { it.entityId },
                     onChange = { order -> entityOrder = entityOrder + (group.key to order) },
+                    onOpenTimer = { screen = ConfigScreen.TIMER },
+                )
+            }
+            ConfigScreen.TIMER -> currentDevice?.let { group ->
+                TimerSettingsScreen(
+                    modifier = Modifier.padding(padding),
+                    group = group,
+                    timers = loaded.groups.flatMap { it.entities }.filter { it.domain == "timer" },
+                    config = autoOffTimers[group.key] ?: AutoOffTimerConfig(),
+                    onChange = { autoOffTimers = autoOffTimers + (group.key to it) },
                 )
             }
             ConfigScreen.SPACE_CARDS -> currentSpaceId?.let { spaceId ->
@@ -442,6 +459,7 @@ private fun EntityOrderScreen(
     group: HaDeviceGroup,
     selectedOrder: List<String>,
     onChange: (List<String>) -> Unit,
+    onOpenTimer: () -> Unit,
 ) {
     val byId = group.entities.associateBy { it.entityId }
     val sorted = selectedOrder.mapNotNull(byId::get) +
@@ -483,6 +501,76 @@ private fun EntityOrderScreen(
                     }
                 }
         }
+        val primary = group.entities.firstOrNull { serviceAction(it) != null && AutoOffTimerPolicy.eligible(it.domain) }
+        if (primary != null) Button(onClick = onOpenTimer, modifier = Modifier.fillMaxWidth()) {
+            Text("Таймер автоотключения")
+        }
+    }
+}
+
+@Composable
+private fun TimerSettingsScreen(
+    modifier: Modifier,
+    group: HaDeviceGroup,
+    timers: List<HaEntity>,
+    config: AutoOffTimerConfig,
+    onChange: (AutoOffTimerConfig) -> Unit,
+) {
+    val selectedTimer = timers.firstOrNull { it.entityId == config.timerEntityId }
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingSwitch("Использовать таймер", config.enabled) { enabled ->
+            onChange(config.copy(enabled = enabled && (config.timerEntityId != null || timers.isNotEmpty()),
+                timerEntityId = config.timerEntityId ?: timers.firstOrNull()?.entityId))
+        }
+        Text("Таймер Home Assistant", style = MaterialTheme.typography.titleSmall)
+        TextButton(onClick = {
+            if (timers.isNotEmpty()) {
+                val current = timers.indexOfFirst { it.entityId == config.timerEntityId }
+                onChange(config.copy(timerEntityId = timers[(current + 1).mod(timers.size)].entityId))
+            }
+        }, enabled = timers.isNotEmpty()) {
+            val type = HaEntityIconPolicy.resolve("timer", null)
+            Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
+            Text(selectedTimer?.let { "${it.friendlyName} · ${it.entityId}" } ?: "Выбрать timer.*")
+        }
+        Text("Варианты времени", style = MaterialTheme.typography.titleSmall)
+        ReorderableList(
+            items = config.durations,
+            stableId = { it.id },
+            modifier = Modifier.weight(1f),
+            onMove = { from, to -> onChange(config.copy(durations = moveStable(config.durations, from, to))) },
+        ) { preset, dragging, itemModifier, dragHandle ->
+            var text by remember(preset.id, preset.minutes) { mutableStateOf(preset.minutes.toString()) }
+            Card(itemModifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(if (dragging) 10.dp else 1.dp)) {
+                Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { value ->
+                            text = value.filter(Char::isDigit)
+                            val minutes = text.toIntOrNull()
+                            if (minutes != null && AutoOffTimerPolicy.validMinutes(minutes) &&
+                                config.durations.none { it.id != preset.id && it.minutes == minutes }
+                            ) onChange(config.copy(durations = config.durations.map {
+                                if (it.id == preset.id) it.copy(minutes = minutes) else it
+                            }))
+                        },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Минуты") }, singleLine = true,
+                    )
+                    if (config.durations.size > 1) TextButton(onClick = {
+                        onChange(config.copy(durations = config.durations.filterNot { it.id == preset.id }))
+                    }) { Text("Удалить") }
+                    dragHandle()
+                }
+            }
+        }
+        Button(onClick = {
+            val used = config.durations.map { it.minutes }.toSet()
+            val value = (1..1440).firstOrNull { it !in used } ?: return@Button
+            onChange(config.copy(durations = config.durations + TimerDurationPreset.create(value)))
+        }, modifier = Modifier.fillMaxWidth(), enabled = config.durations.size < 48) { Text("+ Добавить время") }
+        Text("Для автоматического выключения после окончания timer должна быть настроена автоматизация Home Assistant.",
+            style = MaterialTheme.typography.bodySmall)
     }
 }
 

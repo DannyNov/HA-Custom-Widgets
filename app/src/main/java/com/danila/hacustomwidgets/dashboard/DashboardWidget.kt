@@ -49,6 +49,7 @@ import com.danila.hacustomwidgets.R
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import java.text.DateFormat
 import java.util.Date
+import java.time.Instant
 
 class DashboardWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Exact
@@ -358,7 +359,7 @@ private fun DashboardDeviceCard(
                     Text("⚠ Недоступно", style = TextStyle(color = semantic, fontSize = 10.sp))
                 } else if (unknown) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
-                } else if (card.controls.size == 1) {
+                } else if (card.controls.size == 1 && card.autoOffTimer == null) {
                     val control = card.controls.first()
                     Text(
                         controlLabel(control, operationStatuses[control.entityId]),
@@ -374,6 +375,49 @@ private fun DashboardDeviceCard(
                         ),
                         style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
                     )
+                }
+            }
+            val timerConfig = card.autoOffTimer
+            if (timerConfig != null && !unavailable) {
+                val primary = card.controls.firstOrNull { AutoOffTimerPolicy.eligible(it.domain) }
+                val timerPresentation = card.timerState?.let { HaTimerPresentationPolicy.resolve(it, Instant.now()) }
+                val actualMinutes = timerPresentation?.actualDurationMinutes
+                val selectedMinutes = if (timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)) {
+                    actualMinutes
+                } else timerConfig.durations.getOrNull(timerConfig.selectedDurationIndex)?.minutes
+                    ?: timerConfig.durations.firstOrNull()?.minutes
+                if (primary != null) {
+                    Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
+                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "⏻ ${controlLabel(primary, operationStatuses[primary.entityId])}",
+                            modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp, vertical = 6.dp)
+                                .clickable(actionRunCallback<DashboardControlAction>(actionParametersOf(
+                                    DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
+                                    DashboardEntityKey to primary.entityId, DashboardDomainKey to primary.domain,
+                                ))),
+                            style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                        )
+                        Text(
+                            "⏱ ${selectedMinutes?.let { "$it мин" } ?: "—"}",
+                            modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp, vertical = 6.dp)
+                                .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
+                                    DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
+                                ))),
+                            style = TextStyle(color = ColorProvider(R.color.widget_accent), fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold),
+                        )
+                    }
+                    timerPresentation?.formattedRemaining?.takeIf {
+                        timerPresentation.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
+                    }?.let { remaining ->
+                        Text(
+                            if (timerPresentation.status == HaTimerStatus.PAUSED) "Пауза · $remaining" else "Осталось $remaining",
+                            modifier = GlanceModifier.fillMaxWidth(),
+                            style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
+                                textAlign = TextAlign.End),
+                        )
+                    }
                 }
             }
             if (card.controls.size > 1 && !unavailable) {
@@ -438,7 +482,7 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         metrics.forEach { metric ->
             val icon = metricIcon(metric)
-            val text = if (icon == "•") "${metric.label}: ${metric.state}" else "$icon ${metric.state}"
+            val text = if (MetricPresentationPolicy.showLabel(metric)) "${metric.label}: ${metric.state}" else "$icon ${metric.state}"
             Text(
                 text,
                 modifier = GlanceModifier.width(cellWidth.dp).padding(end = 3.dp),

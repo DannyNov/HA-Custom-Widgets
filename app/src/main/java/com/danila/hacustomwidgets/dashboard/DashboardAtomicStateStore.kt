@@ -121,6 +121,9 @@ class DashboardAtomicStateStore(context: Context) {
         .put("revision", revision)
         .put("optimistic_overlay", optimisticOverlay)
         .put("optimistic_operation", optimisticOperationId)
+        .put("timer_duration", timerDuration)
+        .put("timer_remaining", timerRemaining)
+        .put("timer_finishes_at", timerFinishesAt)
 
     private fun DashboardOperation.toJson() = JSONObject()
         .put("operation_id", operationId).put("entity_id", entityId)
@@ -156,6 +159,9 @@ class DashboardAtomicStateStore(context: Context) {
         revision = json.optLong("revision"),
         optimisticOverlay = json.optNullable("optimistic_overlay"),
         optimisticOperationId = json.optNullable("optimistic_operation"),
+        timerDuration = json.optNullable("timer_duration"),
+        timerRemaining = json.optNullable("timer_remaining"),
+        timerFinishesAt = json.optNullable("timer_finishes_at"),
     )
 
     private fun parseOperation(json: JSONObject) = DashboardOperation(

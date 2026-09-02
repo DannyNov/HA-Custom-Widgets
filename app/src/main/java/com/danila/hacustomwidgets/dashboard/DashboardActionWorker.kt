@@ -20,6 +20,7 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
         val appWidgetId = inputData.getInt(KEY_WIDGET_ID, -1)
         val entityId = inputData.getString(KEY_ENTITY_ID) ?: return Result.failure()
         val operationId = inputData.getString(KEY_OPERATION_ID) ?: return Result.failure()
+        val deviceKey = inputData.getString(KEY_DEVICE_KEY)
         if (appWidgetId < 0) return Result.failure()
         val container = (applicationContext as HaWidgetApplication).container
         container.dashboardEvents.workerStarted("DASHBOARD_ACTION")
@@ -37,6 +38,13 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
         try {
             val connection = container.connectionStore.load() ?: error("Подключение не настроено")
             container.client.callService(connection, operation.domain, operation.service, entityId)
+            if (operation.desiredState == "off" && deviceKey != null) {
+                val card = container.dashboards.get(appWidgetId)?.cards?.firstOrNull { it.key == deviceKey }
+                val timerId = card?.autoOffTimer?.timerEntityId
+                if (timerId != null && card.timerState?.rawState in setOf("active", "paused")) {
+                    container.client.callService(connection, "timer", "cancel", timerId)
+                }
+            }
             serviceAccepted = true
             Log.d(TAG, context("SERVICE_CALL_END", appWidgetId, operation, "httpAccepted=true confirmed=false"))
 
@@ -129,16 +137,18 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
         private const val KEY_WIDGET_ID = "widget_id"
         private const val KEY_ENTITY_ID = "entity_id"
         private const val KEY_OPERATION_ID = "operation_id"
+        private const val KEY_DEVICE_KEY = "device_key"
         private const val MAX_RETRIES = 2
         private const val POLL_INTERVAL_MS = 500L
 
-        fun enqueue(context: Context, appWidgetId: Int, entityId: String, operationId: String) {
+        fun enqueue(context: Context, appWidgetId: Int, entityId: String, operationId: String, deviceKey: String? = null) {
             val operation = (context.applicationContext as HaWidgetApplication).container.dashboards
                 .getOperation(appWidgetId, entityId)?.takeIf { it.operationId == operationId } ?: return
             val data = Data.Builder().putInt(KEY_WIDGET_ID, appWidgetId)
                 .putString(KEY_ENTITY_ID, entityId).putString(KEY_OPERATION_ID, operationId).build()
+            val finalData = Data.Builder().putAll(data).putString(KEY_DEVICE_KEY, deviceKey).build()
             val request = OneTimeWorkRequestBuilder<DashboardActionWorker>()
-                .setInputData(data)
+                .setInputData(finalData)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(

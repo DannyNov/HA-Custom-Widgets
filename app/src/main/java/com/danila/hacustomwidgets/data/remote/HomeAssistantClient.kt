@@ -136,8 +136,11 @@ class HomeAssistantClient(
         domain: String,
         service: String,
         entityId: String,
+        serviceData: Map<String, String> = emptyMap(),
     ) = withContext(Dispatchers.IO) {
-        val body = JSONObject().put("entity_id", entityId).toString()
+        val body = JSONObject().put("entity_id", entityId).apply {
+            serviceData.forEach { (key, value) -> put(key, value) }
+        }.toString()
             .toRequestBody(JSON_MEDIA_TYPE)
         http.newCall(
             Request.Builder()
@@ -395,6 +398,9 @@ class HomeAssistantClient(
             lastChanged = optNullableString("last_changed"),
             deviceClass = attributes.optNullableString("device_class"),
             icon = attributes.optNullableString("icon"),
+            timerDuration = attributes.optNullableString("duration"),
+            timerRemaining = attributes.optNullableString("remaining"),
+            timerFinishesAt = attributes.optNullableString("finishes_at"),
         )
     }
 
@@ -487,6 +493,9 @@ internal class CompressedEntitySubscriptionParser {
                     lastChanged = epochSeconds(plus, "lc") ?: current?.lastChanged,
                     deviceClass = attributes.optNullableString("device_class"),
                     icon = attributes.optNullableString("icon"),
+                    timerDuration = attributes.optNullableString("duration"),
+                    timerRemaining = attributes.optNullableString("remaining"),
+                    timerFinishesAt = attributes.optNullableString("finishes_at"),
                 )
             }
         }
@@ -524,6 +533,9 @@ internal class CompressedEntitySubscriptionParser {
             lastChanged = epochSeconds(value, "lc"),
             deviceClass = attributes.optNullableString("device_class"),
             icon = attributes.optNullableString("icon"),
+            timerDuration = attributes.optNullableString("duration"),
+            timerRemaining = attributes.optNullableString("remaining"),
+            timerFinishesAt = attributes.optNullableString("finishes_at"),
         )
     }
 
@@ -532,6 +544,9 @@ internal class CompressedEntitySubscriptionParser {
         current?.unit?.let { put("unit_of_measurement", it) }
         current?.deviceClass?.let { put("device_class", it) }
         current?.icon?.let { put("icon", it) }
+        current?.timerDuration?.let { put("duration", it) }
+        current?.timerRemaining?.let { put("remaining", it) }
+        current?.timerFinishesAt?.let { put("finishes_at", it) }
         updates?.keys()?.let { keys -> while (keys.hasNext()) keys.next().let { put(it, updates.get(it)) } }
     }
 

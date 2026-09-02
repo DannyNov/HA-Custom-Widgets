@@ -75,6 +75,23 @@ class DashboardRepository(context: Context) {
 
     fun entityIds(appWidgetId: Int): List<String> = structure(appWidgetId)?.entityIds.orEmpty()
 
+    @Synchronized
+    fun selectNextTimerDuration(appWidgetId: Int, deviceKey: String): Pair<DashboardCard, TimerDurationPreset>? {
+        val state = get(appWidgetId) ?: return null
+        val card = state.cards.firstOrNull { it.key == deviceKey } ?: return null
+        val config = state.config.autoOffTimersByDevice[deviceKey]?.takeIf {
+            it.enabled && it.timerEntityId != null && AutoOffTimerPolicy.validate(it.durations)
+        } ?: return null
+        val actual = card.timerState?.let { HaTimerPresentationPolicy.resolve(it, Instant.now()).actualDurationMinutes }
+        val next = AutoOffTimerPolicy.nextIndex(config, actual.takeIf { card.timerState?.rawState in setOf("active", "paused") })
+        if (next !in config.durations.indices) return null
+        val updated = state.config.copy(autoOffTimersByDevice = state.config.autoOffTimersByDevice +
+            (deviceKey to config.copy(selectedDurationIndex = next)))
+        configPrefs.edit().putString(key(appWidgetId, "config"), updated.toJson().toString()).apply()
+        touchAndRequestRender(appWidgetId, "TIMER_PRESET")
+        return card to config.durations[next]
+    }
+
     fun widgetsContainingEntity(entityId: String): List<Int> {
         all().forEach { structure(it.appWidgetId) }
         return widgetsByEntity[entityId]?.toList().orEmpty()
@@ -116,10 +133,12 @@ class DashboardRepository(context: Context) {
         }
         val spaces = catalog.spaces().map { DashboardSpace(it.id, it.name, it.areaIds) }
         val areaNames = catalog.areas.associate { it.id to it.name }
+        val allEntities = catalog.groups.flatMap { it.entities }.distinctBy { it.entityId }
+        val entitiesById = allEntities.associateBy { it.entityId }
         val cards = catalog.groups.mapNotNull { group ->
             group.copy(entities = group.entities.filterNot { it.domain in SCENARIO_DOMAINS })
                 .takeIf { it.entities.isNotEmpty() }
-                ?.toDashboardCard(config, areaNames)
+                ?.toDashboardCard(config, areaNames, entitiesById)
         }
         val scenarios = catalog.groups.flatMap { group ->
             group.entities.filter { it.domain in SCENARIO_DOMAINS }.map { entity ->
@@ -143,7 +162,7 @@ class DashboardRepository(context: Context) {
         configPrefs.edit()
             .remove(key(appWidgetId, "error"))
             .apply()
-        val entities = catalog.groups.flatMap { it.entities }.distinctBy { it.entityId }
+        val entities = allEntities
         if (entities.isEmpty()) {
             configPrefs.edit().putLong(key(appWidgetId, "updated"), System.currentTimeMillis()).apply()
             touchAndRequestRender(appWidgetId, "CATALOG")
@@ -188,6 +207,9 @@ class DashboardRepository(context: Context) {
                     revision = revision,
                     optimisticOverlay = existing?.optimisticOverlay,
                     optimisticOperationId = existing?.optimisticOperationId,
+                    timerDuration = entity.timerDuration,
+                    timerRemaining = entity.timerRemaining,
+                    timerFinishesAt = entity.timerFinishesAt,
                 )
                 stateMap[entity.entityId] = updated
                 if (decision.confirmsOperation && operation != null) {
@@ -423,6 +445,14 @@ class DashboardRepository(context: Context) {
                         control.copy(state = it.rawState)
                     } ?: control
                 },
+                timerState = card.timerState?.let { timer ->
+                    atomic.entities[timer.entityId]?.let { state -> timer.copy(
+                        state = state.displayState, rawState = state.rawState,
+                        timerDuration = state.timerDuration,
+                        timerRemaining = state.timerRemaining,
+                        timerFinishesAt = state.timerFinishesAt,
+                    ) } ?: timer
+                },
             )
         }
         val scenarios = structure.scenarioActions.map { action ->
@@ -537,6 +567,7 @@ class DashboardRepository(context: Context) {
                 val scenarios = parseScenarios(json.optJSONArray("scenarios") ?: JSONArray())
                 val ids = cards.flatMap { card ->
                     card.metrics.map { it.entityId } + card.controls.map { it.entityId }
+                        + listOfNotNull(card.autoOffTimer?.timerEntityId)
                 }.plus(scenarios.map { it.entityId }).distinct()
                 val areaCards = cards.filter { it.areaId != null }.groupBy { requireNotNull(it.areaId) }
                     .mapValues { (_, values) -> values.map { it.key } }
@@ -605,6 +636,7 @@ class DashboardRepository(context: Context) {
     private fun HaDeviceGroup.toDashboardCard(
         config: DashboardConfig,
         areaNames: Map<String, String>,
+        entitiesById: Map<String, HaEntity>,
     ): DashboardCard {
         val requested = config.entityOrderByDevice[key]
         val ordered = if (requested.isNullOrEmpty()) {
@@ -621,7 +653,15 @@ class DashboardRepository(context: Context) {
                     state = entity.state,
                 )
             }
-        }
+        }.filterNot { it.entityId == config.autoOffTimersByDevice[key]?.timerEntityId }
+        val timerConfig = config.autoOffTimersByDevice[key]
+            ?.takeIf { it.enabled && it.timerEntityId != null && AutoOffTimerPolicy.validate(it.durations) }
+        val timerId = timerConfig?.timerEntityId
+        val timerEntity = timerId?.let(entitiesById::get)
+        fun HaEntity.asMetric() = DashboardMetric(
+            entityId, WidgetRepository.compactMetricName(title, friendlyName), displayState, state,
+            domain, deviceClass, timerDuration, timerRemaining, timerFinishesAt,
+        )
         return DashboardCard(
             key = key,
             title = title,
@@ -636,9 +676,14 @@ class DashboardRepository(context: Context) {
                     rawState = entity.state,
                     domain = entity.domain,
                     deviceClass = entity.deviceClass,
+                    timerDuration = entity.timerDuration,
+                    timerRemaining = entity.timerRemaining,
+                    timerFinishesAt = entity.timerFinishesAt,
                 )
-            },
+            }.filterNot { it.entityId == timerId },
             controls = controls,
+            autoOffTimer = timerConfig,
+            timerState = timerEntity?.asMetric(),
         )
     }
 
@@ -736,6 +781,9 @@ class DashboardRepository(context: Context) {
         .put("scenario_automation_visible", scenarioAutomationVisible)
         .put("scenario_script_visible", scenarioScriptVisible)
         .put("scenario_order", mapOfListsJson(scenarioOrderBySpaceAndDomain))
+        .put("auto_off_timers", JSONObject().also { out ->
+            autoOffTimersByDevice.forEach { (deviceKey, timer) -> out.put(deviceKey, timer.toJson()) }
+        })
 
     private fun parseConfig(json: JSONObject, appWidgetId: Int) = DashboardConfig(
         appWidgetId = appWidgetId,
@@ -755,7 +803,34 @@ class DashboardRepository(context: Context) {
         scenarioAutomationVisible = json.optBoolean("scenario_automation_visible", true),
         scenarioScriptVisible = json.optBoolean("scenario_script_visible", true),
         scenarioOrderBySpaceAndDomain = json.optJSONObject("scenario_order").mapOfLists(),
+        autoOffTimersByDevice = json.optJSONObject("auto_off_timers").timerConfigMap(),
     )
+
+    private fun AutoOffTimerConfig.toJson() = JSONObject()
+        .put("enabled", enabled)
+        .put("timer_entity_id", timerEntityId)
+        .put("selected_index", selectedDurationIndex)
+        .put("durations", JSONArray().also { array -> durations.forEach { preset ->
+            array.put(JSONObject().put("id", preset.id).put("minutes", preset.minutes))
+        } })
+
+    private fun JSONObject?.timerConfigMap(): Map<String, AutoOffTimerConfig> = this?.let { json ->
+        json.keys().asSequence().associateWith { key ->
+            val value = json.getJSONObject(key)
+            val durations = buildList {
+                val array = value.optJSONArray("durations") ?: JSONArray()
+                for (index in 0 until array.length()) array.getJSONObject(index).let {
+                    add(TimerDurationPreset(it.optString("id", "preset-$index"), it.optInt("minutes")))
+                }
+            }.takeIf(AutoOffTimerPolicy::validate) ?: AutoOffTimerConfig.DEFAULT_TIMER_PRESETS
+            AutoOffTimerConfig(
+                enabled = value.optBoolean("enabled"),
+                timerEntityId = value.optNullable("timer_entity_id"),
+                durations = durations,
+                selectedDurationIndex = value.optInt("selected_index", -1),
+            )
+        }
+    }.orEmpty()
 
     private fun scenariosJson(items: List<DashboardScenarioAction>) = JSONArray().also { array ->
         items.forEach { action ->
@@ -802,9 +877,21 @@ class DashboardRepository(context: Context) {
                             metrics.put(
                                 JSONObject().put("id", metric.entityId).put("label", metric.label)
                                     .put("state", metric.state).put("raw", metric.rawState)
-                                    .put("domain", metric.domain).put("class", metric.deviceClass),
+                                    .put("domain", metric.domain).put("class", metric.deviceClass)
+                                    .put("timer_duration", metric.timerDuration)
+                                    .put("timer_remaining", metric.timerRemaining)
+                                    .put("timer_finishes_at", metric.timerFinishesAt),
                             )
                         }
+                    })
+                    .put("auto_off_timer", card.autoOffTimer?.toJson())
+                    .put("timer_state", card.timerState?.let { metric ->
+                        JSONObject().put("id", metric.entityId).put("label", metric.label)
+                            .put("state", metric.state).put("raw", metric.rawState)
+                            .put("domain", metric.domain).put("class", metric.deviceClass)
+                            .put("timer_duration", metric.timerDuration)
+                            .put("timer_remaining", metric.timerRemaining)
+                            .put("timer_finishes_at", metric.timerFinishesAt)
                     }),
             )
         }
@@ -819,6 +906,8 @@ class DashboardRepository(context: Context) {
                         DashboardMetric(
                             metric.getString("id"), metric.optString("label"), metric.optString("state"),
                             metric.optString("raw"), metric.optString("domain"), metric.optNullable("class"),
+                            metric.optNullable("timer_duration"), metric.optNullable("timer_remaining"),
+                            metric.optNullable("timer_finishes_at"),
                         ),
                     )
                 }
@@ -854,6 +943,25 @@ class DashboardRepository(context: Context) {
                     runCatching { DeviceCategory.valueOf(item.optString("category")) }
                         .getOrDefault(DeviceCategory.OTHER),
                     metrics, controls,
+                    item.optJSONObject("auto_off_timer")?.let { timer ->
+                        val durations = buildList {
+                            val values = timer.optJSONArray("durations") ?: JSONArray()
+                            for (index in 0 until values.length()) values.getJSONObject(index).let {
+                                add(TimerDurationPreset(it.optString("id", "preset-$index"), it.optInt("minutes")))
+                            }
+                        }
+                        AutoOffTimerConfig(
+                            timer.optBoolean("enabled"), timer.optNullable("timer_entity_id"),
+                            durations.takeIf(AutoOffTimerPolicy::validate) ?: AutoOffTimerConfig.DEFAULT_TIMER_PRESETS,
+                            timer.optInt("selected_index", -1),
+                        )
+                    },
+                    item.optJSONObject("timer_state")?.let { metric -> DashboardMetric(
+                        metric.getString("id"), metric.optString("label"), metric.optString("state"),
+                        metric.optString("raw"), metric.optString("domain"), metric.optNullable("class"),
+                        metric.optNullable("timer_duration"), metric.optNullable("timer_remaining"),
+                        metric.optNullable("timer_finishes_at"),
+                    ) },
                 ),
             )
         }
