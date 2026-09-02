@@ -19,6 +19,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -508,6 +511,7 @@ private fun EntityOrderScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimerSettingsScreen(
     modifier: Modifier,
@@ -517,21 +521,33 @@ private fun TimerSettingsScreen(
     onChange: (AutoOffTimerConfig) -> Unit,
 ) {
     val selectedTimer = timers.firstOrNull { it.entityId == config.timerEntityId }
+    var timerMenuExpanded by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingSwitch("Использовать таймер", config.enabled) { enabled ->
             onChange(config.copy(enabled = enabled && (config.timerEntityId != null || timers.isNotEmpty()),
                 timerEntityId = config.timerEntityId ?: timers.firstOrNull()?.entityId))
         }
         Text("Таймер Home Assistant", style = MaterialTheme.typography.titleSmall)
-        TextButton(onClick = {
-            if (timers.isNotEmpty()) {
-                val current = timers.indexOfFirst { it.entityId == config.timerEntityId }
-                onChange(config.copy(timerEntityId = timers[(current + 1).mod(timers.size)].entityId))
+        ExposedDropdownMenuBox(
+            expanded = timerMenuExpanded,
+            onExpandedChange = { if (timers.isNotEmpty()) timerMenuExpanded = !timerMenuExpanded },
+        ) {
+            OutlinedTextField(
+                value = selectedTimer?.let { "${it.friendlyName} · ${it.entityId}" } ?: "Выбрать timer.*",
+                onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth().menuAnchor(),
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(timerMenuExpanded) },
+            )
+            ExposedDropdownMenu(expanded = timerMenuExpanded, onDismissRequest = { timerMenuExpanded = false }) {
+                timers.forEach { timer ->
+                    DropdownMenuItem(
+                        text = { Text("${timer.friendlyName}\n${timer.entityId}") },
+                        onClick = {
+                            onChange(config.copy(timerEntityId = timer.entityId))
+                            timerMenuExpanded = false
+                        },
+                    )
+                }
             }
-        }, enabled = timers.isNotEmpty()) {
-            val type = HaEntityIconPolicy.resolve("timer", null)
-            Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
-            Text(selectedTimer?.let { "${it.friendlyName} · ${it.entityId}" } ?: "Выбрать timer.*")
         }
         Text("Варианты времени", style = MaterialTheme.typography.titleSmall)
         ReorderableList(
