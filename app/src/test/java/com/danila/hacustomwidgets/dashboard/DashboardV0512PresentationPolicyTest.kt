@@ -1,5 +1,6 @@
 package com.danila.hacustomwidgets.dashboard
 
+import com.danila.hacustomwidgets.tr
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant
@@ -13,21 +14,21 @@ class DashboardV0512PresentationPolicyTest {
     )
 
     @Test fun subHourCountdownRoundsUpToWholeMinutes() {
-        assertEquals("30 мин", HaTimerPresentationPolicy.formatRemaining(30 * 60_000L))
-        assertEquals("30 мин", HaTimerPresentationPolicy.formatRemaining((29 * 60 + 59) * 1_000L))
-        assertEquals("30 мин", HaTimerPresentationPolicy.formatRemaining((29 * 60 + 27) * 1_000L))
-        assertEquals("2 мин", HaTimerPresentationPolicy.formatRemaining(61_000L))
+        assertEquals(tr("30 min", "30 мин"), HaTimerPresentationPolicy.formatRemaining(30 * 60_000L))
+        assertEquals(tr("30 min", "30 мин"), HaTimerPresentationPolicy.formatRemaining((29 * 60 + 59) * 1_000L))
+        assertEquals(tr("30 min", "30 мин"), HaTimerPresentationPolicy.formatRemaining((29 * 60 + 27) * 1_000L))
+        assertEquals(tr("2 min", "2 мин"), HaTimerPresentationPolicy.formatRemaining(61_000L))
     }
 
     @Test fun underOneMinuteNeverShowsZeroMinutes() {
-        assertEquals("< 1 мин", HaTimerPresentationPolicy.formatRemaining(59_000L))
-        assertEquals("< 1 мин", HaTimerPresentationPolicy.formatRemaining(1_000L))
+        assertEquals(tr("< 1 min", "< 1 мин"), HaTimerPresentationPolicy.formatRemaining(59_000L))
+        assertEquals(tr("< 1 min", "< 1 мин"), HaTimerPresentationPolicy.formatRemaining(1_000L))
     }
 
     @Test fun hourCountdownRoundsUpConsistentlyWithTimerTapPolicy() {
-        assertEquals("1 ч", HaTimerPresentationPolicy.formatRemaining(3_600_000L))
-        assertEquals("1 ч 28 мин", HaTimerPresentationPolicy.formatRemaining((3600 + 27 * 60 + 14) * 1_000L))
-        assertEquals("2 ч 15 мин", HaTimerPresentationPolicy.formatRemaining((2 * 3600 + 14 * 60 + 59) * 1_000L))
+        assertEquals(tr("1 h", "1 ч"), HaTimerPresentationPolicy.formatRemaining(3_600_000L))
+        assertEquals(tr("1 h 28 min", "1 ч 28 мин"), HaTimerPresentationPolicy.formatRemaining((3600 + 27 * 60 + 14) * 1_000L))
+        assertEquals(tr("2 h 15 min", "2 ч 15 мин"), HaTimerPresentationPolicy.formatRemaining((2 * 3600 + 14 * 60 + 59) * 1_000L))
     }
 
     @Test fun idleUnavailableAndUnknownHaveNoRemainingPresentation() {
@@ -39,7 +40,7 @@ class DashboardV0512PresentationPolicyTest {
     @Test fun pausedUsesSameMinutePresentationWithoutBecomingLocalAuthority() {
         val paused = HaTimerPresentationPolicy.resolve(timer("paused", "00:29:27"), Instant.EPOCH)
         assertEquals(HaTimerStatus.PAUSED, paused.status)
-        assertEquals("30 мин", paused.formattedRemaining)
+        assertEquals(tr("30 min", "30 мин"), paused.formattedRemaining)
     }
 
     @Test fun singleMetricUsesOneColumn() {

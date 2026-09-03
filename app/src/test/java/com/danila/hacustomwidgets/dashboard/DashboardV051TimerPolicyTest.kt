@@ -1,5 +1,6 @@
 package com.danila.hacustomwidgets.dashboard
 
+import com.danila.hacustomwidgets.tr
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant
@@ -94,8 +95,8 @@ class DashboardV051TimerPolicyTest {
     }
 
     @Test fun countdownFormattingMatchesUx() {
-        assertEquals("48 мин", HaTimerPresentationPolicy.formatRemaining((47*60+32)*1000L))
-        assertEquals("1 ч 28 мин", HaTimerPresentationPolicy.formatRemaining((3600+27*60+14)*1000L))
+        assertEquals(tr("48 min", "48 мин"), HaTimerPresentationPolicy.formatRemaining((47*60+32)*1000L))
+        assertEquals(tr("1 h 28 min", "1 ч 28 мин"), HaTimerPresentationPolicy.formatRemaining((3600+27*60+14)*1000L))
     }
 
     @Test fun batterySemanticMetricDoesNotNeedDuplicateLabel() {
