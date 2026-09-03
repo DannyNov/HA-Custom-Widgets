@@ -145,6 +145,7 @@ private fun DashboardContent(
                                 widthDp = width,
                                 compact = state.config.compactDensity,
                                 operationStatuses = state.operationStatusByEntity,
+                                scenarioRunStatuses = state.scenarioRunStatusByEntity,
                             )
                             Spacer(GlanceModifier.height(if (state.config.compactDensity) 5.dp else 8.dp))
                         }
@@ -311,6 +312,7 @@ private fun DashboardDeviceCard(
     widthDp: Int,
     compact: Boolean,
     operationStatuses: Map<String, DashboardOperationStatus>,
+    scenarioRunStatuses: Map<String, DashboardOperationStatus>,
 ) {
     val primaryControl = card.visibleControls.firstOrNull()
     val unavailable = card.metrics.any { it.rawState == "unavailable" } ||
@@ -358,10 +360,13 @@ private fun DashboardDeviceCard(
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
                 } else if (card.key.startsWith("scenario:")) {
                     val control = card.controls.firstOrNull()
+                    if (control != null && card.scenarioRunnable) {
+                        ScenarioRunButton(control, appWidgetId, scenarioRunStatuses[control.entityId])
+                    }
                     if (control != null && ScenarioDisplayPolicy.showStateToggle(control.domain)) {
                         Text(
                             controlLabel(control, operationStatuses[control.entityId]),
-                            modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
+                            modifier = GlanceModifier.width(42.dp).padding(vertical = 5.dp).clickable(
                                 actionRunCallback<DashboardControlAction>(actionParametersOf(
                                     DashboardWidgetIdKey to appWidgetId,
                                     DashboardDeviceKey to card.key,
@@ -369,11 +374,13 @@ private fun DashboardDeviceCard(
                                     DashboardDomainKey to control.domain,
                                 )),
                             ),
-                            style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                            style = TextStyle(
+                                color = semantic,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.End,
+                            ),
                         )
-                    }
-                    if (control != null && card.scenarioRunnable) {
-                        ScenarioRunButton(control, appWidgetId, operationStatuses[control.entityId])
                     }
                 } else if (card.visibleControls.size == 1 && card.autoOffTimer == null) {
                     val control = card.visibleControls.first()

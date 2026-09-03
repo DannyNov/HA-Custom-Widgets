@@ -381,6 +381,12 @@ object ScenarioDisplayPolicy {
     fun showStateToggle(domain: String): Boolean = domain == "automation"
 
     fun exposeControl(domain: String, runnable: Boolean): Boolean = showStateToggle(domain) || runnable
+
+    fun isRunOperation(operation: DashboardOperation): Boolean =
+        operation.desiredState == null && (
+            operation.domain == "automation" && operation.service == "trigger" ||
+                operation.domain == "script" && operation.service == "turn_on"
+            )
 }
 
 sealed interface DashboardSettingsDestination {
@@ -553,6 +559,7 @@ data class DashboardState(
     val refreshInProgress: Boolean,
     val lastUpdatedMillis: Long,
     val error: String?,
+    val scenarioRunStatusByEntity: Map<String, DashboardOperationStatus> = emptyMap(),
 ) {
     val tabs: List<DashboardSpace> = listOf(DashboardSpace(MAIN_TAB_ID, "Главное", emptyList())) +
         DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })

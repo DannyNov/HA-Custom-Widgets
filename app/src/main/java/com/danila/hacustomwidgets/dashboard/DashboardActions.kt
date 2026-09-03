@@ -95,7 +95,7 @@ class DashboardRunScenarioAction : ActionCallback {
             container.dashboards.saveError(appWidgetId, it.message ?: "Действие недоступно")
             return
         } ?: return
-        DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId, "scenario:$entityId")
+        DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId, "scenario-run:$entityId")
         container.dashboardEvents.wakeAsync("SCENARIO")
     }
 }

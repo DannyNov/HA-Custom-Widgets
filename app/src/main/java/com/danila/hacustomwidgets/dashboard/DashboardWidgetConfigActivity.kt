@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.danila.hacustomwidgets.HaWidgetApplication
+import com.danila.hacustomwidgets.SupportDialog
 import com.danila.hacustomwidgets.tr
 import com.danila.hacustomwidgets.data.AppContainer
 import com.danila.hacustomwidgets.data.model.HaCatalog
@@ -129,6 +130,7 @@ private fun DashboardConfigurator(
     var currentDevice by remember { mutableStateOf<HaDeviceGroup?>(null) }
     var currentSpaceId by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
+    var showSupport by remember { mutableStateOf(false) }
     var visibleSpaces by remember { mutableStateOf(existing?.visibleSpaceIds.orEmpty()) }
     var spaceOrder by remember { mutableStateOf(existing?.spaceOrderIds.orEmpty()) }
     var grouping by remember { mutableStateOf(existing?.groupingBySpace.orEmpty()) }
@@ -199,6 +201,11 @@ private fun DashboardConfigurator(
                 navigationIcon = {
                     if (screen != ConfigScreen.OVERVIEW) {
                         TextButton(onClick = ::closeSubscreen) { Text(tr("Back", "Назад")) }
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { showSupport = true }) {
+                        Text(tr("Tips", "Поддержать"))
                     }
                 },
             )
@@ -344,6 +351,7 @@ private fun DashboardConfigurator(
             )
         }
     }
+    if (showSupport) SupportDialog(onDismiss = { showSupport = false })
 }
 
 @Composable

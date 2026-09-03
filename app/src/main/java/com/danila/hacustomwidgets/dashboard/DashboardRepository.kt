@@ -520,11 +520,16 @@ class DashboardRepository(context: Context) {
             collapsedSections = configPrefs.getStringSet(key(appWidgetId, "collapsed"), emptySet())
                 ?.toSet().orEmpty(),
             inFlightDeviceKeys = visibleOperations.filterValues { it.status.isActive }.keys,
-            operationStatusByEntity = visibleOperations.mapValues { it.value.status },
+            operationStatusByEntity = visibleOperations
+                .filterValues { !ScenarioDisplayPolicy.isRunOperation(it) }
+                .mapValues { it.value.status },
             stateRevision = atomic.committedRevision,
             refreshInProgress = configPrefs.getBoolean(key(appWidgetId, "refreshing"), false),
             lastUpdatedMillis = configPrefs.getLong(key(appWidgetId, "updated"), 0L),
             error = configPrefs.getString(key(appWidgetId, "error"), null),
+            scenarioRunStatusByEntity = visibleOperations
+                .filterValues(ScenarioDisplayPolicy::isRunOperation)
+                .mapValues { it.value.status },
         )
         val selectedCount = if (selectedTab == MAIN_TAB_ID) config.favoriteDeviceKeys.size
         else structure.cardKeysBySpace[selectedTab].orEmpty().size

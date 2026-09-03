@@ -221,7 +221,7 @@ private fun ConnectionScreen(
             }
             Spacer(Modifier.height(4.dp))
             Text(tr("How to add a widget", "Как добавить виджет"), style = MaterialTheme.typography.titleMedium)
-            Text(tr("1. Touch and hold an empty area on the Home screen.\n2. Open Widgets.\n3. Find HA Custom Widgets.\n4. Drag an HA widget and configure it.", "1. Удерживайте пустое место на домашнем экране.\n2. Откройте «Виджеты».\n3. Найдите HA Custom Widgets.\n4. Перетащите «Состояние сущности HA» и выберите сущность."))
+            Text(tr("1. Touch and hold an empty area on the Home screen.\n2. Open Widgets.\n3. Find HA Custom Widgets.\n4. Drag HA Dashboard to the Home screen and configure it.", "1. Удерживайте пустое место на домашнем экране.\n2. Откройте «Виджеты».\n3. Найдите HA Custom Widgets.\n4. Перетащите «HA Dashboard» на домашний экран и настройте его."))
             Text(
                 tr("HTTPS is preferred for security. HTTP remains available for local Home Assistant addresses.", "Для безопасности предпочтителен HTTPS. HTTP оставлен доступным для локальных адресов Home Assistant."),
                 style = MaterialTheme.typography.bodySmall,
@@ -279,7 +279,7 @@ private fun ConnectionScreen(
 }
 
 @Composable
-private fun SupportDialog(onDismiss: () -> Unit) {
+internal fun SupportDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val bep20 = "0xe7FA8d9608d50e1B7C645D8185473BCE3A3c14Df"

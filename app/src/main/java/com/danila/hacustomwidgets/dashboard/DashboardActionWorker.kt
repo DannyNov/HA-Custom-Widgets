@@ -52,7 +52,7 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
             serviceAccepted = true
             Log.d(TAG, context("SERVICE_CALL_END", appWidgetId, operation, "httpAccepted=true confirmed=false"))
 
-            if (deviceKey?.startsWith("scenario:") == true) {
+            if (deviceKey?.startsWith("scenario-run:") == true) {
                 container.dashboards.finishOperation(
                     appWidgetId, entityId, operationId, DashboardOperationStatus.CONFIRMED, null,
                 )

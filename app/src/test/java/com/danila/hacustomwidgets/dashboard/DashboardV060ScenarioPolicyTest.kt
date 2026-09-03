@@ -27,4 +27,24 @@ class DashboardV060ScenarioPolicyTest {
         assertFalse(ScenarioDisplayPolicy.exposeControl("script", runnable = false))
         assertTrue(ScenarioDisplayPolicy.exposeControl("script", runnable = true))
     }
+
+    @Test fun runFeedbackDoesNotReuseAutomationToggleStatus() {
+        val toggle = operation(domain = "automation", service = "turn_off", desiredState = "off")
+        val run = operation(domain = "automation", service = "trigger", desiredState = null)
+        assertFalse(ScenarioDisplayPolicy.isRunOperation(toggle))
+        assertTrue(ScenarioDisplayPolicy.isRunOperation(run))
+    }
+
+    @Test fun manualRunRemainsAvailableForDisabledAutomation() {
+        assertTrue(ScenarioDisplayPolicy.runnable(action.entityId, emptySet(), setOf(action.entityId)))
+        assertTrue(ScenarioDisplayPolicy.isRunOperation(
+            operation(domain = "automation", service = "trigger", desiredState = null),
+        ))
+    }
+
+    private fun operation(domain: String, service: String, desiredState: String?) = DashboardOperation(
+        operationId = "op", entityId = action.entityId, domain = domain, service = service,
+        desiredState = desiredState, optimisticState = null, previousState = null,
+        createdAt = 0L, deadlineAt = 1L, status = DashboardOperationStatus.CONFIRMED,
+    )
 }
