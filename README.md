@@ -1,6 +1,6 @@
 # HA Custom Widgets
 
-[Русская версия](README.ru.md)
+[Русская версия](README.ru.md) · [Telegram community](https://t.me/HACustomWidgets)
 
 Native Android home-screen widgets for Home Assistant. The app connects directly to the Home Assistant address configured by the user. Entity, device, area and floor names remain unchanged.
 
@@ -69,6 +69,13 @@ The release workflow builds a non-debuggable signed APK and verifies its applica
 ## License
 
 Copyright 2026 Danila Novikov. Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution information.
+
+## Community
+
+- [Telegram channel and community](https://t.me/HACustomWidgets) — announcements, updates and discussion;
+- [GitHub Issues](https://github.com/DannyNov/HA-Custom-Widgets/issues) — bug reports and feature requests.
+
+Never publish a Home Assistant address, access token or other private configuration data.
 
 ## Support
 

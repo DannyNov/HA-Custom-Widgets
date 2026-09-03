@@ -1,6 +1,6 @@
 # HA Custom Widgets
 
-[English version](README.md)
+[English version](README.md) · [Telegram-сообщество](https://t.me/HACustomWidgets)
 
 Нативные виджеты Home Assistant для домашнего экрана Android. Приложение подключается напрямую к адресу Home Assistant, который указывает пользователь. Имена сущностей, устройств, помещений и этажей остаются такими, как их передаёт Home Assistant.
 
@@ -69,6 +69,13 @@ Release workflow собирает подписанный APK без `debuggable`
 ## Лицензия
 
 Copyright 2026 Danila Novikov. Проект распространяется по [Apache License 2.0](LICENSE). Сведения об авторстве находятся в [NOTICE](NOTICE).
+
+## Сообщество
+
+- [Telegram-канал и сообщество](https://t.me/HACustomWidgets) — новости, обновления и обсуждение;
+- [GitHub Issues](https://github.com/DannyNov/HA-Custom-Widgets/issues) — сообщения об ошибках и предложения функций.
+
+Не публикуйте адрес Home Assistant, токен доступа и другие данные личной конфигурации.
 
 ## Поддержать разработку
 
