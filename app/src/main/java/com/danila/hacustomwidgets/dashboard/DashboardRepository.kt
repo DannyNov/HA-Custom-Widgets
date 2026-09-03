@@ -296,6 +296,39 @@ class DashboardRepository(context: Context) {
         return operation
     }
 
+    @Synchronized
+    fun beginScenarioOperation(appWidgetId: Int, entityId: String, domain: String): DashboardOperation? {
+        require(domain in setOf("automation", "script")) { "Unsupported scenario type" }
+        val existingOperation = getOperation(appWidgetId, entityId)
+        if (!DashboardStatePolicy.canBeginOperation(existingOperation)) return null
+        val createdAt = System.currentTimeMillis()
+        val operation = DashboardOperation(
+            operationId = UUID.randomUUID().toString(),
+            entityId = entityId,
+            domain = domain,
+            service = if (domain == "automation") "trigger" else "turn_on",
+            desiredState = null,
+            optimisticState = null,
+            previousState = null,
+            createdAt = createdAt,
+            deadlineAt = createdAt + DashboardStatePolicy.OPERATION_WINDOW_MS,
+            status = DashboardOperationStatus.PENDING,
+        )
+        commitAndRequestRender(appWidgetId, "SCENARIO_ACTION") { before ->
+            val revision = before.committedRevision + 1
+            before.copy(
+                operations = before.operations + (entityId to operation),
+                committedRevision = revision,
+                requestedRenderRevision = maxOf(before.requestedRenderRevision, revision),
+            )
+        }
+        return operation
+    }
+
+    fun refreshTransientUi(appWidgetId: Int) {
+        touchAndRequestRender(appWidgetId, "TRANSIENT_STATUS_EXPIRED")
+    }
+
     fun getOperation(appWidgetId: Int, entityId: String): DashboardOperation? =
         atomicStore.read(appWidgetId, knownEntityIds(appWidgetId)).operations[entityId]
 
@@ -798,6 +831,8 @@ class DashboardRepository(context: Context) {
         .put("type_group_order", mapOfListsJson(typeGroupOrderByContext))
         .put("hidden_devices", mapOfListsJson(hiddenDeviceIdsByContext))
         .put("hidden_entities", mapOfListsJson(hiddenEntityIdsByContext))
+        .put("scenario_hidden_entities", JSONArray(scenarioHiddenEntityIds))
+        .put("scenario_runnable_entities", JSONArray(scenarioRunnableEntityIds))
 
     private fun parseConfig(json: JSONObject, appWidgetId: Int) = DashboardConfig(
         appWidgetId = appWidgetId,
@@ -821,6 +856,8 @@ class DashboardRepository(context: Context) {
         typeGroupOrderByContext = json.optJSONObject("type_group_order").mapOfLists(),
         hiddenDeviceIdsByContext = json.optJSONObject("hidden_devices").mapOfLists(),
         hiddenEntityIdsByContext = json.optJSONObject("hidden_entities").mapOfLists(),
+        scenarioHiddenEntityIds = json.optJSONArray("scenario_hidden_entities").stringList(),
+        scenarioRunnableEntityIds = json.optJSONArray("scenario_runnable_entities").stringList(),
     )
 
     private fun AutoOffTimerConfig.toJson() = JSONObject()
@@ -1023,6 +1060,6 @@ class DashboardRepository(context: Context) {
         private const val STORAGE_SCHEMA_VERSION = 5
         private const val DEFAULT_METRIC_LIMIT = 5
         private val SCENARIO_DOMAINS = setOf("automation", "script")
-        private const val TERMINAL_STATUS_VISIBLE_MS = 4_000L
+        private const val TERMINAL_STATUS_VISIBLE_MS = 3_000L
     }
 }

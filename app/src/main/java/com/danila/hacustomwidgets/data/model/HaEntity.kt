@@ -1,5 +1,7 @@
 package com.danila.hacustomwidgets.data.model
 
+import com.danila.hacustomwidgets.tr
+
 data class HaEntity(
     val entityId: String,
     val state: String,
@@ -42,7 +44,7 @@ data class HaDeviceGroup(
     val syntheticTitle: String? = null,
 ) {
     val key: String get() = device?.id ?: syntheticKey ?: UNASSIGNED_DEVICE_ID
-    val title: String get() = device?.name ?: syntheticTitle ?: "Без устройства"
+    val title: String get() = device?.name ?: syntheticTitle ?: tr("No device", "Без устройства")
     val effectiveAreaId: String?
         get() = entities.mapNotNull { it.areaId }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
             ?: device?.areaId
@@ -69,7 +71,7 @@ data class HaCatalog(
         }
         val hasUnassigned = groups.any { it.effectiveAreaId == null || it.effectiveAreaId !in assignedAreaIds }
         return result + listOfNotNull(
-            HaSpace(UNASSIGNED_SPACE_ID, "Без пространства", HaSpaceKind.UNASSIGNED, emptyList()).takeIf { hasUnassigned },
+            HaSpace(UNASSIGNED_SPACE_ID, tr("No space", "Без пространства"), HaSpaceKind.UNASSIGNED, emptyList()).takeIf { hasUnassigned },
         )
     }
 

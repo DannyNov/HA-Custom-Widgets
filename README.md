@@ -1,87 +1,41 @@
-# HA Custom Widgets — Android prototype
+# HA Custom Widgets
 
-Нативное Android-приложение с настраиваемым виджетом состояния сущности Home Assistant.
+[Русская версия](README.ru.md)
 
-## Возможности версии 0.3
+Native Android widgets for Home Assistant. Home Assistant entity names remain unchanged. Russian system locale selects Russian UI; every other locale uses English.
 
-- подключение к Home Assistant по REST API;
-- проверка адреса и Long-Lived Access Token;
-- загрузка Device Registry и Entity Registry через официальный WebSocket API Home Assistant;
-- выбор по схеме «устройство → несколько сущностей», включая группу сущностей без устройства;
-- поиск одновременно по устройствам, производителю, модели, имени сущности и `entity_id`;
-- отдельная конфигурация каждого экземпляра виджета;
-- адаптивная компоновка от компактного одноклеточного размера до крупных сеток показателей;
-- изменение размера по горизонтали и вертикали средствами Android Launcher;
-- отображение friendly name, состояния, единицы измерения и времени обновления;
-- возможность скрыть компактную строку времени в каждом экземпляре виджета;
-- немедленное обновление по нажатию на виджет;
-- фоновое обновление через WorkManager каждые 15 минут (фактическое время определяет Android);
-- автоматическая светлая/тёмная тема приложения и виджета;
-- Material You Dynamic Color на Android 12 и новее со стандартной палитрой на старых версиях;
-- чтение и автоматическая миграция конфигурации виджетов версии 0.1.
-- отдельный большой `HA Dashboard` с вертикально прокручиваемыми карточками;
-- вкладка `★ Главное` и вкладки из Floor/Area Registry Home Assistant;
-- группировка отдельно для каждого пространства: помещения, типы устройств или без группировки;
-- ручной порядок вкладок, карточек и параметров;
-- компактная карточка физического устройства с несколькими сущностями;
-- управление `light`, `switch`, `input_boolean`, `button`, `script`, `scene` и `timer`;
-- защита от повторных service calls и подтверждение состояния после команды;
-- единая семантика active/off/unavailable/unknown и уровни заряда батареи;
-- сворачиваемые секции с сохранением состояния;
-- кэш Dashboard и восстановление конфигурации после перезапуска launcher.
+## Highlights in v0.6.0
 
-## Безопасность
+- scrolling HA Dashboard with Main, space and Scenarios tabs;
+- per-space grouping, card/metric ordering and visibility;
+- large power controls for primary light and switch entities;
+- configurable HA timer controls, including 120-minute presets;
+- colored temperature, humidity and battery indicators;
+- per-automation and per-script visibility;
+- optional scenario launch button with pending, success and failure feedback;
+- English and Russian app/widget UI;
+- optional support through CloudTips or USDT (BEP-20 / TON).
 
-Адрес и токен никогда не находятся в исходном коде. Токен шифруется AES-GCM ключом,
-созданным в Android Keystore. Резервное копирование данных приложения отключено. Для
-доступа извне рекомендуется HTTPS. `usesCleartextTraffic` включён только потому, что
-многие локальные установки Home Assistant доступны по HTTP; это можно запретить в
-будущнем варианте с отдельной политикой локальных адресов.
+Automation launch preserves its conditions (`skip_condition=false`). Green feedback confirms that Home Assistant accepted the call; it does not claim that every physical consequence completed.
 
-Создайте отдельного пользователя Home Assistant с минимально необходимыми правами и
-выпустите Long-Lived Access Token в профиле этого пользователя.
+## Security and build
 
-## Сборка
+The Home Assistant address and token are never stored in source. The token is encrypted with AES-GCM using Android Keystore, and Android backup is disabled. Prefer HTTPS for remote access and a dedicated HA user with minimum permissions.
 
-Требуются JDK 17, Android SDK 35 и Gradle 8.9:
+Requires JDK 17, Android SDK 35 and Gradle 8.9:
 
 ```bash
 gradle testDebugUnitTest assembleDebug
 ```
 
-APK появится в `app/build/outputs/apk/debug/app-debug.apk`. Workflow в
-`.github/workflows/android.yml` выполняет ту же проверку и публикует APK как артефакт.
+The release workflow builds a non-debuggable signed APK. Signing material is supplied only through GitHub Actions secrets and is not stored in Git.
 
-### Постоянная подпись debug APK
+## Support
 
-CI получает постоянный тестовый signing key только через GitHub Actions Secrets:
+Support is voluntary and is not payment for goods, services, or additional features.
 
-- `HA_DEBUG_KEYSTORE_BASE64`;
-- `HA_DEBUG_KEYSTORE_PASSWORD`;
-- `HA_DEBUG_KEY_ALIAS`;
-- `HA_DEBUG_KEY_PASSWORD`.
+- [CloudTips](https://pay.cloudtips.ru/p/ab27592e)
+- USDT (BEP-20): `0xe7FA8d9608d50e1B7C645D8185473BCE3A3c14Df`
+- USDT (TON): `UQB2SAZRVJZIHu7hpNSIYHKUPhn_frtrlHITFw6CbQKrNk9c`
 
-Keystore декодируется только во временный каталог runner'а и не хранится в Git.
-Сборка останавливается, если хотя бы один secret отсутствует или ключ не открывается.
-После сборки `apksigner` проверяет APK и выводит публичный SHA-256 сертификата.
-
-Постоянный debug-сертификат SHA-256:
-`8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A`.
-
-Контрольная версия 0.1 зафиксирована в `docs/V0.1_BASELINE.md`. Проверенная v0.2.1
-зафиксирована отдельной веткой `stable-v0.2.1`. Архитектура и ограничения Dashboard
-описаны в `docs/V0.3_ARCHITECTURE.md`.
-
-## Архитектура и расширение
-
-- `data/remote` — REST-клиент состояний и WebSocket-клиент реестров Home Assistant;
-- `data/security` — защищённое хранение подключения;
-- `data/WidgetRepository.kt` — конфигурации и кэш состояния экземпляров;
-- `widget` — адаптивный Glance UI, политика размеров, системные receiver'ы, ручное и периодическое обновление;
-- `dashboard` — модели, кэш, экран настройки, интерактивные actions и прокручиваемый Glance Dashboard;
-- `MainActivity` — первоначальная настройка подключения.
-
-Следующие типы (toggle, button/service call, sensor card, media) можно добавлять как
-отдельные `GlanceAppWidget` и конфигурационные экраны, сохраняя общий API-клиент и слой
-подключения. Для событий в реальном времени следующий этап — единый WebSocket-сеанс,
-возобновляемый приложением при доступной фоновой работе, с REST/WorkManager как fallback.
+Send only USDT using the exact network shown.

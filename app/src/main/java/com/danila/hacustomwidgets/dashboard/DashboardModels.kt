@@ -6,19 +6,23 @@ import com.danila.hacustomwidgets.data.model.HaCatalog
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import com.danila.hacustomwidgets.tr
 
 enum class DashboardGrouping { ROOMS, TYPES, NONE }
 
-enum class DeviceCategory(val title: String, val icon: String, val rank: Int) {
-    CLIMATE_SENSORS("Климат и датчики", "🌡", 10),
-    LIGHTING("Освещение", "💡", 20),
-    SWITCHES("Розетки и выключатели", "🔌", 30),
-    OPENINGS("Двери и окна", "🚪", 40),
-    HVAC("Климатическое оборудование", "🌬", 50),
-    MEDIA("Мультимедиа", "📺", 60),
-    SECURITY("Безопасность", "🛡", 70),
-    TIMERS("Таймеры", "⏱", 80),
-    OTHER("Другое", "⚙", 90),
+enum class DeviceCategory(val englishTitle: String, val russianTitle: String, val icon: String, val rank: Int) {
+    CLIMATE_SENSORS("Climate and sensors", "Климат и датчики", "🌡", 10),
+    LIGHTING("Lighting", "Освещение", "💡", 20),
+    SWITCHES("Outlets and switches", "Розетки и выключатели", "🔌", 30),
+    OPENINGS("Doors and windows", "Двери и окна", "🚪", 40),
+    HVAC("Climate equipment", "Климатическое оборудование", "🌬", 50),
+    MEDIA("Media", "Мультимедиа", "📺", 60),
+    SECURITY("Security", "Безопасность", "🛡", 70),
+    TIMERS("Timers", "Таймеры", "⏱", 80),
+    OTHER("Other", "Другое", "⚙", 90),
+    ;
+
+    val title: String get() = tr(englishTitle, russianTitle)
 }
 
 data class ServiceAction(val domain: String, val service: String)
@@ -250,12 +254,12 @@ object HaTimerPresentationPolicy {
 
     fun formatRemaining(millis: Long): String {
         val totalSeconds = millis.coerceAtLeast(0) / 1_000
-        if (totalSeconds < 60) return "< 1 мин"
+        if (totalSeconds < 60) return tr("< 1 min", "< 1 мин")
         val displayedMinutes = displayedRemainingMinutes(millis)
-        if (displayedMinutes < 60) return "$displayedMinutes мин"
+        if (displayedMinutes < 60) return tr("$displayedMinutes min", "$displayedMinutes мин")
         val hours = displayedMinutes / 60
         val minutes = displayedMinutes % 60
-        return if (minutes == 0) "$hours ч" else "$hours ч $minutes мин"
+        return if (minutes == 0) tr("$hours h", "$hours ч") else tr("$hours h $minutes min", "$hours ч $minutes мин")
     }
 
     fun displayedRemainingMinutes(millis: Long): Int {
@@ -363,6 +367,14 @@ object ScenarioPolicy {
         DashboardOrderPolicy.merge(saved.distinct(), current.distinct())
 }
 
+object ScenarioDisplayPolicy {
+    fun visible(action: DashboardScenarioAction, visibleDomains: Set<String>, hiddenIds: Collection<String>): Boolean =
+        action.domain in visibleDomains && action.entityId !in hiddenIds
+
+    fun runnable(entityId: String, hiddenIds: Collection<String>, runnableIds: Collection<String>): Boolean =
+        entityId !in hiddenIds && entityId in runnableIds
+}
+
 sealed interface DashboardSettingsDestination {
     data object Empty : DashboardSettingsDestination
     data class Direct(val appWidgetId: Int) : DashboardSettingsDestination
@@ -463,6 +475,8 @@ data class DashboardConfig(
     val typeGroupOrderByContext: Map<String, List<String>> = emptyMap(),
     val hiddenDeviceIdsByContext: Map<String, List<String>> = emptyMap(),
     val hiddenEntityIdsByContext: Map<String, List<String>> = emptyMap(),
+    val scenarioHiddenEntityIds: List<String> = emptyList(),
+    val scenarioRunnableEntityIds: List<String> = emptyList(),
 )
 
 object DashboardCustomizationPolicy {
@@ -535,7 +549,7 @@ data class DashboardState(
         DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })
             .filter { it in config.visibleSpaceIds }
             .mapNotNull { id -> spaces.firstOrNull { it.id == id } } +
-        listOfNotNull(DashboardSpace(SCENARIOS_TAB_ID, "Сценарии", emptyList()).takeIf { config.scenariosEnabled })
+        listOfNotNull(DashboardSpace(SCENARIOS_TAB_ID, tr("Scenarios", "Сценарии"), emptyList()).takeIf { config.scenariosEnabled })
     val selectedTab: DashboardSpace get() = tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first()
 }
 
@@ -596,40 +610,40 @@ object HaEntityIconPolicy {
         ?: HaSemanticIcon.GENERIC
 
     fun label(icon: HaSemanticIcon): String = when (icon) {
-        HaSemanticIcon.LIGHT -> "Свет"
-        HaSemanticIcon.SWITCH -> "Выключатель"
-        HaSemanticIcon.SENSOR -> "Датчик"
-        HaSemanticIcon.BINARY_SENSOR -> "Бинарный датчик"
-        HaSemanticIcon.BUTTON -> "Кнопка"
-        HaSemanticIcon.TOGGLE -> "Переключатель"
-        HaSemanticIcon.THERMOSTAT -> "Климат"
-        HaSemanticIcon.FAN -> "Вентилятор"
-        HaSemanticIcon.COVER -> "Шторы и ворота"
-        HaSemanticIcon.LOCK -> "Замок"
-        HaSemanticIcon.MEDIA -> "Мультимедиа"
-        HaSemanticIcon.CAMERA -> "Камера"
-        HaSemanticIcon.AUTOMATION -> "Автоматизация"
-        HaSemanticIcon.SCRIPT -> "Скрипт"
-        HaSemanticIcon.SCENE -> "Сцена"
-        HaSemanticIcon.TIMER -> "Таймер"
-        HaSemanticIcon.TEMPERATURE -> "Температура"
-        HaSemanticIcon.HUMIDITY -> "Влажность"
-        HaSemanticIcon.BATTERY -> "Батарея"
-        HaSemanticIcon.VOLTAGE -> "Напряжение"
-        HaSemanticIcon.POWER -> "Мощность"
-        HaSemanticIcon.CURRENT -> "Ток"
-        HaSemanticIcon.ENERGY -> "Энергия"
-        HaSemanticIcon.PRESSURE -> "Давление"
-        HaSemanticIcon.ILLUMINANCE -> "Освещённость"
-        HaSemanticIcon.DOOR -> "Дверь"
-        HaSemanticIcon.WINDOW -> "Окно"
-        HaSemanticIcon.MOTION -> "Движение"
-        HaSemanticIcon.OCCUPANCY -> "Присутствие"
-        HaSemanticIcon.MOISTURE -> "Протечка"
-        HaSemanticIcon.SMOKE -> "Дым"
-        HaSemanticIcon.CONNECTIVITY -> "Связь"
-        HaSemanticIcon.SPACE -> "Пространство"
-        HaSemanticIcon.GENERIC -> "Сущность"
+        HaSemanticIcon.LIGHT -> tr("Light", "Свет")
+        HaSemanticIcon.SWITCH -> tr("Switch", "Выключатель")
+        HaSemanticIcon.SENSOR -> tr("Sensor", "Датчик")
+        HaSemanticIcon.BINARY_SENSOR -> tr("Binary sensor", "Бинарный датчик")
+        HaSemanticIcon.BUTTON -> tr("Button", "Кнопка")
+        HaSemanticIcon.TOGGLE -> tr("Toggle", "Переключатель")
+        HaSemanticIcon.THERMOSTAT -> tr("Climate", "Климат")
+        HaSemanticIcon.FAN -> tr("Fan", "Вентилятор")
+        HaSemanticIcon.COVER -> tr("Cover", "Шторы и ворота")
+        HaSemanticIcon.LOCK -> tr("Lock", "Замок")
+        HaSemanticIcon.MEDIA -> tr("Media", "Мультимедиа")
+        HaSemanticIcon.CAMERA -> tr("Camera", "Камера")
+        HaSemanticIcon.AUTOMATION -> tr("Automation", "Автоматизация")
+        HaSemanticIcon.SCRIPT -> tr("Script", "Скрипт")
+        HaSemanticIcon.SCENE -> tr("Scene", "Сцена")
+        HaSemanticIcon.TIMER -> tr("Timer", "Таймер")
+        HaSemanticIcon.TEMPERATURE -> tr("Temperature", "Температура")
+        HaSemanticIcon.HUMIDITY -> tr("Humidity", "Влажность")
+        HaSemanticIcon.BATTERY -> tr("Battery", "Батарея")
+        HaSemanticIcon.VOLTAGE -> tr("Voltage", "Напряжение")
+        HaSemanticIcon.POWER -> tr("Power", "Мощность")
+        HaSemanticIcon.CURRENT -> tr("Current", "Ток")
+        HaSemanticIcon.ENERGY -> tr("Energy", "Энергия")
+        HaSemanticIcon.PRESSURE -> tr("Pressure", "Давление")
+        HaSemanticIcon.ILLUMINANCE -> tr("Illuminance", "Освещённость")
+        HaSemanticIcon.DOOR -> tr("Door", "Дверь")
+        HaSemanticIcon.WINDOW -> tr("Window", "Окно")
+        HaSemanticIcon.MOTION -> tr("Motion", "Движение")
+        HaSemanticIcon.OCCUPANCY -> tr("Occupancy", "Присутствие")
+        HaSemanticIcon.MOISTURE -> tr("Moisture", "Протечка")
+        HaSemanticIcon.SMOKE -> tr("Smoke", "Дым")
+        HaSemanticIcon.CONNECTIVITY -> tr("Connectivity", "Связь")
+        HaSemanticIcon.SPACE -> tr("Space", "Пространство")
+        HaSemanticIcon.GENERIC -> tr("Entity", "Сущность")
     }
 
     private fun primaryRank(entity: HaEntity): Int = when {

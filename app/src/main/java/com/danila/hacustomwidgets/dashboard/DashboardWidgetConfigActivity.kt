@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.danila.hacustomwidgets.HaWidgetApplication
+import com.danila.hacustomwidgets.tr
 import com.danila.hacustomwidgets.data.AppContainer
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
@@ -123,7 +124,7 @@ private fun DashboardConfigurator(
     onSave: suspend (DashboardConfig, HaCatalog) -> Unit,
 ) {
     var catalog by remember { mutableStateOf<HaCatalog?>(null) }
-    var status by remember { mutableStateOf("Синхронизирую структуру Home Assistant…") }
+    var status by remember { mutableStateOf(tr("Syncing Home Assistant structure…", "Синхронизирую структуру Home Assistant…")) }
     var screen by remember { mutableStateOf(ConfigScreen.OVERVIEW) }
     var currentDevice by remember { mutableStateOf<HaDeviceGroup?>(null) }
     var currentSpaceId by remember { mutableStateOf<String?>(null) }
@@ -140,6 +141,8 @@ private fun DashboardConfigurator(
     var automationVisible by remember { mutableStateOf(existing?.scenarioAutomationVisible ?: true) }
     var scriptVisible by remember { mutableStateOf(existing?.scenarioScriptVisible ?: true) }
     var scenarioOrder by remember { mutableStateOf(existing?.scenarioOrderBySpaceAndDomain.orEmpty()) }
+    var scenarioHidden by remember { mutableStateOf(existing?.scenarioHiddenEntityIds.orEmpty()) }
+    var scenarioRunnable by remember { mutableStateOf(existing?.scenarioRunnableEntityIds.orEmpty()) }
     var autoOffTimers by remember { mutableStateOf(existing?.autoOffTimersByDevice.orEmpty()) }
     var typeGroupOrder by remember { mutableStateOf(existing?.typeGroupOrderByContext.orEmpty()) }
     var hiddenDevices by remember { mutableStateOf(existing?.hiddenDeviceIdsByContext.orEmpty()) }
@@ -153,7 +156,7 @@ private fun DashboardConfigurator(
 
     LaunchedEffect(connection) {
         if (connection == null) {
-            status = "Сначала настройте подключение к Home Assistant в основном приложении."
+            status = tr("Configure the Home Assistant connection in the main app first.", "Сначала настройте подключение к Home Assistant в основном приложении.")
         } else runCatching { container.client.getCatalog(connection) }
             .onSuccess { loaded ->
                 catalog = loaded
@@ -163,7 +166,7 @@ private fun DashboardConfigurator(
                 grouping = ids.associateWith { grouping[it] ?: DashboardGrouping.TYPES }
                 status = ""
             }
-            .onFailure { status = "Ошибка: ${it.message}" }
+            .onFailure { status = tr("Error: ${it.message}", "Ошибка: ${it.message}") }
     }
 
     fun closeSubscreen() {
@@ -181,13 +184,13 @@ private fun DashboardConfigurator(
     BackHandler(enabled = screen != ConfigScreen.OVERVIEW) { closeSubscreen() }
 
     val title = when (screen) {
-        ConfigScreen.OVERVIEW -> "Настройка HA Dashboard"
-        ConfigScreen.FAVORITES -> "Вкладка «Главное»"
-        ConfigScreen.ENTITIES -> currentDevice?.title ?: "Параметры устройства"
-        ConfigScreen.TIMER -> "Таймер автоотключения"
-        ConfigScreen.SPACE_CARDS -> "Порядок карточек"
-        ConfigScreen.GROUP_ORDER -> "Порядок групп"
-        ConfigScreen.SCENARIOS -> "Сценарии"
+        ConfigScreen.OVERVIEW -> tr("HA Dashboard settings", "Настройка HA Dashboard")
+        ConfigScreen.FAVORITES -> tr("Main tab", "Вкладка «Главное»")
+        ConfigScreen.ENTITIES -> currentDevice?.title ?: tr("Device parameters", "Параметры устройства")
+        ConfigScreen.TIMER -> tr("Auto-off timer", "Таймер автоотключения")
+        ConfigScreen.SPACE_CARDS -> tr("Card order", "Порядок карточек")
+        ConfigScreen.GROUP_ORDER -> tr("Group order", "Порядок групп")
+        ConfigScreen.SCENARIOS -> tr("Scenarios", "Сценарии")
     }
     Scaffold(
         topBar = {
@@ -195,7 +198,7 @@ private fun DashboardConfigurator(
                 title = { Text(title) },
                 navigationIcon = {
                     if (screen != ConfigScreen.OVERVIEW) {
-                        TextButton(onClick = ::closeSubscreen) { Text("Назад") }
+                        TextButton(onClick = ::closeSubscreen) { Text(tr("Back", "Назад")) }
                     }
                 },
             )
@@ -207,7 +210,7 @@ private fun DashboardConfigurator(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (status.startsWith("Синхронизирую")) CircularProgressIndicator()
+                if (status == tr("Syncing Home Assistant structure…", "Синхронизирую структуру Home Assistant…")) CircularProgressIndicator()
                 Text(status)
             }
             return@Scaffold
@@ -249,6 +252,7 @@ private fun DashboardConfigurator(
                                 spaceOrder, scenariosEnabled, automationVisible, scriptVisible, scenarioOrder,
                                 autoOffTimers,
                                 typeGroupOrder, hiddenDevices, hiddenEntities,
+                                scenarioHidden, scenarioRunnable,
                             ),
                             loaded,
                         )
@@ -324,10 +328,19 @@ private fun DashboardConfigurator(
                 automationVisible = automationVisible,
                 scriptVisible = scriptVisible,
                 order = scenarioOrder,
+                hiddenEntityIds = scenarioHidden,
+                runnableEntityIds = scenarioRunnable,
                 onEnabled = { scenariosEnabled = it },
                 onAutomationVisible = { automationVisible = it },
                 onScriptVisible = { scriptVisible = it },
                 onOrderChanged = { key, value -> scenarioOrder = scenarioOrder + (key to value) },
+                onToggleVisible = { id ->
+                    scenarioHidden = if (id in scenarioHidden) scenarioHidden - id else scenarioHidden + id
+                    if (id in scenarioHidden) scenarioRunnable = scenarioRunnable - id
+                },
+                onToggleRunnable = { id ->
+                    scenarioRunnable = if (id in scenarioRunnable) scenarioRunnable - id else scenarioRunnable + id
+                },
             )
         }
     }
@@ -358,7 +371,7 @@ private fun DashboardOverview(
     val orderedIds = DashboardOrderPolicy.merge(spaceOrder, spaces.map { it.id })
     val orderedSpaces = orderedIds.mapNotNull(byId::get)
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Пространства синхронизируются из Home Assistant. Для изменения порядка удерживайте ⠿ и перетащите карточку.")
+        Text(tr("Spaces are synced from Home Assistant. Hold ⠿ and drag a card to reorder.", "Пространства синхронизируются из Home Assistant. Для изменения порядка удерживайте ⠿ и перетащите карточку."))
         ReorderableList(
             items = orderedSpaces,
             stableId = { it.id },
@@ -389,32 +402,32 @@ private fun DashboardOverview(
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = enabled, onCheckedChange = { onToggleSpace(space.id) })
-                            Icon(HaSemanticIcon.SPACE.imageVector(), contentDescription = "Пространство")
+                            Icon(HaSemanticIcon.SPACE.imageVector(), contentDescription = tr("Space", "Пространство"))
                             Text(space.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                             if (enabled) dragHandle()
                         }
                         if (enabled) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 TextButton(onClick = { onCycleGrouping(space.id) }) {
-                                    Text("Группировка: ${grouping[space.id].label()}")
+                                    Text(tr("Grouping: ${grouping[space.id].label()}", "Группировка: ${grouping[space.id].label()}"))
                                 }
                                 IconButton(onClick = { onOrderCards(space.id) }) {
-                                    Icon(Icons.Default.SwapVert, contentDescription = "Порядок карточек")
+                                    Icon(Icons.Default.SwapVert, contentDescription = tr("Card order", "Порядок карточек"))
                                 }
                             }
                             if (grouping[space.id] == DashboardGrouping.TYPES) {
-                                TextButton(onClick = { onOrderGroups(space.id) }) { Text("Порядок групп ›") }
+                                TextButton(onClick = { onOrderGroups(space.id) }) { Text(tr("Group order ›", "Порядок групп ›")) }
                             }
                         }
                     }
                 }
         }
-        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text("Настроить вкладку «Главное»") }
-        Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text("Настроить Сценарии") }
-        SettingSwitch("Показывать время обновления", showUpdated, onShowUpdated)
-        SettingSwitch("Компактная плотность карточек", compact, onCompact)
+        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text(tr("Configure Main tab", "Настроить вкладку «Главное»")) }
+        Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text(tr("Configure Scenarios", "Настроить Сценарии")) }
+        SettingSwitch(tr("Show update time", "Показывать время обновления"), showUpdated, onShowUpdated)
+        SettingSwitch(tr("Compact card density", "Компактная плотность карточек"), compact, onCompact)
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-            Text("Сохранить Dashboard")
+            Text(tr("Save Dashboard", "Сохранить Dashboard"))
         }
     }
 }
@@ -434,7 +447,7 @@ private fun SpaceCardOrderScreen(
     val byKey = groups.associateBy { it.key }
     val ordered = order.mapNotNull(byKey::get) + groups.filter { it.key !in order }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("$spaceName: настройте отображаемые устройства и их порядок.")
+        Text(tr("$spaceName: configure visible devices and their order.", "$spaceName: настройте отображаемые устройства и их порядок."))
         ReorderableList(
             items = ordered,
             stableId = { it.key },
@@ -452,7 +465,7 @@ private fun SpaceCardOrderScreen(
                         Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
                         Column(Modifier.weight(1f).clickable { onOpenEntities(group) }.padding(start = 10.dp)) {
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
-                            Text("${cardTypeLabel(group)} · параметры ›", style = MaterialTheme.typography.bodySmall)
+                            Text(tr("${cardTypeLabel(group)} · parameters ›", "${cardTypeLabel(group)} · параметры ›"), style = MaterialTheme.typography.bodySmall)
                         }
                         dragHandle()
                     }
@@ -481,8 +494,8 @@ private fun FavoriteCardsScreen(
     val byKey = filtered.associateBy { it.key }
     val ordered = favorites.mapNotNull(byKey::get) + filtered.filter { it.key !in favorites }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Отметьте карточки для ★ Главного. Нажмите название устройства, чтобы выбрать и упорядочить параметры.")
-        OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), label = { Text("Поиск устройств и сущностей") }, singleLine = true)
+        Text(tr("Select cards for ★ Main. Tap a device name to choose and order its parameters.", "Отметьте карточки для ★ Главного. Нажмите название устройства, чтобы выбрать и упорядочить параметры."))
+        OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), label = { Text(tr("Search devices and entities", "Поиск устройств и сущностей")) }, singleLine = true)
         ReorderableList(
             items = ordered,
             stableId = { it.key },
@@ -507,7 +520,7 @@ private fun FavoriteCardsScreen(
                             Modifier.weight(1f).clickable { onOpenEntities(group) }.padding(start = 10.dp, top = 7.dp, bottom = 7.dp),
                         ) {
                             Text(group.title, style = MaterialTheme.typography.titleSmall)
-                            Text("${cardTypeLabel(group)} · настроить параметры ›", style = MaterialTheme.typography.bodySmall)
+                            Text(tr("${cardTypeLabel(group)} · configure parameters ›", "${cardTypeLabel(group)} · настроить параметры ›"), style = MaterialTheme.typography.bodySmall)
                         }
                         if (selected) dragHandle()
                     }
@@ -530,7 +543,7 @@ private fun EntityOrderScreen(
     val sorted = selectedOrder.mapNotNull(byId::get) +
         defaultMetricOrder(group.entities.filter { it.entityId !in selectedOrder })
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Отметьте параметры, которые нужно показывать. Для изменения порядка удерживайте выбранный параметр; батарея по умолчанию последняя.")
+        Text(tr("Select parameters to show. Hold a selected parameter to reorder; battery is last by default.", "Отметьте параметры, которые нужно показывать. Для изменения порядка удерживайте выбранный параметр; батарея по умолчанию последняя."))
         ReorderableList(
             items = sorted,
             stableId = { it.entityId },
@@ -569,7 +582,7 @@ private fun EntityOrderScreen(
                 }
         }
         if (AutoOffTimerPolicy.controls(group.entities).isNotEmpty()) Button(onClick = onOpenTimer, modifier = Modifier.fillMaxWidth()) {
-            Text("Таймер автоотключения")
+            Text(tr("Auto-off timer", "Таймер автоотключения"))
         }
     }
 }
@@ -585,7 +598,7 @@ private fun TypeGroupOrderScreen(
     val categories = groups.map(::deviceCategory).distinct()
     val ordered = DashboardCustomizationPolicy.orderedCategories(savedOrder, categories)
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("$spaceName: удерживайте ⠿ и перетащите группу. Пустые группы автоматически не показываются.")
+        Text(tr("$spaceName: hold ⠿ and drag a group. Empty groups are hidden automatically.", "$spaceName: удерживайте ⠿ и перетащите группу. Пустые группы автоматически не показываются."))
         ReorderableList(
             items = ordered,
             stableId = DashboardCustomizationPolicy::groupId,
@@ -625,13 +638,13 @@ private fun TimerSettingsScreen(
     var controlMenuExpanded by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (eligibleControls.size > 1) {
-            Text("Управляемая сущность", style = MaterialTheme.typography.titleSmall)
+            Text(tr("Controlled entity", "Управляемая сущность"), style = MaterialTheme.typography.titleSmall)
             ExposedDropdownMenuBox(
                 expanded = controlMenuExpanded,
                 onExpandedChange = { controlMenuExpanded = !controlMenuExpanded },
             ) {
                 OutlinedTextField(
-                    value = selectedControl?.let { "${it.friendlyName} · ${it.entityId}" } ?: "Выбрать сущность",
+                    value = selectedControl?.let { "${it.friendlyName} · ${it.entityId}" } ?: tr("Choose entity", "Выбрать сущность"),
                     onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth().menuAnchor(),
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(controlMenuExpanded) },
                 )
@@ -643,20 +656,20 @@ private fun TimerSettingsScreen(
                 }
             }
         }
-        SettingSwitch("Использовать таймер", config.enabled) { enabled ->
+        SettingSwitch(tr("Use timer", "Использовать таймер"), config.enabled) { enabled ->
             onChange(config.copy(enabled = enabled && selectedControl != null &&
                 (config.timerEntityId != null || timers.isNotEmpty()),
                 timerEntityId = config.timerEntityId ?: timers.firstOrNull()?.entityId,
                 controlEntityId = config.controlEntityId ?: eligibleControls.singleOrNull()?.entityId))
         }
-        Text("Таймер Home Assistant", style = MaterialTheme.typography.titleSmall)
-        if (timers.isEmpty()) Text("В Home Assistant не найдено ни одного timer.*")
+        Text(tr("Home Assistant timer", "Таймер Home Assistant"), style = MaterialTheme.typography.titleSmall)
+        if (timers.isEmpty()) Text(tr("No timer.* entities found in Home Assistant", "В Home Assistant не найдено ни одного timer.*"))
         ExposedDropdownMenuBox(
             expanded = timerMenuExpanded,
             onExpandedChange = { if (timers.isNotEmpty()) timerMenuExpanded = !timerMenuExpanded },
         ) {
             OutlinedTextField(
-                value = selectedTimer?.let { "${it.friendlyName} · ${it.entityId}" } ?: "Выбрать timer.*",
+                value = selectedTimer?.let { "${it.friendlyName} · ${it.entityId}" } ?: tr("Choose timer.*", "Выбрать timer.*"),
                 onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth().menuAnchor(),
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(timerMenuExpanded) },
             )
@@ -672,7 +685,7 @@ private fun TimerSettingsScreen(
                 }
             }
         }
-        Text("Варианты времени", style = MaterialTheme.typography.titleSmall)
+        Text(tr("Time presets", "Варианты времени"), style = MaterialTheme.typography.titleSmall)
         ReorderableList(
             items = config.durations,
             stableId = { it.id },
@@ -694,11 +707,11 @@ private fun TimerSettingsScreen(
                             }))
                         },
                         modifier = Modifier.weight(1f),
-                        label = { Text("Минуты") }, singleLine = true,
+                        label = { Text(tr("Minutes", "Минуты")) }, singleLine = true,
                     )
                     if (config.durations.size > 1) TextButton(onClick = {
                         onChange(config.copy(durations = config.durations.filterNot { it.id == preset.id }))
-                    }) { Text("Удалить") }
+                    }) { Text(tr("Delete", "Удалить")) }
                     dragHandle()
                 }
             }
@@ -707,8 +720,8 @@ private fun TimerSettingsScreen(
             val used = config.durations.map { it.minutes }.toSet()
             val value = (1..1440).firstOrNull { it !in used } ?: return@Button
             onChange(config.copy(durations = config.durations + TimerDurationPreset.create(value)))
-        }, modifier = Modifier.fillMaxWidth(), enabled = config.durations.size < 48) { Text("+ Добавить время") }
-        Text("Для автоматического выключения после окончания timer должна быть настроена автоматизация Home Assistant.",
+        }, modifier = Modifier.fillMaxWidth(), enabled = config.durations.size < 48) { Text(tr("+ Add time", "+ Добавить время")) }
+        Text(tr("A Home Assistant automation must be configured to turn the device off when the timer finishes.", "Для автоматического выключения после окончания timer должна быть настроена автоматизация Home Assistant."),
             style = MaterialTheme.typography.bodySmall)
     }
 }
@@ -721,10 +734,14 @@ private fun ScenarioSettingsScreen(
     automationVisible: Boolean,
     scriptVisible: Boolean,
     order: Map<String, List<String>>,
+    hiddenEntityIds: List<String>,
+    runnableEntityIds: List<String>,
     onEnabled: (Boolean) -> Unit,
     onAutomationVisible: (Boolean) -> Unit,
     onScriptVisible: (Boolean) -> Unit,
     onOrderChanged: (String, List<String>) -> Unit,
+    onToggleVisible: (String) -> Unit,
+    onToggleRunnable: (String) -> Unit,
 ) {
     val spaces = catalog.spaces()
     val spaceById = spaces.associateBy { it.id }
@@ -735,9 +752,14 @@ private fun ScenarioSettingsScreen(
         }
     }.distinctBy { it.entityId }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingSwitch("Показывать вкладку «Сценарии»", enabled, onEnabled)
-        SettingSwitch("Показывать автоматизации", automationVisible, onAutomationVisible)
-        SettingSwitch("Показывать скрипты", scriptVisible, onScriptVisible)
+        SettingSwitch(tr("Show Scenarios tab", "Показывать вкладку «Сценарии»"), enabled, onEnabled)
+        SettingSwitch(tr("Show automations", "Показывать автоматизации"), automationVisible, onAutomationVisible)
+        SettingSwitch(tr("Show scripts", "Показывать скрипты"), scriptVisible, onScriptVisible)
+        Text(
+            tr("Show controls whether the item appears. Enable ▶ only for scenarios that may be launched from the widget.",
+                "«Показ» управляет отображением. Включайте ▶ только для сценариев, которые можно запускать с виджета."),
+            style = MaterialTheme.typography.bodySmall,
+        )
         val sections = (spaces.map { it.id } + UNASSIGNED_SPACE_ID).distinct().flatMap { spaceId ->
             listOf("automation", "script").mapNotNull { domain ->
                 val values = actions.filter { it.spaceId == spaceId && it.domain == domain }
@@ -774,7 +796,22 @@ private fun ScenarioSettingsScreen(
                     Icon(type.imageVector(), contentDescription = HaEntityIconPolicy.label(type))
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
                         Text(action.title, style = MaterialTheme.typography.titleSmall)
-                        Text("${spaceById[action.spaceId]?.name ?: "Без пространства"} · ${HaEntityIconPolicy.label(type)}", style = MaterialTheme.typography.bodySmall)
+                        Text("${spaceById[action.spaceId]?.name ?: tr("No space", "Без пространства")} · ${HaEntityIconPolicy.label(type)}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(tr("Show", "Показ"), style = MaterialTheme.typography.labelSmall)
+                        Checkbox(
+                            checked = action.entityId !in hiddenEntityIds,
+                            onCheckedChange = { onToggleVisible(action.entityId) },
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("▶", style = MaterialTheme.typography.labelSmall)
+                        Checkbox(
+                            checked = action.entityId in runnableEntityIds,
+                            enabled = action.entityId !in hiddenEntityIds,
+                            onCheckedChange = { onToggleRunnable(action.entityId) },
+                        )
                     }
                     dragHandle()
                 }
@@ -787,7 +824,7 @@ private fun cardTypeLabel(group: HaDeviceGroup): String {
     val labels = group.entities.sortedBy(::semanticMetricRank).map {
         HaEntityIconPolicy.label(HaEntityIconPolicy.resolve(it.domain, it.deviceClass))
     }.distinct().take(2)
-    return labels.joinToString(" · ").ifBlank { "Устройство" }
+    return labels.joinToString(" · ").ifBlank { tr("Device", "Устройство") }
 }
 
 private fun List<HaDeviceGroup>.dashboardGroups(): List<HaDeviceGroup> = mapNotNull { group ->
@@ -810,7 +847,7 @@ private fun DashboardGrouping.next() = when (this) {
 }
 
 private fun DashboardGrouping?.label() = when (this) {
-    DashboardGrouping.ROOMS -> "по помещениям"
-    DashboardGrouping.TYPES -> "по типам устройств"
-    DashboardGrouping.NONE, null -> "без группировки"
+    DashboardGrouping.ROOMS -> tr("by rooms", "по помещениям")
+    DashboardGrouping.TYPES -> tr("by device type", "по типам устройств")
+    DashboardGrouping.NONE, null -> tr("no grouping", "без группировки")
 }

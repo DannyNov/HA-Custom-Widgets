@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.updateAll
 import com.danila.hacustomwidgets.HaWidgetApplication
+import com.danila.hacustomwidgets.tr
 import com.danila.hacustomwidgets.data.AppContainer
 import com.danila.hacustomwidgets.data.WidgetConfig
 import com.danila.hacustomwidgets.data.model.HaCatalog
@@ -104,13 +105,13 @@ private fun WidgetConfigurator(
     var selectedIds by remember { mutableStateOf(existing?.metrics?.map { it.entityId }.orEmpty()) }
     var showLastUpdated by remember { mutableStateOf(existing?.showLastUpdated ?: true) }
     var query by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf("Загружаю устройства и сущности…") }
+    var status by remember { mutableStateOf(tr("Loading devices and entities…", "Загружаю устройства и сущности…")) }
     val connection = remember { container.connectionStore.load() }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(connection) {
         if (connection == null) {
-            status = "Сначала откройте приложение и настройте подключение к Home Assistant."
+            status = tr("Open the app and configure the Home Assistant connection first.", "Сначала откройте приложение и настройте подключение к Home Assistant.")
         } else {
             runCatching { container.client.getCatalog(connection) }
                 .onSuccess { loaded ->
@@ -121,7 +122,7 @@ private fun WidgetConfigurator(
                     }
                     status = ""
                 }
-                .onFailure { status = "Ошибка: ${it.message}" }
+                .onFailure { status = tr("Error: ${it.message}", "Ошибка: ${it.message}") }
         }
     }
 
@@ -130,14 +131,14 @@ private fun WidgetConfigurator(
         query = ""
     }
 
-    val title = selectedGroup?.title ?: "Выберите устройство"
+    val title = selectedGroup?.title ?: tr("Choose a device", "Выберите устройство")
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
                     if (selectedGroup != null) {
-                        TextButton(onClick = { selectedGroup = null; query = "" }) { Text("Назад") }
+                        TextButton(onClick = { selectedGroup = null; query = "" }) { Text(tr("Back", "Назад")) }
                     }
                 },
             )
@@ -152,12 +153,12 @@ private fun WidgetConfigurator(
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = {
-                    Text(if (selectedGroup == null) "Поиск устройств и сущностей" else "Поиск сущностей")
+                    Text(if (selectedGroup == null) tr("Search devices and entities", "Поиск устройств и сущностей") else tr("Search entities", "Поиск сущностей"))
                 },
                 singleLine = true,
             )
             if (status.isNotBlank()) {
-                LoadingStatus(status, connection != null && status.startsWith("Загружаю"))
+                LoadingStatus(status, connection != null && status == tr("Loading devices and entities…", "Загружаю устройства и сущности…"))
             } else if (selectedGroup == null) {
                 DeviceList(
                     groups = catalog.orEmptyGroups().filterByQuery(query),
@@ -209,7 +210,7 @@ private fun LoadingStatus(status: String, loading: Boolean) {
 @Composable
 private fun DeviceList(groups: List<HaDeviceGroup>, query: String, onOpen: (HaDeviceGroup) -> Unit) {
     if (groups.isEmpty()) {
-        Text("Ничего не найдено", modifier = Modifier.padding(16.dp))
+        Text(tr("Nothing found", "Ничего не найдено"), modifier = Modifier.padding(16.dp))
         return
     }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -224,7 +225,7 @@ private fun DeviceList(groups: List<HaDeviceGroup>, query: String, onOpen: (HaDe
                             ?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
                     Text(
-                        if (query.isBlank()) "Сущностей: ${group.entities.size}" else "Совпадений: $matches",
+                        if (query.isBlank()) tr("Entities: ${group.entities.size}", "Сущностей: ${group.entities.size}") else tr("Matches: $matches", "Совпадений: $matches"),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -250,7 +251,7 @@ private fun ColumnScope.EntitySelection(
         selectedIds.mapNotNull(byId::get) +
             defaultMetricOrder(available.filter { it.entityId !in selectedIds })
     }
-    Text("Отметьте несколько показателей одного устройства. Порядок соответствует списку.")
+    Text(tr("Select several metrics from one device. Their order follows the list.", "Отметьте несколько показателей одного устройства. Порядок соответствует списку."))
     LazyColumn(
         modifier = Modifier.weight(1f),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -280,8 +281,8 @@ private fun ColumnScope.EntitySelection(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Показывать время обновления")
-            Text("Нажатие на виджет обновляет данные всегда", style = MaterialTheme.typography.bodySmall)
+            Text(tr("Show update time", "Показывать время обновления"))
+            Text(tr("Tapping the widget always refreshes data", "Нажатие на виджет обновляет данные всегда"), style = MaterialTheme.typography.bodySmall)
         }
         Switch(checked = showLastUpdated, onCheckedChange = onShowUpdatedChanged)
     }
@@ -290,7 +291,7 @@ private fun ColumnScope.EntitySelection(
         enabled = selectedIds.isNotEmpty(),
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
     ) {
-        Text("Сохранить · выбрано ${selectedIds.size}")
+        Text(tr("Save · selected ${selectedIds.size}", "Сохранить · выбрано ${selectedIds.size}"))
     }
 }
 

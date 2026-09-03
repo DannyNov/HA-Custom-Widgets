@@ -48,6 +48,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.R
+import com.danila.hacustomwidgets.tr
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import java.text.DateFormat
 import java.util.Date
@@ -112,7 +113,7 @@ private fun DashboardContent(
         DashboardHeader(context, appWidgetId, state, width, primary, accent)
         Spacer(GlanceModifier.height(5.dp))
         if (state == null) {
-            Text("Настройте HA Dashboard", style = TextStyle(color = primary, fontSize = 15.sp))
+            Text(tr("Configure HA Dashboard", "Настройте HA Dashboard"), style = TextStyle(color = primary, fontSize = 15.sp))
             return@Column
         }
         DashboardTabs(state, appWidgetId, primary, secondary, accent)
@@ -120,9 +121,9 @@ private fun DashboardContent(
         val sections = dashboardSections(state)
         if (sections.isEmpty()) {
             Text(
-                if (state.selectedTabId == MAIN_TAB_ID) "Добавьте устройства во вкладку «Главное»"
-                else if (state.selectedTabId == SCENARIOS_TAB_ID) "Нет доступных автоматизаций и скриптов"
-                else "В этом пространстве нет доступных устройств",
+                if (state.selectedTabId == MAIN_TAB_ID) tr("Add devices to the Main tab", "Добавьте устройства во вкладку «Главное»")
+                else if (state.selectedTabId == SCENARIOS_TAB_ID) tr("No available automations or scripts", "Нет доступных автоматизаций и скриптов")
+                else tr("No available devices in this space", "В этом пространстве нет доступных устройств"),
                 style = TextStyle(color = secondary, fontSize = 13.sp),
             )
         } else {
@@ -249,7 +250,7 @@ private fun DashboardTabs(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                if (state.selectedTab.id == MAIN_TAB_ID) "Главное" else state.selectedTab.name,
+                if (state.selectedTab.id == MAIN_TAB_ID) tr("Main", "Главное") else state.selectedTab.name,
                 maxLines = 1,
                 style = TextStyle(
                     color = primary,
@@ -352,12 +353,14 @@ private fun DashboardDeviceCard(
                     ),
                 )
                 if (unavailable) {
-                    Text("⚠ Недоступно", style = TextStyle(color = semantic, fontSize = 10.sp))
+                    Text(tr("⚠ Unavailable", "⚠ Недоступно"), style = TextStyle(color = semantic, fontSize = 10.sp))
                 } else if (unknown) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
                 } else if (card.visibleControls.size == 1 && card.autoOffTimer == null) {
                     val control = card.visibleControls.first()
-                    if (PrimaryPowerButtonPolicy.supports(control)) {
+                    if (card.key.startsWith("scenario:")) {
+                        ScenarioRunButton(control, appWidgetId, operationStatuses[control.entityId])
+                    } else if (PrimaryPowerButtonPolicy.supports(control)) {
                         PrimaryPowerButton(
                             cardKey = card.key,
                             control = control,
@@ -429,18 +432,21 @@ private fun DashboardDeviceCard(
                                 modifier = GlanceModifier
                                     .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
                                     .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
-                                    .background(ColorProvider(R.color.widget_accent))
+                                    .background(ColorProvider(
+                                        if (timerPresentation?.status == HaTimerStatus.ACTIVE) R.color.widget_timer_active
+                                        else R.color.widget_accent
+                                    ))
                                     .cornerRadius((PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP / 2).dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Image(
                                     ImageProvider(R.drawable.ic_timer),
-                                    contentDescription = "Таймер",
+                                    contentDescription = tr("Timer", "Таймер"),
                                     modifier = GlanceModifier.width(28.dp).height(28.dp),
                                 )
                             }
                             Text(
-                                " ${selectedMinutes?.let { "$it мин" } ?: "—"}",
+                                " ${selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—"}",
                                 style = TextStyle(
                                     color = ColorProvider(R.color.widget_accent),
                                     fontSize = 11.sp,
@@ -453,7 +459,7 @@ private fun DashboardDeviceCard(
                         timerPresentation.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
                     }?.let { remaining ->
                         Text(
-                            if (timerPresentation.status == HaTimerStatus.PAUSED) "Пауза · $remaining" else "Осталось $remaining",
+                            if (timerPresentation.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining"),
                             modifier = GlanceModifier.fillMaxWidth(),
                             style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
                                 textAlign = TextAlign.End),
@@ -568,10 +574,52 @@ private fun PrimaryPowerButton(
                 )
                 else -> Image(
                     ImageProvider(R.drawable.ic_power),
-                    contentDescription = if (control.state == "on") "Выключить" else "Включить",
+                    contentDescription = if (control.state == "on") tr("Turn off", "Выключить") else tr("Turn on", "Включить"),
                     modifier = GlanceModifier.width(28.dp).height(28.dp),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ScenarioRunButton(
+    control: DashboardControl,
+    appWidgetId: Int,
+    operationStatus: DashboardOperationStatus?,
+) {
+    val circleColor = when (operationStatus) {
+        DashboardOperationStatus.CONFIRMED -> ColorProvider(R.color.widget_switch_on)
+        DashboardOperationStatus.FAILED, DashboardOperationStatus.TIMEOUT -> ColorProvider(R.color.widget_problem)
+        else -> ColorProvider(R.color.widget_accent)
+    }
+    Box(
+        modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
+            actionRunCallback<DashboardRunScenarioAction>(actionParametersOf(
+                DashboardWidgetIdKey to appWidgetId,
+                DashboardEntityKey to control.entityId,
+                DashboardDomainKey to control.domain,
+            )),
+        ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = GlanceModifier.width(40.dp).height(40.dp).background(circleColor).cornerRadius(20.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                when {
+                    operationStatus?.isActive == true -> "…"
+                    operationStatus == DashboardOperationStatus.CONFIRMED -> "✓"
+                    operationStatus == DashboardOperationStatus.FAILED ||
+                        operationStatus == DashboardOperationStatus.TIMEOUT -> "!"
+                    else -> "▶"
+                },
+                style = TextStyle(
+                    color = ColorProvider(android.R.color.white), fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                ),
+            )
         }
     }
 }
@@ -605,7 +653,7 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
                         )
                         HaSemanticIcon.BATTERY -> Image(
                             ImageProvider(batteryIconResource(metric)),
-                            contentDescription = "Батарея",
+                            contentDescription = tr("Battery", "Батарея"),
                             modifier = GlanceModifier.width(15.dp).height(15.dp),
                         )
                         else -> Image(
@@ -676,7 +724,7 @@ private fun dashboardSections(state: DashboardState): List<DashboardSection> {
         DashboardGrouping.ROOMS -> {
             if (tab.roomAreaIds.size <= 1) {
                 listOf(DashboardSection("${tab.id}:all", null, null, cards)).filter { cards.isNotEmpty() }
-            } else cards.groupBy { it.roomName ?: "Без помещения" }.map { (room, items) ->
+            } else cards.groupBy { it.roomName ?: tr("No room", "Без помещения") }.map { (room, items) ->
                 DashboardSection("${tab.id}:room:$room", room, "🏠", items)
             }
         }
@@ -700,9 +748,13 @@ private fun scenarioSections(state: DashboardState): List<DashboardSection> {
         if (state.config.scenarioScriptVisible) add("script")
     }
     return orderedSpaceIds.flatMap { spaceId ->
-        val actions = state.scenarioActions.filter { it.spaceId == spaceId && it.domain in visibleDomains }
+        val actions = state.scenarioActions.filter {
+            it.spaceId == spaceId && ScenarioDisplayPolicy.visible(
+                it, visibleDomains, state.config.scenarioHiddenEntityIds,
+            )
+        }
         if (actions.isEmpty()) return@flatMap emptyList()
-        listOf("automation" to "Автоматизации", "script" to "Скрипты").mapNotNull { (domain, label) ->
+        listOf("automation" to tr("Automations", "Автоматизации"), "script" to tr("Scripts", "Скрипты")).mapNotNull { (domain, label) ->
             val domainActions = actions.filter { it.domain == domain }
             if (domainActions.isEmpty()) return@mapNotNull null
             val orderKey = "$spaceId:$domain"
@@ -712,15 +764,24 @@ private fun scenarioSections(state: DashboardState): List<DashboardSection> {
             )
             val byId = domainActions.associateBy { it.entityId }
             val cards = order.mapNotNull(byId::get).map { action ->
+                val runnable = ScenarioDisplayPolicy.runnable(
+                    action.entityId, state.config.scenarioHiddenEntityIds,
+                    state.config.scenarioRunnableEntityIds,
+                )
+                val control = DashboardControl(action.entityId, action.title, action.domain, action.state)
                 DashboardCard(
                     key = "scenario:${action.entityId}", title = action.title, areaId = null,
-                    roomName = null, category = DeviceCategory.OTHER, metrics = emptyList(),
-                    controls = listOf(DashboardControl(action.entityId, action.title, action.domain, action.state)),
+                    roomName = null, category = DeviceCategory.OTHER,
+                    metrics = if (runnable) emptyList() else listOf(DashboardMetric(
+                        action.entityId, tr("Status", "Статус"), action.state, action.state, action.domain, null,
+                    )),
+                    controls = listOf(control),
+                    visibleControls = if (runnable) listOf(control) else emptyList(),
                 )
             }
             DashboardSection(
                 "scenario:$orderKey",
-                "${spacesById[spaceId]?.name ?: "Без пространства"} · $label",
+                "${spacesById[spaceId]?.name ?: tr("No space", "Без пространства")} · $label",
                 null,
                 cards,
             )
@@ -741,12 +802,12 @@ private fun controlLabel(
     status?.isActive == true -> "…"
     status == DashboardOperationStatus.CONFIRMED && control.domain in setOf("button", "script", "scene") -> "✓"
     status == DashboardOperationStatus.FAILED || status == DashboardOperationStatus.TIMEOUT -> "⚠"
-    control.domain in setOf("button", "script", "scene") -> "Запустить"
+    control.domain in setOf("button", "script", "scene") -> tr("Run", "Запустить")
     control.domain == "timer" && control.state == "active" -> "Ⅱ"
     control.domain == "timer" && control.state in setOf("idle", "paused") -> "▶"
     control.domain == "timer" -> "—"
-    control.state in ACTIVE_STATES -> "ВКЛ"
-    else -> "ВЫКЛ"
+    control.state in ACTIVE_STATES -> tr("ON", "ВКЛ")
+    else -> tr("OFF", "ВЫКЛ")
 }
 
 private fun stableItemId(value: String): Long = DashboardStatePolicy.stableCollectionId(value)

@@ -36,6 +36,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.R
+import com.danila.hacustomwidgets.tr
 import com.danila.hacustomwidgets.dashboard.DashboardDiagnostics
 import com.danila.hacustomwidgets.data.WidgetConfig
 import com.danila.hacustomwidgets.data.WidgetMetric
@@ -81,7 +82,7 @@ private fun WidgetContent(config: WidgetConfig?, appWidgetId: Int, size: DpSize)
             ),
     ) {
         if (config == null) {
-            Text("Настройте виджет", style = TextStyle(color = primary, fontSize = 15.sp))
+            Text(tr("Configure widget", "Настройте виджет"), style = TextStyle(color = primary, fontSize = 15.sp))
             return@Column
         }
 
@@ -112,7 +113,7 @@ private fun WidgetContent(config: WidgetConfig?, appWidgetId: Int, size: DpSize)
 
         if (spec.showFooter && (config.showLastUpdated || config.error != null)) {
             Spacer(GlanceModifier.height(spec.gapDp.dp))
-            val footer = config.error?.let { "↻ Ошибка обновления" }
+            val footer = config.error?.let { tr("↻ Update error", "↻ Ошибка обновления") }
                 ?: config.lastUpdatedMillis.takeIf { it > 0 }?.let {
                     "↻ ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it))}"
                 }.orEmpty()

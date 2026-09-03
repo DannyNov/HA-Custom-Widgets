@@ -3,6 +3,7 @@
     <color name="widget_primary">#F5F7FA</color>
     <color name="widget_secondary">#BCCCDC</color>
     <color name="widget_accent">#47C9FF</color>
+    <color name="widget_timer_active">#2196F3</color>
     <color name="widget_error">#FFB4AB</color>
     <color name="widget_tile">#263442</color>
     <color name="widget_tile_muted">#202A34</color>

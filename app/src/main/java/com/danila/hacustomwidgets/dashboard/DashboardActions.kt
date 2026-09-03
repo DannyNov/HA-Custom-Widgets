@@ -75,6 +75,31 @@ class DashboardControlAction : ActionCallback {
     }
 }
 
+class DashboardRunScenarioAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val appWidgetId = parameters[DashboardWidgetIdKey] ?: return
+        val entityId = parameters[DashboardEntityKey] ?: return
+        val domain = parameters[DashboardDomainKey] ?: return
+        val container = (context.applicationContext as HaWidgetApplication).container
+        val config = container.dashboards.getConfig(appWidgetId) ?: return
+        if (!ScenarioDisplayPolicy.runnable(
+                entityId, config.scenarioHiddenEntityIds, config.scenarioRunnableEntityIds,
+            )) return
+        if (container.connectionStore.load() == null) {
+            container.dashboards.saveError(appWidgetId, "Подключение не настроено")
+            return
+        }
+        val operation = runCatching {
+            container.dashboards.beginScenarioOperation(appWidgetId, entityId, domain)
+        }.getOrElse {
+            container.dashboards.saveError(appWidgetId, it.message ?: "Действие недоступно")
+            return
+        } ?: return
+        DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId, "scenario:$entityId")
+        container.dashboardEvents.wakeAsync("SCENARIO")
+    }
+}
+
 class DashboardTimerAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val appWidgetId = parameters[DashboardWidgetIdKey] ?: return

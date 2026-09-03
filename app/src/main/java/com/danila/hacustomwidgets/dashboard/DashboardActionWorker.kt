@@ -37,7 +37,10 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
         var serviceAccepted = false
         try {
             val connection = container.connectionStore.load() ?: error("Подключение не настроено")
-            container.client.callService(connection, operation.domain, operation.service, entityId)
+            val serviceData = if (operation.domain == "automation" && operation.service == "trigger") {
+                mapOf("skip_condition" to false)
+            } else emptyMap<String, Boolean>()
+            container.client.callService(connection, operation.domain, operation.service, entityId, serviceData)
             if (operation.desiredState == "off" && deviceKey != null) {
                 val card = container.dashboards.get(appWidgetId)?.cards?.firstOrNull { it.key == deviceKey }
                 val selectedControl = card?.let { AutoOffTimerPolicy.resolveControl(it.controls, it.autoOffTimer) }
@@ -48,6 +51,15 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
             }
             serviceAccepted = true
             Log.d(TAG, context("SERVICE_CALL_END", appWidgetId, operation, "httpAccepted=true confirmed=false"))
+
+            if (deviceKey?.startsWith("scenario:") == true) {
+                container.dashboards.finishOperation(
+                    appWidgetId, entityId, operationId, DashboardOperationStatus.CONFIRMED, null,
+                )
+                delay(TRANSIENT_STATUS_MS + 100L)
+                container.dashboards.refreshTransientUi(appWidgetId)
+                return Result.success()
+            }
 
             if (operation.desiredState == null) {
                 val snapshot = container.client.getEntity(connection, entityId)
@@ -141,6 +153,7 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
         private const val KEY_DEVICE_KEY = "device_key"
         private const val MAX_RETRIES = 2
         private const val POLL_INTERVAL_MS = 500L
+        private const val TRANSIENT_STATUS_MS = 3_000L
 
         fun enqueue(context: Context, appWidgetId: Int, entityId: String, operationId: String, deviceKey: String? = null) {
             val operation = (context.applicationContext as HaWidgetApplication).container.dashboards

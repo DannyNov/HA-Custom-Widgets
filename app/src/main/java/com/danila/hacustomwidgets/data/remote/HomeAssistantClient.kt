@@ -136,7 +136,7 @@ class HomeAssistantClient(
         domain: String,
         service: String,
         entityId: String,
-        serviceData: Map<String, String> = emptyMap(),
+        serviceData: Map<String, *> = emptyMap<String, String>(),
     ) = withContext(Dispatchers.IO) {
         val body = JSONObject().put("entity_id", entityId).apply {
             serviceData.forEach { (key, value) -> put(key, value) }
