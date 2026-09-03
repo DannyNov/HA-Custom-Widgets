@@ -139,6 +139,9 @@ private fun ConnectionScreen(
     Scaffold(topBar = { TopAppBar(
         title = { Text("HA Custom Widgets") },
         actions = {
+            TextButton(onClick = { showSupport = true }) {
+                Text(tr("Tips", "Поддержать"))
+            }
             IconButton(onClick = {
                 when (val destination = DashboardSettingsLaunchPolicy.resolve(dashboards.map { it.first })) {
                     DashboardSettingsDestination.Empty -> chooseDashboard = true
@@ -223,10 +226,6 @@ private fun ConnectionScreen(
                 tr("HTTPS is preferred for security. HTTP remains available for local Home Assistant addresses.", "Для безопасности предпочтителен HTTPS. HTTP оставлен доступным для локальных адресов Home Assistant."),
                 style = MaterialTheme.typography.bodySmall,
             )
-            Button(onClick = { showSupport = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(tr("Support development", "Поддержать разработку"))
-            }
-            Spacer(Modifier.height(4.dp))
             Text(
                 text = tr("Version ${BuildConfig.VERSION_NAME}", "Версия ${BuildConfig.VERSION_NAME}"),
                 modifier = Modifier.fillMaxWidth(),
