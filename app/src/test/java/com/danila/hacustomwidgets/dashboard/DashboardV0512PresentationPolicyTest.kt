@@ -43,6 +43,17 @@ class DashboardV0512PresentationPolicyTest {
         assertEquals(tr("30 min", "30 мин"), paused.formattedRemaining)
     }
 
+    @Test fun finishesAtCannotRenderAboveNominalTimerDuration() {
+        val metric = DashboardMetric(
+            "timer.test", "Timer", "active", "active", "timer", null,
+            timerDuration = "00:30:00",
+            timerFinishesAt = "1970-01-01T00:30:00.500Z",
+        )
+        val presentation = HaTimerPresentationPolicy.resolve(metric, Instant.EPOCH)
+        assertEquals(30 * 60_000L, presentation.remainingMillis)
+        assertEquals(tr("30 min", "30 мин"), presentation.formattedRemaining)
+    }
+
     @Test fun singleMetricUsesOneColumn() {
         assertEquals(1, MetricLayoutPolicy.columns(listOf(metric("9.8 W")), 400))
     }

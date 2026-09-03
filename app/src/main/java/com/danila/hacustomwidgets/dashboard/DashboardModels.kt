@@ -233,13 +233,17 @@ object HaTimerPresentationPolicy {
             else -> HaTimerStatus.UNKNOWN
         }
         val durationMs = parseDuration(metric.timerDuration)
-        val remaining = when {
+        val calculatedRemaining = when {
             status == HaTimerStatus.ACTIVE && metric.timerFinishesAt != null -> runCatching {
                 Duration.between(now, Instant.parse(metric.timerFinishesAt)).toMillis().coerceAtLeast(0)
             }.getOrNull() ?: parseDuration(metric.timerRemaining)
             status == HaTimerStatus.ACTIVE || status == HaTimerStatus.PAUSED -> parseDuration(metric.timerRemaining)
             else -> null
         }
+        // Home Assistant may publish finishes_at a fraction of a second after the nominal
+        // duration. Capping prevents a freshly started 30-minute timer from rendering as 31.
+        val remaining = if (durationMs != null) calculatedRemaining?.coerceAtMost(durationMs)
+        else calculatedRemaining
         return HaTimerPresentation(status, remaining, durationMs?.let { (it / 60_000L).toInt() })
     }
 
@@ -373,6 +377,10 @@ object ScenarioDisplayPolicy {
 
     fun runnable(entityId: String, hiddenIds: Collection<String>, runnableIds: Collection<String>): Boolean =
         entityId !in hiddenIds && entityId in runnableIds
+
+    fun showStateToggle(domain: String): Boolean = domain == "automation"
+
+    fun exposeControl(domain: String, runnable: Boolean): Boolean = showStateToggle(domain) || runnable
 }
 
 sealed interface DashboardSettingsDestination {
@@ -449,6 +457,7 @@ data class DashboardCard(
     val timerState: DashboardMetric? = null,
     /** Controls rendered by the widget; [controls] remains the functional dependency set. */
     val visibleControls: List<DashboardControl> = controls,
+    val scenarioRunnable: Boolean = false,
 )
 
 data class DashboardSpace(

@@ -19,4 +19,12 @@ class DashboardV060ScenarioPolicyTest {
         assertFalse(ScenarioDisplayPolicy.runnable(action.entityId, emptySet(), emptySet()))
         assertTrue(ScenarioDisplayPolicy.runnable(action.entityId, emptySet(), setOf(action.entityId)))
     }
+
+    @Test fun automationKeepsItsOnOffToggleWhileRunButtonRemainsOptional() {
+        assertTrue(ScenarioDisplayPolicy.showStateToggle("automation"))
+        assertTrue(ScenarioDisplayPolicy.exposeControl("automation", runnable = false))
+        assertFalse(ScenarioDisplayPolicy.showStateToggle("script"))
+        assertFalse(ScenarioDisplayPolicy.exposeControl("script", runnable = false))
+        assertTrue(ScenarioDisplayPolicy.exposeControl("script", runnable = true))
+    }
 }

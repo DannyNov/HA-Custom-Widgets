@@ -356,11 +356,28 @@ private fun DashboardDeviceCard(
                     Text(tr("⚠ Unavailable", "⚠ Недоступно"), style = TextStyle(color = semantic, fontSize = 10.sp))
                 } else if (unknown) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
+                } else if (card.key.startsWith("scenario:")) {
+                    val control = card.controls.firstOrNull()
+                    if (control != null && ScenarioDisplayPolicy.showStateToggle(control.domain)) {
+                        Text(
+                            controlLabel(control, operationStatuses[control.entityId]),
+                            modifier = GlanceModifier.padding(horizontal = 8.dp, vertical = 5.dp).clickable(
+                                actionRunCallback<DashboardControlAction>(actionParametersOf(
+                                    DashboardWidgetIdKey to appWidgetId,
+                                    DashboardDeviceKey to card.key,
+                                    DashboardEntityKey to control.entityId,
+                                    DashboardDomainKey to control.domain,
+                                )),
+                            ),
+                            style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                        )
+                    }
+                    if (control != null && card.scenarioRunnable) {
+                        ScenarioRunButton(control, appWidgetId, operationStatuses[control.entityId])
+                    }
                 } else if (card.visibleControls.size == 1 && card.autoOffTimer == null) {
                     val control = card.visibleControls.first()
-                    if (card.key.startsWith("scenario:")) {
-                        ScenarioRunButton(control, appWidgetId, operationStatuses[control.entityId])
-                    } else if (PrimaryPowerButtonPolicy.supports(control)) {
+                    if (PrimaryPowerButtonPolicy.supports(control)) {
                         PrimaryPowerButton(
                             cardKey = card.key,
                             control = control,
@@ -394,6 +411,12 @@ private fun DashboardDeviceCard(
                     timerPresentation?.status ?: HaTimerStatus.UNKNOWN,
                     timerPresentation?.actualDurationMinutes,
                 )
+                val displayedRemaining = timerPresentation?.remainingMillis?.let { remaining ->
+                    val maximum = selectedMinutes?.times(60_000L)
+                    HaTimerPresentationPolicy.formatRemaining(
+                        if (maximum == null) remaining else minOf(remaining, maximum),
+                    )
+                }
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -455,11 +478,11 @@ private fun DashboardDeviceCard(
                             )
                         }
                     }
-                    timerPresentation?.formattedRemaining?.takeIf {
-                        timerPresentation.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
+                    displayedRemaining?.takeIf {
+                        timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
                     }?.let { remaining ->
                         Text(
-                            if (timerPresentation.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining"),
+                            if (timerPresentation?.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining"),
                             modifier = GlanceModifier.fillMaxWidth(),
                             style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
                                 textAlign = TextAlign.End),
@@ -772,11 +795,12 @@ private fun scenarioSections(state: DashboardState): List<DashboardSection> {
                 DashboardCard(
                     key = "scenario:${action.entityId}", title = action.title, areaId = null,
                     roomName = null, category = DeviceCategory.OTHER,
-                    metrics = if (runnable) emptyList() else listOf(DashboardMetric(
-                        action.entityId, tr("Status", "Статус"), action.state, action.state, action.domain, null,
-                    )),
+                    metrics = emptyList(),
                     controls = listOf(control),
-                    visibleControls = if (runnable) listOf(control) else emptyList(),
+                    visibleControls = if (ScenarioDisplayPolicy.exposeControl(action.domain, runnable)) {
+                        listOf(control)
+                    } else emptyList(),
+                    scenarioRunnable = runnable,
                 )
             }
             DashboardSection(
