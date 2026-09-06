@@ -754,7 +754,7 @@ private fun ScenarioSettingsScreen(
     val spaces = catalog.spaces()
     val spaceById = spaces.associateBy { it.id }
     val actions = catalog.groups.flatMap { group ->
-        group.entities.filter { it.domain in setOf("automation", "script") }.map { entity ->
+        group.entities.filter { it.domain in SCENARIO_DOMAINS }.map { entity ->
             val spaceId = ScenarioPolicy.resolveSpaceId(entity.areaId, group.device?.areaId, catalog)
             DashboardScenarioAction(entity.entityId, entity.friendlyName, entity.domain, entity.state, spaceId)
         }
@@ -769,7 +769,7 @@ private fun ScenarioSettingsScreen(
             style = MaterialTheme.typography.bodySmall,
         )
         val sections = (spaces.map { it.id } + UNASSIGNED_SPACE_ID).distinct().flatMap { spaceId ->
-            listOf("automation", "script").mapNotNull { domain ->
+            SCENARIO_DOMAINS.toList().mapNotNull { domain ->
                 val values = actions.filter { it.spaceId == spaceId && it.domain == domain }
                 values.takeIf { it.isNotEmpty() }?.let { Triple(spaceId, domain, it) }
             }
@@ -836,7 +836,7 @@ private fun cardTypeLabel(group: HaDeviceGroup): String {
 }
 
 private fun List<HaDeviceGroup>.dashboardGroups(): List<HaDeviceGroup> = mapNotNull { group ->
-    group.copy(entities = group.entities.filterNot { it.domain in setOf("automation", "script") })
+    group.copy(entities = group.entities.filterNot { it.domain in SCENARIO_DOMAINS })
         .takeIf { it.entities.isNotEmpty() }
 }
 

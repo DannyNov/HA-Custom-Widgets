@@ -94,12 +94,28 @@ fun batteryHealth(metric: DashboardMetric): BatteryHealth {
     if (metric.deviceClass != "battery" && "battery" !in value && "батар" !in value && "заряд" !in value) {
         return BatteryHealth.NOT_BATTERY
     }
-    val percent = metric.rawState.replace(',', '.').toDoubleOrNull() ?: return BatteryHealth.UNKNOWN
+    when (metric.rawState.trim().lowercase(java.util.Locale.ROOT)) {
+        "high", "normal" -> return BatteryHealth.NORMAL
+        "middle", "medium" -> return BatteryHealth.LOW
+        "low" -> return BatteryHealth.CRITICAL
+    }
+    val percent = metric.rawState.trim().replace(',', '.').toDoubleOrNull() ?: return BatteryHealth.UNKNOWN
     return when {
         percent !in 0.0..100.0 -> BatteryHealth.UNKNOWN
         percent <= 10.0 -> BatteryHealth.CRITICAL
         percent <= 30.0 -> BatteryHealth.LOW
         else -> BatteryHealth.NORMAL
+    }
+}
+
+fun batteryDisplayState(metric: DashboardMetric): String {
+    if (batteryHealth(metric) == BatteryHealth.NOT_BATTERY) return metric.state
+    return when (metric.rawState.trim().lowercase(java.util.Locale.ROOT)) {
+        "high", "normal" -> tr("High", "Высокий")
+        "middle", "medium" -> tr("Medium", "Средний")
+        "low" -> tr("Low", "Низкий")
+        "unknown", "unavailable" -> "—"
+        else -> metric.state
     }
 }
 
@@ -224,6 +240,19 @@ data class HaTimerPresentation(
 }
 
 object HaTimerPresentationPolicy {
+    fun finishesAt(entity: HaEntity, existing: VersionedEntityState?, receivedAt: Instant): String? {
+        if (entity.domain != "timer" || entity.state != "active") return entity.timerFinishesAt
+        if (runCatching { Instant.parse(entity.timerFinishesAt) }.isSuccess) return entity.timerFinishesAt
+        val remaining = parseDuration(entity.timerRemaining) ?: return null
+        // Remaining is a snapshot, not a fresh duration on every REST read.
+        if (existing?.confirmedRawState == "active" && existing.timerRemaining == entity.timerRemaining &&
+            existing.confirmedHaLastUpdatedMillis == entity.lastUpdated?.let {
+                runCatching { Instant.parse(it).toEpochMilli() }.getOrNull()
+            } && existing.timerFinishesAt != null) return existing.timerFinishesAt
+        val anchor = runCatching { Instant.parse(entity.lastUpdated) }.getOrNull() ?: receivedAt
+        return anchor.plusMillis(remaining).toString()
+    }
+
     fun resolve(metric: DashboardMetric, now: Instant): HaTimerPresentation {
         val status = when (metric.rawState) {
             "idle" -> HaTimerStatus.IDLE
@@ -244,7 +273,10 @@ object HaTimerPresentationPolicy {
         // duration. Capping prevents a freshly started 30-minute timer from rendering as 31.
         val remaining = if (durationMs != null) calculatedRemaining?.coerceAtMost(durationMs)
         else calculatedRemaining
-        return HaTimerPresentation(status, remaining, durationMs?.let { (it / 60_000L).toInt() })
+        return HaTimerPresentation(
+            if (status == HaTimerStatus.ACTIVE && remaining == 0L) HaTimerStatus.IDLE else status,
+            remaining, durationMs?.let { (it / 60_000L).toInt() },
+        )
     }
 
     fun parseDuration(value: String?): Long? {
@@ -281,6 +313,11 @@ object MetricPresentationPolicy {
         HaSemanticIcon.ENERGY, HaSemanticIcon.PRESSURE, HaSemanticIcon.ILLUMINANCE,
     )
     fun resolve(metric: DashboardMetric): MetricPresentation {
+        if (metric.domain == "sensor" && batteryHealth(metric) != BatteryHealth.NOT_BATTERY &&
+            metric.rawState.trim().lowercase(java.util.Locale.ROOT) in
+                setOf("high", "normal", "middle", "medium", "low", "unknown", "unavailable")) {
+            return MetricPresentation(HaSemanticIcon.BATTERY, false)
+        }
         val semantic = HaEntityIconPolicy.resolve(metric.domain, metric.deviceClass)
         return MetricPresentation(semantic, metric.domain != "sensor" || semantic !in compactMeasurements)
     }
@@ -359,7 +396,13 @@ fun scenarioActionKind(domain: String): ScenarioActionKind = when (domain) {
     else -> ScenarioActionKind.UNSUPPORTED
 }
 
+val SCENARIO_DOMAINS = setOf("automation", "script", "scene")
+
 object ScenarioPolicy {
+    fun runService(domain: String): String {
+        require(domain in SCENARIO_DOMAINS)
+        return if (domain == "automation") "trigger" else "turn_on"
+    }
     fun resolveSpaceId(entityAreaId: String?, deviceAreaId: String?, catalog: HaCatalog): String =
         resolveSpaceId(entityAreaId ?: deviceAreaId, catalog)
 
@@ -385,7 +428,7 @@ object ScenarioDisplayPolicy {
     fun isRunOperation(operation: DashboardOperation): Boolean =
         operation.desiredState == null && (
             operation.domain == "automation" && operation.service == "trigger" ||
-                operation.domain == "script" && operation.service == "turn_on"
+                operation.domain in setOf("script", "scene") && operation.service == "turn_on"
             )
 }
 

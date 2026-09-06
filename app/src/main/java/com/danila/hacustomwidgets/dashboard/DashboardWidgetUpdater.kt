@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class DashboardRenderCoordinator(
     context: Context,
@@ -32,6 +33,7 @@ class DashboardRenderCoordinator(
         val slot = slots.getOrPut(appWidgetId) { RenderSlot() }
         val previous = slot.requested.getAndUpdate { maxOf(it, requiredRevision) }
         slot.reason = reason
+        if (reason == "TRANSIENT_STATUS_EXPIRED") slot.force.set(true)
         Log.d(
             TAG,
             "RENDER_REQUEST processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
@@ -49,6 +51,7 @@ class DashboardRenderCoordinator(
         var retryScheduled = false
         try {
             while (true) {
+                delay(DashboardRefreshPolicy.COALESCE_MS)
                 val revisionState = repository.revisionState(appWidgetId)
                 val target = maxOf(slot.requested.get(), revisionState.requestedRenderRevision)
                 if (target <= revisionState.renderedRevision) return
@@ -56,7 +59,9 @@ class DashboardRenderCoordinator(
                 val started = SystemClock.elapsedRealtime()
                 Log.d(TAG, "RENDER_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId revision=$target reason=$reason monotonicMs=$started")
                 try {
-                    performDashboardWidgetUpdate(applicationContext, appWidgetId)
+                    val activeSession = repository.publishForRender(appWidgetId, slot.force.getAndSet(false))
+                    if (!activeSession) performDashboardWidgetUpdate(applicationContext, appWidgetId)
+                    DashboardCountdownWorker.schedule(applicationContext, appWidgetId, repository.get(appWidgetId))
                     repository.markRendered(appWidgetId, target)
                     Log.d(
                         TAG,
@@ -89,6 +94,7 @@ class DashboardRenderCoordinator(
     private data class RenderSlot(
         val requested: AtomicLong = AtomicLong(0L),
         val running: AtomicBoolean = AtomicBoolean(false),
+        val force: AtomicBoolean = AtomicBoolean(false),
         @Volatile var reason: String = "unknown",
     )
 

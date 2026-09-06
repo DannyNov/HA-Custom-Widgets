@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -134,11 +135,14 @@ private fun ConnectionScreen(
     var explainRealtime by remember { mutableStateOf(false) }
     var chooseDashboard by remember { mutableStateOf(false) }
     var showSupport by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
+    if (showAbout) AboutDialog(onDismiss = { showAbout = false })
     val scope = rememberCoroutineScope()
 
     Scaffold(topBar = { TopAppBar(
         title = { Text("HA Custom Widgets") },
         actions = {
+            IconButton(onClick = { showAbout = true }) { Icon(Icons.Default.Info, contentDescription = tr("About", "О приложении")) }
             TextButton(onClick = { showSupport = true }) {
                 Text(tr("Tips", "Поддержать"))
             }

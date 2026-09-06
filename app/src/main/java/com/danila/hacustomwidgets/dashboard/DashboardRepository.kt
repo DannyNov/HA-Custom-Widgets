@@ -56,12 +56,7 @@ class DashboardRepository(context: Context) {
         ?.let { runCatching { parseConfig(JSONObject(it), appWidgetId) }.getOrNull() }
 
     @Synchronized
-    fun get(appWidgetId: Int): DashboardState? = flows.getOrPut(appWidgetId) {
-        val started = System.currentTimeMillis()
-        MutableStateFlow(loadState(appWidgetId).also {
-            Log.d(TAG, "local state loaded widgetId=$appWidgetId durationMs=${System.currentTimeMillis() - started}")
-        })
-    }.value
+    fun get(appWidgetId: Int): DashboardState? = loadState(appWidgetId)
 
     @Synchronized
     fun observe(appWidgetId: Int): StateFlow<DashboardState?> = flows.getOrPut(appWidgetId) {
@@ -191,8 +186,9 @@ class DashboardRepository(context: Context) {
             val operationMap = before.operations.toMutableMap()
             val confirmations = mutableListOf<Pair<String, String>>()
             var revision = before.committedRevision
-            entities.forEach { entity ->
-                val existing = stateMap[entity.entityId]
+            entities.forEach { incoming ->
+                val existing = stateMap[incoming.entityId]
+                val entity = incoming.copy(timerFinishesAt = HaTimerPresentationPolicy.finishesAt(incoming, existing, Instant.now()))
                 val operation = operationMap[entity.entityId]
                 val incomingMillis = parseTimestamp(entity.lastUpdated)
                 val decision = DashboardStatePolicy.decide(existing, entity.state, incomingMillis, operation)
@@ -205,13 +201,20 @@ class DashboardRepository(context: Context) {
                         "desired=${operation?.desiredState} accept=${decision.accept} reason=${decision.reason}",
                 )
                 if (!decision.accept) return@forEach
+                if (DashboardRefreshPolicy.samePayload(existing, entity) && !decision.confirmsOperation) {
+                    // Persist newer ordering metadata without requesting a visual revision.
+                    if (existing != null && incomingMillis != null && incomingMillis != existing.confirmedHaLastUpdatedMillis) {
+                        stateMap[entity.entityId] = existing.copy(confirmedHaLastUpdatedMillis = incomingMillis)
+                    }
+                    return@forEach
+                }
                 accepted += 1
                 revision += 1
                 val updated = VersionedEntityState(
                     entityId = entity.entityId,
                     confirmedDisplayState = entity.displayState,
                     confirmedRawState = entity.state,
-                    confirmedHaLastUpdatedMillis = incomingMillis,
+                    confirmedHaLastUpdatedMillis = incomingMillis ?: existing?.confirmedHaLastUpdatedMillis,
                     revision = revision,
                     optimisticOverlay = existing?.optimisticOverlay,
                     optimisticOperationId = existing?.optimisticOperationId,
@@ -225,7 +228,8 @@ class DashboardRepository(context: Context) {
                 }
                 Log.d(TAG, "CONFIRMED_STATE_COMMIT widgetId=$appWidgetId entityId=${entity.entityId} confirmed=${entity.state} revision=$revision")
             }
-            if (accepted == 0) return@commitAndRequestRender before
+            if (accepted == 0 && source != DashboardStateSource.CATALOG) return@commitAndRequestRender before.copy(entities = stateMap)
+            if (source == DashboardStateSource.CATALOG) revision += 1
             var result = before.copy(
                 entities = stateMap,
                 operations = operationMap,
@@ -298,7 +302,7 @@ class DashboardRepository(context: Context) {
 
     @Synchronized
     fun beginScenarioOperation(appWidgetId: Int, entityId: String, domain: String): DashboardOperation? {
-        require(domain in setOf("automation", "script")) { "Unsupported scenario type" }
+        require(domain in SCENARIO_DOMAINS) { "Unsupported scenario type" }
         val existingOperation = getOperation(appWidgetId, entityId)
         if (!DashboardStatePolicy.canBeginOperation(existingOperation)) return null
         val createdAt = System.currentTimeMillis()
@@ -306,7 +310,7 @@ class DashboardRepository(context: Context) {
             operationId = UUID.randomUUID().toString(),
             entityId = entityId,
             domain = domain,
-            service = if (domain == "automation") "trigger" else "turn_on",
+            service = ScenarioPolicy.runService(domain),
             desiredState = null,
             optimisticState = null,
             previousState = null,
@@ -343,15 +347,11 @@ class DashboardRepository(context: Context) {
         if (!status.isActive) return finishOperation(appWidgetId, entityId, operationId, status, error)
         val current = getOperation(appWidgetId, entityId) ?: return false
         if (current.operationId != operationId) return false
-        commitAndRequestRender(appWidgetId, "OPERATION_STATUS") { before ->
+        // PENDING and RUNNING share the same visual feedback. Persist worker metadata only.
+        atomicStore.commit(appWidgetId, knownEntityIds(appWidgetId), "OPERATION_STATUS") { before ->
             val latest = before.operations[entityId]
-            if (latest?.operationId != operationId || !latest.status.isActive) return@commitAndRequestRender before
-            val revision = before.committedRevision + 1
-            before.copy(
-                operations = before.operations + (entityId to latest.copy(status = status, error = error)),
-                committedRevision = revision,
-                requestedRenderRevision = maxOf(before.requestedRenderRevision, revision),
-            )
+            if (latest?.operationId != operationId || !latest.status.isActive) return@commit before
+            before.copy(operations = before.operations + (entityId to latest.copy(status = status, error = error)))
         }
         Log.d(
             TAG,
@@ -391,18 +391,20 @@ class DashboardRepository(context: Context) {
 
     @Synchronized
     fun markRefreshInProgress(appWidgetId: Int, active: Boolean) {
+        // Refresh never replaces cached content and is not part of the visual state.
         configPrefs.edit().putBoolean(key(appWidgetId, "refreshing"), active).apply()
-        touchAndRequestRender(appWidgetId, "REFRESH_STATUS")
     }
 
     @Synchronized
     fun saveError(appWidgetId: Int, message: String) {
+        if (configPrefs.getString(key(appWidgetId, "error"), null) == message) return
         configPrefs.edit().putString(key(appWidgetId, "error"), message).apply()
         touchAndRequestRender(appWidgetId, "ERROR")
     }
 
     @Synchronized
     fun clearError(appWidgetId: Int) {
+        if (!configPrefs.contains(key(appWidgetId, "error"))) return
         configPrefs.edit().remove(key(appWidgetId, "error")).apply()
         touchAndRequestRender(appWidgetId, "ERROR_CLEAR")
     }
@@ -420,11 +422,10 @@ class DashboardRepository(context: Context) {
         val started = System.currentTimeMillis()
         Log.d(TAG, "NAV_TAP widgetId=$appWidgetId fromTab=${state.selectedTabId} toTab=$target ts=$started")
         configPrefs.edit().putString(key(appWidgetId, "selected_tab"), target).apply()
-        flows[appWidgetId]?.value = state.copy(selectedTabId = target)
-        val revision = touchAndRequestRender(appWidgetId, "NAVIGATION", publishState = false)
+        val revision = touchAndRequestRender(appWidgetId, "NAVIGATION")
         Log.d(
             TAG,
-            "NAV_STATE_COMMIT widgetId=$appWidgetId toTab=$target revision=$revision publications=1 " +
+            "NAV_STATE_COMMIT widgetId=$appWidgetId toTab=$target revision=$revision publication=coalesced " +
                 "durationMs=${System.currentTimeMillis() - started}",
         )
     }
@@ -438,8 +439,7 @@ class DashboardRepository(context: Context) {
             state.collapsedSections + sectionKey
         }
         configPrefs.edit().putStringSet(key(appWidgetId, "collapsed"), updated).apply()
-        flows[appWidgetId]?.value = state.copy(collapsedSections = updated)
-        touchAndRequestRender(appWidgetId, "SECTION", publishState = false)
+        touchAndRequestRender(appWidgetId, "SECTION")
     }
 
     @Synchronized
@@ -478,7 +478,9 @@ class DashboardRepository(context: Context) {
             card.copy(
                 metrics = card.metrics.map { metric ->
                     atomic.entities[metric.entityId]?.let {
-                        metric.copy(state = it.displayState, rawState = it.rawState)
+                        metric.copy(state = it.displayState, rawState = it.rawState,
+                            timerDuration = it.timerDuration, timerRemaining = it.timerRemaining,
+                            timerFinishesAt = it.timerFinishesAt)
                     } ?: metric
                 },
                 controls = card.controls.map { control ->
@@ -542,8 +544,21 @@ class DashboardRepository(context: Context) {
         return result
     }
 
-    private fun publish(appWidgetId: Int) {
-        flows[appWidgetId]?.value = loadState(appWidgetId)
+    /** Publish once to an existing Glance session; cold sessions need an explicit update. */
+    @Synchronized
+    fun publishForRender(appWidgetId: Int, force: Boolean = false): Boolean {
+        val flow = flows[appWidgetId] ?: return false
+        val next = loadState(appWidgetId) ?: return false
+        val old = flow.value
+        val oldCards = old?.cards.orEmpty().associateBy { it.key }
+        val shared = next.copy(cards = next.cards.map { card ->
+            oldCards[card.key]?.takeIf { it == card } ?: card
+        })
+        val presentation = DashboardRefreshPolicy.presentation(shared)
+        if (force || old == null || DashboardRefreshPolicy.presentation(old) != presentation) {
+            flow.value = if (force) presentation.copy(stateRevision = next.stateRevision) else presentation
+        }
+        return flow.subscriptionCount.value > 0
     }
 
     @Synchronized
@@ -572,9 +587,8 @@ class DashboardRepository(context: Context) {
     private fun touchAndRequestRender(
         appWidgetId: Int,
         reason: String,
-        publishState: Boolean = true,
     ): Long =
-        commitAndRequestRender(appWidgetId, reason, publishState) { before ->
+        commitAndRequestRender(appWidgetId, reason) { before ->
             val revision = before.committedRevision + 1
             before.copy(
                 committedRevision = revision,
@@ -586,13 +600,12 @@ class DashboardRepository(context: Context) {
     private fun commitAndRequestRender(
         appWidgetId: Int,
         reason: String,
-        publishState: Boolean = true,
         mutation: (AtomicDashboardRecord) -> AtomicDashboardRecord,
     ): AtomicDashboardRecord {
         val ids = knownEntityIds(appWidgetId)
         val before = atomicStore.read(appWidgetId, ids)
         val after = atomicStore.commit(appWidgetId, ids, reason, mutation)
-        if (publishState) publish(appWidgetId)
+        // Publication is owned by the render coordinator, after coalescing transport updates.
         if (after.requestedRenderRevision > before.renderedRevision &&
             (after.requestedRenderRevision > before.requestedRenderRevision ||
                 after.committedRevision > before.committedRevision)
@@ -1062,9 +1075,8 @@ class DashboardRepository(context: Context) {
     companion object {
         private const val TAG = "HAWidgetDashboard"
         private const val KEY_IDS = "configured_dashboard_ids"
-        private const val STORAGE_SCHEMA_VERSION = 5
+        private const val STORAGE_SCHEMA_VERSION = 6
         private const val DEFAULT_METRIC_LIMIT = 5
-        private val SCENARIO_DOMAINS = setOf("automation", "script")
         private const val TERMINAL_STATUS_VISIBLE_MS = 3_000L
     }
 }

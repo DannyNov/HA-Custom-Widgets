@@ -71,7 +71,7 @@ class DashboardControlAction : ActionCallback {
                 "appWidgetId=$appWidgetId entityId=$entityId source=ACTION desiredState=${operation.desiredState}",
         )
         DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId, deviceKey)
-        container.dashboardEvents.wakeAsync("CONTROL")
+        container.dashboardEvents.wakeAsync("CONTROL", reconcileIfStale = false)
     }
 }
 
@@ -96,7 +96,7 @@ class DashboardRunScenarioAction : ActionCallback {
             return
         } ?: return
         DashboardActionWorker.enqueue(context, appWidgetId, entityId, operation.operationId, "scenario-run:$entityId")
-        container.dashboardEvents.wakeAsync("SCENARIO")
+        container.dashboardEvents.wakeAsync("SCENARIO", reconcileIfStale = false)
     }
 }
 

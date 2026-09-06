@@ -17,14 +17,14 @@ val ciSigningEnabled = listOf(
 
 android {
     namespace = "com.danila.hacustomwidgets"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.danila.hacustomwidgets"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 33
-        versionName = "0.6.0.3"
+        targetSdk = 36
+        versionCode = 34
+        versionName = "0.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

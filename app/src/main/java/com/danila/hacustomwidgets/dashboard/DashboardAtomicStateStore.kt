@@ -39,6 +39,7 @@ class DashboardAtomicStateStore(context: Context) {
             require(it.renderedRevision >= before.renderedRevision) { "Rendered revision cannot decrease" }
             it
         }
+        if (after == before) return before
         check(prefs.edit().putString(key(appWidgetId), after.toJson().toString()).commit()) {
             "Не удалось атомарно сохранить Dashboard $appWidgetId"
         }

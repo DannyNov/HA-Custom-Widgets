@@ -122,7 +122,7 @@ private fun DashboardContent(
         if (sections.isEmpty()) {
             Text(
                 if (state.selectedTabId == MAIN_TAB_ID) tr("Add devices to the Main tab", "Добавьте устройства во вкладку «Главное»")
-                else if (state.selectedTabId == SCENARIOS_TAB_ID) tr("No available automations or scripts", "Нет доступных автоматизаций и скриптов")
+                else if (state.selectedTabId == SCENARIOS_TAB_ID) tr("No available scenarios", "Нет доступных сценариев")
                 else tr("No available devices in this space", "В этом пространстве нет доступных устройств"),
                 style = TextStyle(color = secondary, fontSize = 13.sp),
             )
@@ -315,10 +315,10 @@ private fun DashboardDeviceCard(
     scenarioRunStatuses: Map<String, DashboardOperationStatus>,
 ) {
     val primaryControl = card.visibleControls.firstOrNull()
-    val unavailable = card.metrics.any { it.rawState == "unavailable" } ||
+    val unavailable = card.metrics.any { it.rawState == "unavailable" && batteryHealth(it) == BatteryHealth.NOT_BATTERY } ||
         card.visibleControls.any { it.state == "unavailable" }
     val unknown = !unavailable && (
-        card.metrics.any { it.rawState == "unknown" } || card.visibleControls.any { it.state == "unknown" }
+        card.metrics.any { it.rawState == "unknown" && batteryHealth(it) == BatteryHealth.NOT_BATTERY } || card.visibleControls.any { it.state == "unknown" }
     )
     val active = card.visibleControls.any { it.state in ACTIVE_STATES }
     val semantic = when {
@@ -462,11 +462,10 @@ private fun DashboardDeviceCard(
                                 modifier = GlanceModifier
                                     .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
                                     .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
-                                    .background(ColorProvider(
-                                        if (timerPresentation?.status == HaTimerStatus.ACTIVE) R.color.widget_timer_active
-                                        else R.color.widget_accent
-                                    ))
-                                    .cornerRadius((PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP / 2).dp),
+                                    .background(ImageProvider(
+                                        if (timerPresentation?.status == HaTimerStatus.ACTIVE) R.drawable.circle_timer_active
+                                        else R.drawable.circle_accent
+                                    )),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Image(
@@ -554,9 +553,9 @@ private fun PrimaryPowerButton(
 ) {
     val tone = PrimaryPowerButtonPolicy.tone(control)
     val circleColor = when (tone) {
-        PrimaryPowerButtonTone.OFF -> ColorProvider(R.color.widget_secondary)
-        PrimaryPowerButtonTone.LIGHT_ON_GREEN -> ColorProvider(R.color.widget_active_surface)
-        PrimaryPowerButtonTone.SWITCH_ON_YELLOW -> ColorProvider(R.color.widget_light_surface)
+        PrimaryPowerButtonTone.OFF -> R.drawable.circle_secondary
+        PrimaryPowerButtonTone.LIGHT_ON_GREEN -> R.drawable.circle_active_surface
+        PrimaryPowerButtonTone.SWITCH_ON_YELLOW -> R.drawable.circle_light_surface
     }
     Box(
         modifier = GlanceModifier
@@ -578,36 +577,23 @@ private fun PrimaryPowerButton(
             modifier = GlanceModifier
                 .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
                 .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
-                .background(circleColor)
-                .cornerRadius((PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP / 2).dp),
+                .background(ImageProvider(circleColor)),
             contentAlignment = Alignment.Center,
         ) {
-            when {
-                operationStatus?.isActive == true -> Text(
-                    "…",
-                    style = TextStyle(
-                        color = ColorProvider(R.color.widget_primary),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
-                operationStatus == DashboardOperationStatus.FAILED ||
-                    operationStatus == DashboardOperationStatus.TIMEOUT -> Text(
-                    "!",
-                    style = TextStyle(
-                        color = ColorProvider(R.color.widget_primary),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
-                else -> Image(
-                    ImageProvider(R.drawable.ic_power),
-                    contentDescription = if (control.state == "on") tr("Turn off", "Выключить") else tr("Turn on", "Включить"),
-                    modifier = GlanceModifier.width(28.dp).height(28.dp),
-                )
-            }
+            Image(
+                ImageProvider(R.drawable.ic_power),
+                contentDescription = if (control.state == "on") tr("Turn off", "Выключить") else tr("Turn on", "Включить"),
+                modifier = GlanceModifier.width(28.dp).height(28.dp),
+            )
+            Text(
+                when {
+                    operationStatus?.isActive == true -> "…"
+                    operationStatus in setOf(DashboardOperationStatus.FAILED, DashboardOperationStatus.TIMEOUT) -> "!"
+                    else -> ""
+                },
+                style = TextStyle(color = ColorProvider(R.color.widget_primary), fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+            )
         }
     }
 }
@@ -619,9 +605,9 @@ private fun ScenarioRunButton(
     operationStatus: DashboardOperationStatus?,
 ) {
     val circleColor = when (operationStatus) {
-        DashboardOperationStatus.CONFIRMED -> ColorProvider(R.color.widget_switch_on)
-        DashboardOperationStatus.FAILED, DashboardOperationStatus.TIMEOUT -> ColorProvider(R.color.widget_problem)
-        else -> ColorProvider(R.color.widget_accent)
+        DashboardOperationStatus.CONFIRMED -> R.drawable.circle_switch_on
+        DashboardOperationStatus.FAILED, DashboardOperationStatus.TIMEOUT -> R.drawable.circle_problem
+        else -> R.drawable.circle_accent
     }
     Box(
         modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
@@ -634,7 +620,7 @@ private fun ScenarioRunButton(
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            modifier = GlanceModifier.width(40.dp).height(40.dp).background(circleColor).cornerRadius(20.dp),
+            modifier = GlanceModifier.width(40.dp).height(40.dp).background(ImageProvider(circleColor)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -694,14 +680,16 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
                     }
                 }
                 Text(
-                    if (presentation.showLabel) "${metric.label}: ${metric.state}" else " ${metric.state}",
+                    if (presentation.showLabel) "${metric.label}: ${metric.state}" else " ${batteryDisplayState(metric)}",
                     modifier = GlanceModifier.defaultWeight(),
                     maxLines = if (presentation.showLabel) 2 else 1,
                     style = TextStyle(
                     color = when {
+                        batteryHealth(metric) == BatteryHealth.UNKNOWN -> ColorProvider(R.color.widget_secondary)
                         metric.rawState == "unavailable" -> ColorProvider(R.color.widget_problem)
                         batteryHealth(metric) == BatteryHealth.CRITICAL -> ColorProvider(R.color.widget_problem)
                         batteryHealth(metric) == BatteryHealth.LOW -> ColorProvider(R.color.widget_warning)
+                        batteryHealth(metric) == BatteryHealth.NORMAL -> ColorProvider(R.color.widget_switch_on)
                         else -> ColorProvider(R.color.widget_primary)
                     },
                     fontSize = if (compact) 11.sp else 12.sp,
@@ -776,6 +764,7 @@ private fun scenarioSections(state: DashboardState): List<DashboardSection> {
     val visibleDomains = buildSet {
         if (state.config.scenarioAutomationVisible) add("automation")
         if (state.config.scenarioScriptVisible) add("script")
+        add("scene")
     }
     return orderedSpaceIds.flatMap { spaceId ->
         val actions = state.scenarioActions.filter {
@@ -784,7 +773,7 @@ private fun scenarioSections(state: DashboardState): List<DashboardSection> {
             )
         }
         if (actions.isEmpty()) return@flatMap emptyList()
-        listOf("automation" to tr("Automations", "Автоматизации"), "script" to tr("Scripts", "Скрипты")).mapNotNull { (domain, label) ->
+        listOf("automation" to tr("Automations", "Автоматизации"), "script" to tr("Scripts", "Скрипты"), "scene" to tr("Scenes", "Сцены")).mapNotNull { (domain, label) ->
             val domainActions = actions.filter { it.domain == domain }
             if (domainActions.isEmpty()) return@mapNotNull null
             val orderKey = "$spaceId:$domain"
