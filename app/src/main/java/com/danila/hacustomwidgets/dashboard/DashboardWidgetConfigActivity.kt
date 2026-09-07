@@ -731,7 +731,7 @@ private fun TimerSettingsScreen(
             val value = (1..1440).firstOrNull { it !in used } ?: return@Button
             onChange(config.copy(durations = config.durations + TimerDurationPreset.create(value)))
         }, modifier = Modifier.fillMaxWidth(), enabled = config.durations.size < 48) { Text(tr("+ Add time", "+ Добавить время")) }
-        Text(tr("This phone turns the device off when the timer finishes. Sleep mode or loss of connection may delay it. For operation independent of this phone, configure a Home Assistant automation.", "Этот телефон выключает устройство по окончании таймера. Спящий режим или отсутствие связи могут задержать выключение. Для работы независимо от телефона настройте автоматизацию Home Assistant."),
+        Text(tr("Auto-off requires a Home Assistant automation: timer.finished → switch/light.turn_off for the linked entity. This app controls and displays the HA timer.", "Для автоотключения нужна автоматизация Home Assistant: timer.finished → switch/light.turn_off связанной сущности. Приложение управляет таймером HA и отображает его состояние."),
             style = MaterialTheme.typography.bodySmall)
     }
 }

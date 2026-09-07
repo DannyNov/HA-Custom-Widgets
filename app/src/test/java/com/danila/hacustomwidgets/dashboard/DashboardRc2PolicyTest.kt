@@ -90,38 +90,6 @@ class DashboardRc2PolicyTest {
     @Test fun acceptedTimerIsNotDiscardedByPendingCommandTimeout() {
         assertFalse(TimerResetPolicy.expiredPending(reset().copy(accepted = true), now.toEpochMilli() + 180_000))
     }
-    private val on = HaEntity("switch.s", "on", "Socket", null, now.toString(), lastChanged = now.toString())
-    private fun idle() = entity("idle", null).copy(lastChanged = now.plusSeconds(1800).toString())
-    @Test fun expiryProducesIdempotentTurnOffForTheLinkedEntity() {
-        val run = reset().copy(accepted = true)
-        assertEquals(TimerExpiryDecision.TURN_OFF, TimerExpiryPolicy.decide(run, idle(), on, run.finishAt + 1000))
-        val call = TimerExpiryPolicy.turnOff(run)
-        assertEquals(TimerServiceCall("switch", "turn_off", "switch.s"), call)
-        assertEquals(call, TimerExpiryPolicy.turnOff(run))
-    }
-    @Test fun cancelledTimerDoesNotTurnDeviceOff() {
-        val run = reset().copy(accepted = true)
-        assertEquals(TimerExpiryDecision.CANCEL, TimerExpiryPolicy.decide(run,
-            idle().copy(lastChanged = now.plusSeconds(60).toString()), on, run.finishAt + 1000))
-    }
-    @Test fun newerManualOnPreventsDelayedDuplicateShutdown() {
-        val run = reset().copy(accepted = true)
-        assertEquals(TimerExpiryDecision.CANCEL, TimerExpiryPolicy.decide(run, idle(),
-            on.copy(lastChanged = now.plusSeconds(1801).toString()), run.finishAt + 5000))
-    }
-    @Test fun alreadyOffIsNotTouchedAndUnacceptedRunCannotExecute() {
-        val run = reset().copy(accepted = true)
-        assertEquals(TimerExpiryDecision.CANCEL, TimerExpiryPolicy.decide(run, idle(), on.copy(state = "off"), run.finishAt))
-        assertEquals(TimerExpiryDecision.WAIT, TimerExpiryPolicy.decide(reset(), idle(), on, run.finishAt))
-    }
-    @Test fun pauseAndExternalRestartAreNotExpiry() {
-        val run = reset().copy(accepted = true)
-        assertEquals(TimerExpiryDecision.WAIT, TimerExpiryPolicy.decide(run, entity("paused"), on, run.finishAt))
-        assertEquals(TimerExpiryDecision.RESCHEDULE, TimerExpiryPolicy.decide(run, entity(), on, run.finishAt))
-    }
-    @Test fun ownershipUsesTimerNotWidgetId() {
-        assertEquals(TimerExpiryPolicy.workName(reset().timerId), TimerExpiryPolicy.workName(reset().copy(widgetId = 7).timerId))
-    }
     @Test fun compressedStateLcSuppliesLastUpdatedForFullAndDelta() {
         val parser = CompressedEntitySubscriptionParser()
         val full = parser.apply(JSONObject("""{"a":{"timer.t":{"s":"idle","lc":1000,"a":{}}}}""")).entities.single()

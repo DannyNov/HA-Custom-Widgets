@@ -50,17 +50,11 @@ class DashboardTimerActionWorker(context: Context, params: WorkerParameters) : C
             ).forEach { call ->
                 container.client.callService(connection, call.domain, call.service, call.entityId, call.data)
             }
-            val accepted = if (reset.accepted) reset else reset.copy(accepted = true,
-                finishAt = System.currentTimeMillis() + minutes * 60_000L)
-            if (!store.update(accepted)) return Result.success()
-            DashboardTimerExpiryWorker.schedule(applicationContext, accepted)
+            if (!store.markAccepted(timerId, generation, System.currentTimeMillis())) return Result.success()
             container.dashboards.refreshTransientUi(widgetId)
             val states = container.client.getEntities(connection, listOf(primaryId, timerId))
             container.dashboards.widgetsContainingEntity(timerId).forEach {
                 container.dashboards.updateEntityStates(it, states, DashboardStateSource.RECONCILIATION)
-            }
-            store.get(timerId)?.takeIf { it.generation == generation }?.let {
-                DashboardTimerExpiryWorker.schedule(applicationContext, it)
             }
             Result.success()
         }.getOrElse { error ->

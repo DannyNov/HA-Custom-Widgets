@@ -98,7 +98,7 @@ class DashboardRepository(context: Context) {
         timerResets.put(TimerReset(UUID.randomUUID().toString(), timerId, appWidgetId,
             primary.entityId, primary.domain, config.durations[next].minutes, now,
             baseline?.confirmedHaLastUpdatedMillis, now + config.durations[next].minutes * 60_000L,
-            serverUrl = serverUrl))
+            serverUrl = serverUrl, baselineFinishAt = TimerResetPolicy.timestamp(baseline?.timerFinishesAt)))
         touchAndRequestRender(appWidgetId, "TIMER_PRESET")
         return card to config.durations[next]
     }
@@ -203,16 +203,7 @@ class DashboardRepository(context: Context) {
                         if (expired) timerResets.remove(it.timerId, it.generation)
                     }
                 }
-                if (reset != null) {
-                    if (TimerResetPolicy.stale(reset, incoming)) return@forEach
-                    if (reset.confirmedHa == null && TimerResetPolicy.confirms(reset, incoming)) {
-                        timerResets.update(reset.copy(
-                            finishAt = requireNotNull(TimerResetPolicy.timestamp(incoming.timerFinishesAt)),
-                            confirmedHa = TimerResetPolicy.timestamp(incoming.lastUpdated)))
-                    } else if (reset.accepted && reset.confirmedHa == null && incoming.state != "active") {
-                        timerResets.update(reset.copy(confirmedHa = TimerResetPolicy.timestamp(incoming.lastUpdated)))
-                    }
-                }
+                if (reset != null && TimerResetPolicy.stale(reset, incoming)) return@forEach
                 val existing = stateMap[incoming.entityId]
                 val entity = incoming.copy(timerFinishesAt = HaTimerPresentationPolicy.finishesAt(incoming, existing, Instant.now()))
                 val operation = operationMap[entity.entityId]
@@ -227,7 +218,9 @@ class DashboardRepository(context: Context) {
                         "desired=${operation?.desiredState} accept=${decision.accept} reason=${decision.reason}",
                 )
                 if (!decision.accept) return@forEach
-                if (DashboardRefreshPolicy.samePayload(existing, entity) && !decision.confirmsOperation) {
+                val overlayRetired = reset != null && reset.confirmedHa == null
+                if (reset != null) timerResets.reconcile(reset, entity)
+                if (DashboardRefreshPolicy.samePayload(existing, entity) && !decision.confirmsOperation && !overlayRetired) {
                     // Persist newer ordering metadata without requesting a visual revision.
                     if (existing != null && incomingMillis != null && incomingMillis != existing.confirmedHaLastUpdatedMillis) {
                         stateMap[entity.entityId] = existing.copy(confirmedHaLastUpdatedMillis = incomingMillis)
@@ -523,8 +516,7 @@ class DashboardRepository(context: Context) {
                         timerFinishesAt = state.timerFinishesAt,
                     ) } ?: timer
                     val reset = timerResets.get(timer.entityId)
-                    if (reset != null && reset.confirmedHa == null &&
-                        (reset.accepted || System.currentTimeMillis() - reset.createdAt < 120_000L))
+                    if (reset != null && TimerResetPolicy.showOverlay(reset, System.currentTimeMillis()))
                         TimerResetPolicy.overlay(reset, stored) else stored
                 },
             )

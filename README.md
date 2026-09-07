@@ -90,3 +90,11 @@ Send only USDT using the exact network shown.
 ## Disclaimer
 
 HA Custom Widgets is an independent project and is not affiliated with or endorsed by the Home Assistant project or the Open Home Foundation.
+
+## Auto-off timer (RC4)
+
+The app starts/restarts the linked HA timer and displays server state. Actual switch/light
+shutdown requires an automation in Home Assistant for `timer.finished`. RC4 does not send
+an automatic `turn_off` from the phone. Without that automation, timer expiry can leave the
+switch ON. See [setup example](docs/TIMER_AUTO_OFF.md). Existing RC2/RC3 expiry work is
+cancelled on upgrade. Final v0.6.1 must use versionCode >=37.

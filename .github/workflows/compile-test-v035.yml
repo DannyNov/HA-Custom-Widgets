@@ -1,4 +1,4 @@
-name: v0.6.1-rc3 compile and tests
+name: v0.6.1-rc4 compile and tests
 
 on:
   push:
@@ -34,12 +34,12 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("TEST_RESULT " + " ".join(f"{key}={value}" for key, value in totals.items()))
-          if totals["tests"] < 400 or totals["failures"] or totals["errors"] or totals["skipped"]:
+          if totals["tests"] < 414 or totals["failures"] or totals["errors"] or totals["skipped"]:
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: v0.6.1-rc3-test-results
+          name: v0.6.1-rc4-test-results
           path: app/build/test-results/testDebugUnitTest
           if-no-files-found: error
 
@@ -72,5 +72,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v0.6.1-rc3-host-api-${{ matrix.api }}
+          name: v0.6.1-rc4-host-api-${{ matrix.api }}
           path: app/build/reports/androidTests/connected
