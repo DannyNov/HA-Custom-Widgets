@@ -1,4 +1,4 @@
-name: v0.6.1-rc2 compile and tests
+name: v0.6.1-rc3 compile and tests
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: v0.6.1-rc2-test-results
+          name: v0.6.1-rc3-test-results
           path: app/build/test-results/testDebugUnitTest
           if-no-files-found: error
 
@@ -72,5 +72,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v0.6.1-rc2-host-api-${{ matrix.api }}
+          name: v0.6.1-rc3-host-api-${{ matrix.api }}
           path: app/build/reports/androidTests/connected

@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -378,13 +379,13 @@ private fun DashboardOverview(
     val byId = spaces.associateBy { it.id }
     val orderedIds = DashboardOrderPolicy.merge(spaceOrder, spaces.map { it.id })
     val orderedSpaces = orderedIds.mapNotNull(byId::get)
-    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(tr("Spaces are synced from Home Assistant. Hold ⠿ and drag a card to reorder.", "Пространства синхронизируются из Home Assistant. Для изменения порядка удерживайте ⠿ и перетащите карточку."))
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(tr("HA spaces. Hold ⠿ to reorder.", "Пространства HA. Удерживайте ⠿ для перестановки."))
         ReorderableList(
             items = orderedSpaces,
             stableId = { it.id },
             canDrag = { it.id in visibleSpaces },
-            itemVerticalPaddingDp = 2,
+            itemVerticalPaddingDp = 1,
             modifier = Modifier.weight(1f),
             onMove = { from, to ->
                 val fullOrder = orderedSpaces.map { it.id }
@@ -408,7 +409,7 @@ private fun DashboardOverview(
                     itemModifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
-                    Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Column(Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = enabled, onCheckedChange = { onToggleSpace(space.id) })
                             Icon(HaSemanticIcon.SPACE.imageVector(), contentDescription = tr("Space", "Пространство"))
@@ -420,11 +421,11 @@ private fun DashboardOverview(
                         }
                         if (enabled) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(modifier = Modifier.weight(1f), onClick = { onCycleGrouping(space.id) }) {
+                                TextButton(contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp), modifier = Modifier.weight(1f), onClick = { onCycleGrouping(space.id) }) {
                                     Text(tr("Grouping: ${grouping[space.id].label()}", "Группировка: ${grouping[space.id].label()}"))
                                 }
                                 if (grouping[space.id] == DashboardGrouping.TYPES) {
-                                    TextButton(modifier = Modifier.weight(1f), onClick = { onOrderGroups(space.id) }) { Text(tr("Group order ›", "Порядок групп ›")) }
+                                    TextButton(contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp), modifier = Modifier.weight(1f), onClick = { onOrderGroups(space.id) }) { Text(tr("Group order ›", "Порядок групп ›")) }
                                 }
                             }
                         }
@@ -435,7 +436,7 @@ private fun DashboardOverview(
         Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text(tr("Configure Scenarios", "Настроить Сценарии")) }
         SettingSwitch(tr("Show update time", "Показывать время обновления"), showUpdated, onShowUpdated)
         SettingSwitch(tr("Compact card density", "Компактная плотность карточек"), compact, onCompact)
-        Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+        Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
             Text(tr("Save Dashboard", "Сохранить Dashboard"))
         }
     }

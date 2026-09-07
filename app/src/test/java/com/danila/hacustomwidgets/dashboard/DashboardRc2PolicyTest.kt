@@ -134,8 +134,8 @@ class DashboardRc2PolicyTest {
     @Test fun adapterIdentityIsIndependentOfEntityAndSessionRevisions() {
         assertEquals("hacw://dashboard/42/collection/v1", LegacyCollectionPolicy.adapterIdentity(42))
         assertNotEquals(LegacyCollectionPolicy.adapterIdentity(42), LegacyCollectionPolicy.adapterIdentity(43))
-        assertTrue(LegacyCollectionPolicy.useLegacy(26))
-        assertTrue(LegacyCollectionPolicy.useLegacy(29))
+        assertFalse(LegacyCollectionPolicy.useLegacy(26))
+        assertFalse(LegacyCollectionPolicy.useLegacy(29))
         assertFalse(LegacyCollectionPolicy.useLegacy(31))
     }
     @Test fun sceneIsPlayOnlyEvenWhenItsStateIsUnknown() {

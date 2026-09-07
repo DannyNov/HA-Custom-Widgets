@@ -23,7 +23,10 @@ import java.util.Date
 /** No revision, entity payload, tab, or session token belongs in the adapter identity. */
 object LegacyCollectionPolicy {
     fun adapterIdentity(widgetId: Int) = "hacw://dashboard/$widgetId/collection/v1"
-    fun useLegacy(api: Int) = api <= 30
+    // RC3: use the RC1 Glance renderer on all supported APIs. The native collection
+    // also needs a new click-addressing design before it can safely be enabled again.
+    @Suppress("UNUSED_PARAMETER")
+    fun useLegacy(api: Int) = false
 }
 
 /** Native legacy host/rows; ordering, grouping, actions and state use the shared Dashboard policies. */
@@ -126,7 +129,7 @@ class DashboardLegacyService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = Factory(this,
         intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1))
 
-    private class Factory(val context: Context, val id: Int) : RemoteViewsFactory {
+    internal class Factory(val context: Context, val id: Int) : RemoteViewsFactory {
         private data class Item(val stableKey: String, val views: RemoteViews)
         @Volatile private var items: List<Item> = emptyList()
         override fun onCreate() = Unit
@@ -174,7 +177,15 @@ class DashboardLegacyService : RemoteViewsService() {
             setOnClickFillInIntent(R.id.legacy_button, intent)
         }
 
-        private fun card(card: DashboardCard, state: DashboardState): RemoteViews = rv(R.layout.dashboard_legacy_card).apply {
+        internal fun card(card: DashboardCard, state: DashboardState): RemoteViews = rv(R.layout.dashboard_legacy_card).apply {
+            // Reapply replays actions on the old hierarchy; XML defaults do not run again.
+            // Retained for regression coverage, NOT sufficient to re-enable this renderer:
+            // nested fill-in intents are rejected by Android 8's collection-child check.
+            removeAllViews(R.id.legacy_header_controls)
+            removeAllViews(R.id.legacy_controls)
+            removeAllViews(R.id.legacy_metrics)
+            setTextViewText(R.id.legacy_remaining, "")
+            setTextColor(R.id.legacy_remaining, context.getColor(R.color.widget_primary))
             setTextViewText(R.id.legacy_card_title, card.title)
             setTextViewTextSize(R.id.legacy_card_title, android.util.TypedValue.COMPLEX_UNIT_SP,
                 if (state.config.compactDensity) 12f else 14f)

@@ -306,7 +306,7 @@ private fun SectionHeader(
 }
 
 @Composable
-private fun DashboardDeviceCard(
+internal fun DashboardDeviceCard(
     card: DashboardCard,
     appWidgetId: Int,
     widthDp: Int,

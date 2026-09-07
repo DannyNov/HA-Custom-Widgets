@@ -12,7 +12,8 @@ import kotlinx.coroutines.launch
 
 class ThemeChangeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_CONFIGURATION_CHANGED) return
+        if (intent.action != Intent.ACTION_CONFIGURATION_CHANGED &&
+            intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
