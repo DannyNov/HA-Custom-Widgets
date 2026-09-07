@@ -589,6 +589,7 @@ fun <T> ReorderableList(
     modifier: Modifier = Modifier,
     listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
     canDrag: (T) -> Boolean = { true },
+    itemVerticalPaddingDp: Int = 3,
     itemContent: @Composable (
         item: T,
         dragging: Boolean,
@@ -938,7 +939,7 @@ fun <T> ReorderableList(
                     else -> 1f
                 }
                 val itemModifier = Modifier
-                    .padding(vertical = 3.dp)
+                    .padding(vertical = itemVerticalPaddingDp.dp)
                     .graphicsLayer {
                         alpha = itemAlpha
                         translationY = visualTranslation
@@ -1012,7 +1013,7 @@ fun <T> ReorderableList(
                 Modifier
                     .fillMaxWidth()
                     .offset { IntOffset(0, visualGhostTop.roundToInt()) }
-                    .padding(vertical = 3.dp)
+                    .padding(vertical = itemVerticalPaddingDp.dp)
                     .zIndex(3f)
                     .graphicsLayer {
                         alpha = ghostAlpha

@@ -13,6 +13,11 @@
         android:theme="@style/Theme.HaCustomWidgets"
         android:usesCleartextTraffic="true">
 
+        <service android:name=".dashboard.DashboardLegacyService"
+            android:permission="android.permission.BIND_REMOTEVIEWS" android:exported="false" />
+        <receiver android:name=".dashboard.DashboardLegacyActionReceiver" android:exported="false" />
+        <receiver android:name=".dashboard.DashboardTimerAlarmReceiver" android:exported="false" />
+
         <activity
             android:name=".widget.EntityStateWidgetConfigActivity"
             android:exported="true"

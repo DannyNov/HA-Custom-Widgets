@@ -489,7 +489,8 @@ internal class CompressedEntitySubscriptionParser {
                     state = plus.optString("s", current?.state ?: "unknown"),
                     friendlyName = attributes.optString("friendly_name", entityId),
                     unit = attributes.optNullableString("unit_of_measurement"),
-                    lastUpdated = epochSeconds(plus, "lu") ?: current?.lastUpdated,
+                    // HA emits lc instead of lu when both timestamps advance together.
+                    lastUpdated = epochSeconds(plus, "lu") ?: epochSeconds(plus, "lc") ?: current?.lastUpdated,
                     lastChanged = epochSeconds(plus, "lc") ?: current?.lastChanged,
                     deviceClass = attributes.optNullableString("device_class"),
                     icon = attributes.optNullableString("icon"),
@@ -529,7 +530,7 @@ internal class CompressedEntitySubscriptionParser {
             state = value.optString("s", "unknown"),
             friendlyName = attributes.optString("friendly_name", entityId),
             unit = attributes.optNullableString("unit_of_measurement"),
-            lastUpdated = epochSeconds(value, "lu"),
+            lastUpdated = epochSeconds(value, "lu") ?: epochSeconds(value, "lc"),
             lastChanged = epochSeconds(value, "lc"),
             deviceClass = attributes.optNullableString("device_class"),
             icon = attributes.optNullableString("icon"),

@@ -25,6 +25,8 @@ private data class DashboardStructureSnapshot(
 )
 
 class DashboardRepository(context: Context) {
+    private val timerResets = TimerResetStore(context)
+    private val timerConnection = com.danila.hacustomwidgets.data.security.SecureConnectionStore(context)
     private val configPrefs = context.getSharedPreferences("dashboard_widgets", Context.MODE_PRIVATE)
     private val structurePrefs = context.getSharedPreferences("dashboard_structure", Context.MODE_PRIVATE)
     private val statePrefs = context.getSharedPreferences("dashboard_entity_states", Context.MODE_PRIVATE)
@@ -72,6 +74,7 @@ class DashboardRepository(context: Context) {
 
     @Synchronized
     fun selectNextTimerDuration(appWidgetId: Int, deviceKey: String): Pair<DashboardCard, TimerDurationPreset>? {
+        val serverUrl = timerConnection.load()?.baseUrl ?: return null
         val state = get(appWidgetId) ?: return null
         val card = state.cards.firstOrNull { it.key == deviceKey } ?: return null
         val config = state.config.autoOffTimersByDevice[deviceKey]?.takeIf {
@@ -88,6 +91,14 @@ class DashboardRepository(context: Context) {
         val updated = state.config.copy(autoOffTimersByDevice = state.config.autoOffTimersByDevice +
             (deviceKey to config.copy(selectedDurationIndex = next)))
         configPrefs.edit().putString(key(appWidgetId, "config"), updated.toJson().toString()).apply()
+        val primary = AutoOffTimerPolicy.resolveControl(card.controls, config) ?: return null
+        val timerId = requireNotNull(config.timerEntityId)
+        val baseline = atomicStore.read(appWidgetId, knownEntityIds(appWidgetId)).entities[timerId]
+        val now = System.currentTimeMillis()
+        timerResets.put(TimerReset(UUID.randomUUID().toString(), timerId, appWidgetId,
+            primary.entityId, primary.domain, config.durations[next].minutes, now,
+            baseline?.confirmedHaLastUpdatedMillis, now + config.durations[next].minutes * 60_000L,
+            serverUrl = serverUrl))
         touchAndRequestRender(appWidgetId, "TIMER_PRESET")
         return card to config.durations[next]
     }
@@ -187,6 +198,21 @@ class DashboardRepository(context: Context) {
             val confirmations = mutableListOf<Pair<String, String>>()
             var revision = before.committedRevision
             entities.forEach { incoming ->
+                val reset = timerResets.get(incoming.entityId)?.takeUnless {
+                    TimerResetPolicy.expiredPending(it, System.currentTimeMillis()).also { expired ->
+                        if (expired) timerResets.remove(it.timerId, it.generation)
+                    }
+                }
+                if (reset != null) {
+                    if (TimerResetPolicy.stale(reset, incoming)) return@forEach
+                    if (reset.confirmedHa == null && TimerResetPolicy.confirms(reset, incoming)) {
+                        timerResets.update(reset.copy(
+                            finishAt = requireNotNull(TimerResetPolicy.timestamp(incoming.timerFinishesAt)),
+                            confirmedHa = TimerResetPolicy.timestamp(incoming.lastUpdated)))
+                    } else if (reset.accepted && reset.confirmedHa == null && incoming.state != "active") {
+                        timerResets.update(reset.copy(confirmedHa = TimerResetPolicy.timestamp(incoming.lastUpdated)))
+                    }
+                }
                 val existing = stateMap[incoming.entityId]
                 val entity = incoming.copy(timerFinishesAt = HaTimerPresentationPolicy.finishesAt(incoming, existing, Instant.now()))
                 val operation = operationMap[entity.entityId]
@@ -476,6 +502,7 @@ class DashboardRepository(context: Context) {
         val atomic = atomicStore.read(appWidgetId, structure.entityIds)
         val cards = structure.cards.map { card ->
             card.copy(
+                autoOffTimer = config.autoOffTimersByDevice[card.key]?.takeIf { it.enabled },
                 metrics = card.metrics.map { metric ->
                     atomic.entities[metric.entityId]?.let {
                         metric.copy(state = it.displayState, rawState = it.rawState,
@@ -489,12 +516,16 @@ class DashboardRepository(context: Context) {
                     } ?: control
                 },
                 timerState = card.timerState?.let { timer ->
-                    atomic.entities[timer.entityId]?.let { state -> timer.copy(
+                    val stored = atomic.entities[timer.entityId]?.let { state -> timer.copy(
                         state = state.displayState, rawState = state.rawState,
                         timerDuration = state.timerDuration,
                         timerRemaining = state.timerRemaining,
                         timerFinishesAt = state.timerFinishesAt,
                     ) } ?: timer
+                    val reset = timerResets.get(timer.entityId)
+                    if (reset != null && reset.confirmedHa == null &&
+                        (reset.accepted || System.currentTimeMillis() - reset.createdAt < 120_000L))
+                        TimerResetPolicy.overlay(reset, stored) else stored
                 },
             )
         }

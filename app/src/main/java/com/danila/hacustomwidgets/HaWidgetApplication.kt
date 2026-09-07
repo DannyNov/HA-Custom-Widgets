@@ -27,6 +27,9 @@ class HaWidgetApplication : Application() {
                 "monotonicMs=${SystemClock.elapsedRealtime()}",
         )
         WidgetSyncWorker.schedule(this)
+        com.danila.hacustomwidgets.dashboard.TimerResetStore(this).all().filter { it.accepted }.forEach {
+            com.danila.hacustomwidgets.dashboard.DashboardTimerExpiryWorker.schedule(this, it, keep = true)
+        }
         container.dashboardStartup.start()
         val interactive = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         container.dashboardEvents.screenInteractiveChanged(interactive)

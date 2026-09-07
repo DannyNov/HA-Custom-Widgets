@@ -179,13 +179,14 @@ object AutoOffTimerPolicy {
         actualDurationMinutes: Int?,
     ): Int {
         if (config.durations.isEmpty()) return -1
-        if (status !in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)) return 0
+        if (status !in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED))
+            return config.durations.indices.minBy { config.durations[it].minutes }
         val current = config.durations.indexOfFirst { it.minutes == actualDurationMinutes }.takeIf { it >= 0 }
             ?: config.selectedDurationIndex.takeIf { it in config.durations.indices }
             ?: nextIndex(config, actualDurationMinutes)
         if (current !in config.durations.indices) return -1
-        val shownMinutes = remainingMillis?.let(HaTimerPresentationPolicy::displayedRemainingMinutes)
-        return if (shownMinutes != null && shownMinutes < config.durations[current].minutes) current
+        val elapsedMillis = remainingMillis?.let { config.durations[current].minutes * 60_000L - it }
+        return if (elapsedMillis != null && elapsedMillis >= 60_000L) current
         else (current + 1) % config.durations.size
     }
 
@@ -198,7 +199,7 @@ object AutoOffTimerPolicy {
             ?: config.durations.getOrNull(config.selectedDurationIndex)?.minutes
             ?: config.durations.firstOrNull()?.minutes
     } else {
-        config.durations.firstOrNull()?.minutes
+        config.durations.minOfOrNull { it.minutes }
     }
 
     fun durationPayload(minutes: Int): String {
@@ -236,7 +237,8 @@ data class HaTimerPresentation(
     val remainingMillis: Long? = null,
     val actualDurationMinutes: Int? = null,
 ) {
-    val formattedRemaining: String? get() = remainingMillis?.let(HaTimerPresentationPolicy::formatRemaining)
+    val formattedRemaining: String? get() = if (status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED))
+        remainingMillis?.let(HaTimerPresentationPolicy::formatRemaining) else null
 }
 
 object HaTimerPresentationPolicy {

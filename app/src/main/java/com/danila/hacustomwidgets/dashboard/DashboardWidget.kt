@@ -85,7 +85,7 @@ class DashboardWidget : GlanceAppWidget() {
     }
 }
 
-private data class DashboardSection(
+internal data class DashboardSection(
     val key: String,
     val title: String?,
     val icon: String?,
@@ -356,7 +356,7 @@ private fun DashboardDeviceCard(
                 )
                 if (unavailable) {
                     Text(tr("⚠ Unavailable", "⚠ Недоступно"), style = TextStyle(color = semantic, fontSize = 10.sp))
-                } else if (unknown) {
+                } else if (unknown && !card.key.startsWith("scenario:")) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
                 } else if (card.key.startsWith("scenario:")) {
                     val control = card.controls.firstOrNull()
@@ -623,18 +623,10 @@ private fun ScenarioRunButton(
             modifier = GlanceModifier.width(40.dp).height(40.dp).background(ImageProvider(circleColor)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                when {
-                    operationStatus?.isActive == true -> "…"
-                    operationStatus == DashboardOperationStatus.CONFIRMED -> "✓"
-                    operationStatus == DashboardOperationStatus.FAILED ||
-                        operationStatus == DashboardOperationStatus.TIMEOUT -> "!"
-                    else -> "▶"
-                },
-                style = TextStyle(
-                    color = ColorProvider(android.R.color.white), fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-                ),
+            Image(
+                ImageProvider(scenarioLaunchIcon(operationStatus)),
+                contentDescription = tr("Run", "Запустить"),
+                modifier = GlanceModifier.width(24.dp).height(24.dp),
             )
         }
     }
@@ -655,18 +647,6 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
             ) {
                 if (!presentation.showLabel) {
                     when (presentation.semantic) {
-                        HaSemanticIcon.TEMPERATURE -> Text(
-                            "🌡",
-                            modifier = GlanceModifier.width(16.dp),
-                            maxLines = 1,
-                            style = TextStyle(fontSize = 13.sp),
-                        )
-                        HaSemanticIcon.HUMIDITY -> Text(
-                            "💧",
-                            modifier = GlanceModifier.width(16.dp),
-                            maxLines = 1,
-                            style = TextStyle(fontSize = 13.sp),
-                        )
                         HaSemanticIcon.BATTERY -> Image(
                             ImageProvider(batteryIconResource(metric)),
                             contentDescription = tr("Battery", "Батарея"),
@@ -700,14 +680,14 @@ private fun MetricLine(metrics: List<DashboardMetric>, columns: Int, widthDp: In
     }
 }
 
-private fun batteryIconResource(metric: DashboardMetric): Int = when (batteryHealth(metric)) {
+internal fun batteryIconResource(metric: DashboardMetric): Int = when (batteryHealth(metric)) {
     BatteryHealth.NORMAL -> R.drawable.ic_metric_battery
     BatteryHealth.LOW -> R.drawable.ic_metric_battery_half
     BatteryHealth.CRITICAL -> R.drawable.ic_metric_battery_low
     BatteryHealth.UNKNOWN, BatteryHealth.NOT_BATTERY -> R.drawable.ic_metric_battery_unknown
 }
 
-private fun metricIconResource(semantic: HaSemanticIcon): Int = when (semantic) {
+internal fun metricIconResource(semantic: HaSemanticIcon): Int = when (semantic) {
     HaSemanticIcon.TEMPERATURE -> R.drawable.ic_metric_temperature
     HaSemanticIcon.HUMIDITY -> R.drawable.ic_metric_humidity
     HaSemanticIcon.BATTERY -> R.drawable.ic_metric_battery
@@ -720,7 +700,7 @@ private fun metricIconResource(semantic: HaSemanticIcon): Int = when (semantic) 
     else -> R.drawable.ic_metric_sensor
 }
 
-private fun dashboardSections(state: DashboardState): List<DashboardSection> {
+internal fun dashboardSections(state: DashboardState): List<DashboardSection> {
     val tab = state.selectedTab
     if (tab.id == SCENARIOS_TAB_ID) return scenarioSections(state)
     val contextCards = if (tab.id == MAIN_TAB_ID) {
@@ -844,15 +824,32 @@ class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
                 "widgetIds=${appWidgetIds.joinToString()} source=SYSTEM",
         )
         container.dashboardEvents.ensureStarted("APPWIDGET_UPDATE")
-        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
+            appWidgetIds.forEach { DashboardLegacyCollection.update(context, it, bind = true) }
+        } else super.onUpdate(context, appWidgetManager, appWidgetIds)
+    }
+
+    override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager,
+        appWidgetId: Int, newOptions: android.os.Bundle) {
+        if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
+            DashboardLegacyCollection.update(context, appWidgetId, bind = true)
+        } else super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val container = (context.applicationContext as HaWidgetApplication).container
         appWidgetIds.forEach(container.dashboards::delete)
+        appWidgetIds.forEach { DashboardLegacyCollection.forget(context, it) }
         container.dashboardEvents.stopIfUnused()
         super.onDeleted(context, appWidgetIds)
     }
+}
+
+internal fun scenarioLaunchIcon(status: DashboardOperationStatus?): Int = when {
+    status?.isActive == true -> R.drawable.ic_launch_pending
+    status == DashboardOperationStatus.CONFIRMED -> R.drawable.ic_launch_success
+    status == DashboardOperationStatus.FAILED || status == DashboardOperationStatus.TIMEOUT -> R.drawable.ic_launch_error
+    else -> R.drawable.ic_launch_play
 }
 
 private const val TAG = "HAWidgetDashboard"

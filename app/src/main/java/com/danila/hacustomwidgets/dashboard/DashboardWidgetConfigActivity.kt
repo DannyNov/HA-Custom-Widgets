@@ -384,6 +384,7 @@ private fun DashboardOverview(
             items = orderedSpaces,
             stableId = { it.id },
             canDrag = { it.id in visibleSpaces },
+            itemVerticalPaddingDp = 2,
             modifier = Modifier.weight(1f),
             onMove = { from, to ->
                 val fullOrder = orderedSpaces.map { it.id }
@@ -407,24 +408,24 @@ private fun DashboardOverview(
                     itemModifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 1.dp),
                 ) {
-                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = enabled, onCheckedChange = { onToggleSpace(space.id) })
                             Icon(HaSemanticIcon.SPACE.imageVector(), contentDescription = tr("Space", "Пространство"))
                             Text(space.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                            if (enabled) IconButton(onClick = { onOrderCards(space.id) }) {
+                                Icon(Icons.Default.SwapVert, contentDescription = tr("Card order", "Порядок карточек"))
+                            }
                             if (enabled) dragHandle()
                         }
                         if (enabled) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { onCycleGrouping(space.id) }) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(modifier = Modifier.weight(1f), onClick = { onCycleGrouping(space.id) }) {
                                     Text(tr("Grouping: ${grouping[space.id].label()}", "Группировка: ${grouping[space.id].label()}"))
                                 }
-                                IconButton(onClick = { onOrderCards(space.id) }) {
-                                    Icon(Icons.Default.SwapVert, contentDescription = tr("Card order", "Порядок карточек"))
+                                if (grouping[space.id] == DashboardGrouping.TYPES) {
+                                    TextButton(modifier = Modifier.weight(1f), onClick = { onOrderGroups(space.id) }) { Text(tr("Group order ›", "Порядок групп ›")) }
                                 }
-                            }
-                            if (grouping[space.id] == DashboardGrouping.TYPES) {
-                                TextButton(onClick = { onOrderGroups(space.id) }) { Text(tr("Group order ›", "Порядок групп ›")) }
                             }
                         }
                     }
@@ -729,7 +730,7 @@ private fun TimerSettingsScreen(
             val value = (1..1440).firstOrNull { it !in used } ?: return@Button
             onChange(config.copy(durations = config.durations + TimerDurationPreset.create(value)))
         }, modifier = Modifier.fillMaxWidth(), enabled = config.durations.size < 48) { Text(tr("+ Add time", "+ Добавить время")) }
-        Text(tr("A Home Assistant automation must be configured to turn the device off when the timer finishes.", "Для автоматического выключения после окончания timer должна быть настроена автоматизация Home Assistant."),
+        Text(tr("This phone turns the device off when the timer finishes. Sleep mode or loss of connection may delay it. For operation independent of this phone, configure a Home Assistant automation.", "Этот телефон выключает устройство по окончании таймера. Спящий режим или отсутствие связи могут задержать выключение. Для работы независимо от телефона настройте автоматизацию Home Assistant."),
             style = MaterialTheme.typography.bodySmall)
     }
 }
