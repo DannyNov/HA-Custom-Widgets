@@ -25,9 +25,13 @@ object ScrollPrototypeData {
             DashboardCard(if (domain in setOf("automation", "script", "scene")) "scenario:fixture$index" else "fixture$index",
                 "Fixture ${index.toString().padStart(2, '0')} · r$revision", null, null, DeviceCategory.OTHER,
                 if (index % 3 == 0) listOf(DashboardMetric("sensor.temp$index", "Temperature", "23 °C", "23", "sensor", "temperature"),
-                    DashboardMetric("sensor.battery$index", "Battery", "middle", "middle", "sensor", "battery")) else emptyList(),
+                    DashboardMetric("sensor.battery$index", "Battery", listOf("high", "middle", "low", "unknown")[revision % 4],
+                        listOf("high", "middle", "low", "unknown")[revision % 4], "sensor", "battery")) else emptyList(),
                 if (index % 7 == 0) (0..6).map { control.copy(entityId = "$domain.fixture${index}_$it") } else listOf(control),
                 autoOffTimer = if (domain == "switch") AutoOffTimerConfig(true, "timer.fixture$index", selectedDurationIndex = revision % 4) else null,
+                timerState = if (domain == "switch") DashboardMetric("timer.fixture$index", "Timer",
+                    listOf("active", "paused", "idle")[revision % 3], listOf("active", "paused", "idle")[revision % 3],
+                    "timer", null, "02:00:00", "01:55:00", java.time.Instant.now().plusSeconds(6900).toString()) else null,
                 scenarioRunnable = domain in setOf("automation", "script", "scene"))
         }.map { card -> card.copy(metrics = card.metrics + card.controls.map { control ->
             DashboardMetric(control.entityId, control.label, control.state, control.state, control.domain, null)

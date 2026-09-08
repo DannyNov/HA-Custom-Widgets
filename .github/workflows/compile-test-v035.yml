@@ -34,7 +34,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("TEST_RESULT " + " ".join(f"{key}={value}" for key, value in totals.items()))
-          if totals["tests"] < 414 or totals["failures"] or totals["errors"] or totals["skipped"]:
+          if totals["tests"] < 416 or totals["failures"] or totals["errors"] or totals["skipped"]:
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -68,9 +68,26 @@ jobs:
           api-level: ${{ matrix.api }}
           arch: x86_64
           disable-animations: true
-          script: gradle connectedDebugAndroidTest --stacktrace
+          script: gradle connectedDebugAndroidTest --stacktrace || { adb logcat -d -s AppWidgetHostView RemoteViews RemoteViewsAdapter AndroidRuntime; exit 1; }
+      - name: Verify instrumentation test count
+        run: |
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          reports = glob.glob("app/build/outputs/androidTest-results/connected/**/TEST-*.xml", recursive=True)
+          for report in reports:
+              root = ET.parse(report).getroot()
+              for key in totals:
+                  totals[key] += int(root.attrib.get(key, 0))
+          print("HOST_TEST_RESULT", totals)
+          if totals["tests"] < 16 or any(totals[k] for k in ("failures", "errors", "skipped")):
+              raise SystemExit(1)
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: v0.6.1-rc5-host-api-${{ matrix.api }}
-          path: app/build/reports/androidTests/connected
+          path: |
+            app/build/reports/androidTests/connected
+            app/build/outputs/androidTest-results/connected

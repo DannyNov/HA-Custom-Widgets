@@ -68,7 +68,14 @@ class DashboardRc5HostTest {
                 observedChildren = candidate?.childCount ?: -1
                 if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) { list = candidate; true } else false
             } } catch (error: AssertionError) {
-                throw AssertionError("Remote list count=$observedCount children=$observedChildren; factory=${ScrollPrototypeData.factoryRows}", error)
+                var hierarchy = ""
+                instrumentation.runOnMainSync {
+                    fun describe(view: View): String = view.javaClass.simpleName + ":" + view.id +
+                        (if (view is android.widget.TextView) ":${view.text}" else "") +
+                        (if (view is android.view.ViewGroup) (0 until view.childCount).joinToString(prefix = "[", postfix = "]") { describe(view.getChildAt(it)) } else "")
+                    hierarchy = describe(activity.content)
+                }
+                throw AssertionError("Remote list count=$observedCount children=$observedChildren; factory=${ScrollPrototypeData.factoryRows}; $hierarchy", error)
             }
             val fixture = ScrollPrototypeData.state(42)
             val deliveredKinds = mutableSetOf<String>()
@@ -117,13 +124,14 @@ class DashboardRc5HostTest {
                     anchor = list.getItemIdAtPosition(list.firstVisiblePosition)
                     position = list.firstVisiblePosition
                     offset = list.getChildAt(0).top
-                    val button = list.getChildAt(0).findViewById<View>(R.id.stable_button_0)
+                    val button = list.getChildAt(iteration % 2).findViewById<View>(R.id.stable_button_0)
                     assertNotNull(button)
                     assertTrue("Click must have listener on API ${android.os.Build.VERSION.SDK_INT}", button.performClick())
                 }
                 val intent = ScrollPrototypeData.clicks.poll(5, TimeUnit.SECONDS)
                 assertNotNull("Click was not delivered on pass $iteration", intent)
                 assertEquals("control", intent!!.getStringExtra("action"))
+                assertEquals(if (iteration % 2 == 0) "switch" else "light", intent.getStringExtra("domain"))
                 assertEquals(42, intent.getIntExtra("widget", -1))
                 assertTrue(intent.getStringExtra("entity").orEmpty().isNotEmpty())
                 ScrollPrototypeData.revision++
