@@ -238,64 +238,110 @@ class HomeAssistantClient(
     private suspend fun getRegistries(connection: HomeAssistantConnection): RegistrySnapshot =
         withContext(Dispatchers.IO) {
             withTimeout(20_000) {
+                val diagnostics = RegistryLoadDiagnostics(connection.token) { error, line ->
+                    if (error) android.util.Log.e(RegistryLoadDiagnostics.TAG, line)
+                    else android.util.Log.i(RegistryLoadDiagnostics.TAG, line)
+                }
+                diagnostics.event("load_start")
                 val result = CompletableDeferred<RegistrySnapshot>()
                 val request = Request.Builder().url(webSocketUrl(connection)).build()
                 var devices = emptyList<HaDevice>()
                 var entities = emptyMap<String, RegistryEntity>()
                 var areas = emptyList<HaArea>()
+                fun sendRegistry(webSocket: WebSocket, id: Int, type: String): Boolean {
+                    diagnostics.command(id, type)
+                    val sent = webSocket.send(command(id, type))
+                    diagnostics.event("send_result accepted=$sent")
+                    return sent
+                }
                 val socket = http.newWebSocket(request, object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        diagnostics.event("websocket_open httpCode=${response.code} httpMessage=${response.message}")
+                        diagnostics.stage("awaiting_auth_required")
+                    }
+
                     override fun onMessage(webSocket: WebSocket, text: String) {
                         runCatching {
                             val message = JSONObject(text)
+                            diagnostics.event("receive type=${message.optString("type")} " +
+                                "id=${if (message.has("id")) message.optInt("id") else null} " +
+                                "success=${if (message.has("success")) message.optBoolean("success") else null}")
                             when (message.optString("type")) {
-                                "auth_required" -> webSocket.send(
-                                    JSONObject()
-                                        .put("type", "auth")
-                                        .put("access_token", connection.token)
-                                        .toString(),
-                                )
+                                "auth_required" -> {
+                                    diagnostics.stage("auth_required")
+                                    webSocket.send(
+                                        JSONObject()
+                                            .put("type", "auth")
+                                            .put("access_token", connection.token)
+                                            .toString(),
+                                    )
+                                    diagnostics.stage("awaiting_auth_ok")
+                                }
                                 "auth_invalid" -> throw IOException("Токен отклонён Home Assistant")
-                                    "auth_ok" -> webSocket.send(command(DEVICE_REQUEST_ID, "config/device_registry/list"))
+                                "auth_ok" -> {
+                                    diagnostics.stage("auth_ok")
+                                    sendRegistry(webSocket, DEVICE_REQUEST_ID, "config/device_registry/list")
+                                }
                                 "result" -> when (message.optInt("id")) {
                                     DEVICE_REQUEST_ID -> {
+                                        diagnostics.stage("parse_device_registry")
                                         ensureSuccessful(message)
                                         devices = parseDevices(message.getJSONArray("result"))
-                                        webSocket.send(command(ENTITY_REQUEST_ID, "config/entity_registry/list"))
+                                        sendRegistry(webSocket, ENTITY_REQUEST_ID, "config/entity_registry/list")
                                     }
                                     ENTITY_REQUEST_ID -> {
+                                        diagnostics.stage("parse_entity_registry")
                                         ensureSuccessful(message)
                                         entities = parseEntities(message.getJSONArray("result"))
-                                        webSocket.send(command(AREA_REQUEST_ID, "config/area_registry/list"))
+                                        sendRegistry(webSocket, AREA_REQUEST_ID, "config/area_registry/list")
                                     }
                                     AREA_REQUEST_ID -> {
+                                        diagnostics.stage("parse_area_registry")
                                         ensureSuccessful(message)
                                         areas = parseAreas(message.getJSONArray("result"))
-                                        webSocket.send(command(FLOOR_REQUEST_ID, "config/floor_registry/list"))
+                                        sendRegistry(webSocket, FLOOR_REQUEST_ID, "config/floor_registry/list")
                                     }
                                     FLOOR_REQUEST_ID -> {
+                                        diagnostics.stage("parse_floor_registry")
                                         val floors = if (message.optBoolean("success")) {
                                             parseFloors(message.getJSONArray("result"))
                                         } else emptyList()
                                         result.complete(RegistrySnapshot(devices, entities, areas, floors))
+                                        diagnostics.stage("completed")
+                                        diagnostics.event("load_complete")
                                         webSocket.close(1000, "done")
                                     }
                                 }
                             }
                         }.onFailure {
+                            diagnostics.failure("message_failure", it)
                             result.completeExceptionally(it)
                             webSocket.close(1002, "invalid response")
                         }
                     }
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        diagnostics.failure("websocket_failure", t, response?.code, response?.message)
                         result.completeExceptionally(
                             IOException("Не удалось загрузить реестр Home Assistant", t),
                         )
                     }
+
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        diagnostics.event("websocket_closing code=$code reason=$reason")
+                    }
+
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        diagnostics.event("websocket_closed code=$code reason=$reason")
+                    }
                 })
                 try {
                     result.await()
+                } catch (error: Throwable) {
+                    diagnostics.failure("await_failure", error)
+                    throw error
                 } finally {
+                    diagnostics.event("cancel_socket resultCompleted=${result.isCompleted}")
                     socket.cancel()
                 }
             }
