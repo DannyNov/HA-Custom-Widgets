@@ -11,6 +11,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.FrameLayout
 import android.widget.RemoteViewsService
+import com.danila.hacustomwidgets.R
 import java.util.concurrent.LinkedBlockingQueue
 
 /** Debug-only fixture. No HA connection, secret, or network action is used. */
