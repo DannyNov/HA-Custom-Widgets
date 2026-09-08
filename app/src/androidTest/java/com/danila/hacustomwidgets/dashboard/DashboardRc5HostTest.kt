@@ -144,7 +144,7 @@ class DashboardRc5HostTest {
                 instrumentation.runOnMainSync {
                     manager.partiallyUpdateAppWidget(widgetId,
                         DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), false))
-                    manager.notifyAppWidgetViewDataChanged(widgetId, R.id.legacy_list)
+                    DashboardStableCollection.notifyDataChanged(manager, widgetId)
                 }
                 try { await("Host did not apply revision ${ScrollPrototypeData.revision}") {
                     // API 26 refreshes visible collection children asynchronously. Starting the next
