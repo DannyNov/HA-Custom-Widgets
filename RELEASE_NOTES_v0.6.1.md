@@ -1,6 +1,6 @@
 # HA Custom Widgets v0.6.1 — local review candidate
 
-Version code: **34**. Minimum Android: **8.0 / API 26**. Target and compile SDK: **36**.
+Version code: **38**. Minimum Android: **8.0 / API 26**. Target and compile SDK: **36**.
 
 ## Русский
 
@@ -21,6 +21,9 @@ Version code: **34**. Minimum Android: **8.0 / API 26**. Target and compile SDK:
 - About includes the existing house-H logo, installed version and all official project, privacy, support and license links.
 - Scenarios include scenes using `scene.turn_on`, with optional per-scene launch permission and no state toggle.
 - Target/compile SDK 36, AGP 8.9.1 and Gradle 8.11.1 wrapper; minimum SDK remains 26.
+
+- Android 8–11 (API 26–30) use the static collection fallback built from the same shared Dashboard card model as the modern renderer. Entities of one HA device remain one card; default metric order is Temperature → Humidity → Battery.
+- Routine state changes notify the existing collection only. No outer layout update or adapter rebinding is issued for those revisions.
 
 ## Validation and remaining device checks
 

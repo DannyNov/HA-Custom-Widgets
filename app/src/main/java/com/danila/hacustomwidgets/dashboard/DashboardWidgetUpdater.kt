@@ -59,7 +59,14 @@ class DashboardRenderCoordinator(
                 val started = SystemClock.elapsedRealtime()
                 Log.d(TAG, "RENDER_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId revision=$target reason=$reason monotonicMs=$started")
                 try {
-                    if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
+                    if (StableCollectionPolicy.use(android.os.Build.VERSION.SDK_INT)) {
+                        slot.force.set(false)
+                        DashboardStableCollection.update(
+                            applicationContext,
+                            appWidgetId,
+                            bind = reason in setOf("NAVIGATION", "CATALOG"),
+                        )
+                    } else if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
                         slot.force.set(false)
                         DashboardLegacyCollection.update(applicationContext, appWidgetId)
                     } else {

@@ -46,3 +46,28 @@ Separate checks compare fresh binding and reapply across heterogeneous static ro
 - [Android RemoteViews API](https://developer.android.com/reference/android/widget/RemoteViews): collection click restriction and scroll setter semantics.
 - [Android collection widget guidance](https://developer.android.com/develop/ui/views/appwidgets/collections): PendingIntent template, fill-in intents, factory data updates.
 - Bundled dependency source inspected locally: Glance service, lazy list translator and layout configuration. No private or invented scroll API is used.
+
+
+## Clean cloud run and production hand-off
+
+Clean lifecycle model commit: `6eb7688a7290ee26d1c3a98804ddbc65fa27cf73`.
+The debug provider records the completed framework lifecycle, then performs exactly one initial
+publication. Twenty routine revisions use only collection data notification: no outer/full
+RemoteViews update, adapter rebinding, retry, or test delay is present.
+
+GitHub Actions run `34233824585` produced:
+
+- JVM/unit and regression tests: PASS, including the shared one-device composition and
+  Temperature → Humidity → Battery order.
+- API 29 real host path: PASS.
+- API 26 real host path: FAIL at revision 3. The factory reached revision 3, but the instrumented
+  host detached the populated ListView at position 15 and replaced it with an empty initialLayout
+  ListView at position 0. No provider outer update occurred after the single initial publication.
+  This is retained as diagnostic evidence and is not hidden with retries, sleeps, or a custom host.
+
+The production RC5 candidate enables the static collection path on API 26–30. It consumes the same
+DashboardState, dashboardSections, DashboardCustomizationPolicy, defaultMetricOrder and
+presentation policies as the modern renderer. Routine state revisions are collection-data-only;
+initial bind, widget option changes, theme changes, navigation and catalog structure changes are
+explicit structural publications. Physical launcher acceptance remains required on Honor View 10
+and Wileyfox Swift 2 Plus.

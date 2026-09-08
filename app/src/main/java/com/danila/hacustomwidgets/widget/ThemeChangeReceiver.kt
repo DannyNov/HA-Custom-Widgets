@@ -18,7 +18,12 @@ class ThemeChangeReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
                 EntityStateWidget().updateAll(context.applicationContext)
-                if (com.danila.hacustomwidgets.dashboard.LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
+                if (com.danila.hacustomwidgets.dashboard.StableCollectionPolicy.use(android.os.Build.VERSION.SDK_INT)) {
+                    val container = (context.applicationContext as com.danila.hacustomwidgets.HaWidgetApplication).container
+                    container.dashboards.all().forEach {
+                        com.danila.hacustomwidgets.dashboard.DashboardStableCollection.update(context, it.appWidgetId, bind = true)
+                    }
+                } else if (com.danila.hacustomwidgets.dashboard.LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
                     val container = (context.applicationContext as com.danila.hacustomwidgets.HaWidgetApplication).container
                     container.dashboards.all().forEach {
                         com.danila.hacustomwidgets.dashboard.DashboardLegacyCollection.update(context, it.appWidgetId, bind = true)
