@@ -64,7 +64,11 @@ class DashboardRc5HostTest {
                 val candidate = hostView.findViewById<ListView>(R.id.legacy_list)
                 observedCount = candidate?.count ?: -1
                 observedChildren = candidate?.childCount ?: -1
-                if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) { list = candidate; true } else false
+                if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) {
+                    list = candidate
+                    (hostView as ScrollPrototypeHostView).acceptOuterUpdates = false
+                    true
+                } else false
             } } catch (error: AssertionError) {
                 var hierarchy = ""
                 instrumentation.runOnMainSync {

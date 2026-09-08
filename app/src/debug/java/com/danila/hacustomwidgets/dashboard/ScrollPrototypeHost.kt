@@ -5,11 +5,14 @@ import android.app.PendingIntent
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.appwidget.AppWidgetProviderInfo
+import android.appwidget.AppWidgetHostView
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.FrameLayout
+import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.danila.hacustomwidgets.R
 import java.util.concurrent.LinkedBlockingQueue
@@ -78,14 +81,26 @@ class ScrollPrototypeProvider : AppWidgetProvider() {
     }
 }
 
+class ScrollPrototypeHostView(context: Context) : AppWidgetHostView(context) {
+    @Volatile var acceptOuterUpdates = true
+    override fun updateAppWidget(remoteViews: RemoteViews?) {
+        if (acceptOuterUpdates) super.updateAppWidget(remoteViews)
+    }
+}
+
+class ScrollPrototypeAppWidgetHost(context: Context) : AppWidgetHost(context, 605) {
+    override fun onCreateView(context: Context, appWidgetId: Int,
+        appWidget: AppWidgetProviderInfo): AppWidgetHostView = ScrollPrototypeHostView(context)
+}
+
 class ScrollPrototypeHost : Activity() {
-    lateinit var host: AppWidgetHost
+    lateinit var host: ScrollPrototypeAppWidgetHost
     lateinit var content: FrameLayout
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         content = FrameLayout(this)
         setContentView(content)
-        host = AppWidgetHost(this, 605)
+        host = ScrollPrototypeAppWidgetHost(this)
         host.startListening()
     }
     override fun onDestroy() {
