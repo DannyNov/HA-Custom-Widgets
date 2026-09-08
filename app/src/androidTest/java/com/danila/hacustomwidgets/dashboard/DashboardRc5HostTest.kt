@@ -58,8 +58,45 @@ class DashboardRc5HostTest {
                 val candidate = activity.content.findViewById<ListView>(R.id.legacy_list)
                 if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) { list = candidate; true } else false
             }
+            val fixture = ScrollPrototypeData.state(42)
+            val deliveredKinds = mutableSetOf<String>()
+            for (index in 0..9) {
+                instrumentation.runOnMainSync { list.setSelectionFromTop(index, 0) }
+                await("Fixture $index not visible") { list.firstVisiblePosition == index &&
+                    list.getChildAt(0).findViewById<android.widget.TextView>(R.id.stable_title)?.text?.startsWith("Fixture ${index.toString().padStart(2, '0')}") == true }
+                for (slot in 0..7) {
+                    var clicked = false
+                    instrumentation.runOnMainSync {
+                        val button = list.getChildAt(0).findViewById<View>(context.resources.getIdentifier("stable_button_$slot", "id", context.packageName))
+                        if (button.isShown && button.isEnabled) { assertTrue(button.performClick()); clicked = true }
+                    }
+                    if (clicked) {
+                        val delivered = ScrollPrototypeData.clicks.poll(5, TimeUnit.SECONDS)
+                        assertNotNull("Missing click row=$index slot=$slot", delivered)
+                        val card = fixture.cards[index]
+                        assertEquals(card.key, delivered!!.getStringExtra("key"))
+                        val kind = delivered.getStringExtra("action")!!
+                        if (kind != "timer") {
+                            val entity = card.controls.single { it.entityId == delivered.getStringExtra("entity") }
+                            assertEquals(entity.domain, delivered.getStringExtra("domain"))
+                            deliveredKinds.add("$kind:${entity.domain}")
+                        } else deliveredKinds.add("timer")
+                    }
+                }
+            }
+            assertTrue(deliveredKinds.containsAll(setOf("control:switch", "control:light", "control:automation",
+                "scenario:automation", "scenario:script", "scenario:scene", "timer")))
             instrumentation.runOnMainSync { list.setSelectionFromTop(15, -7) }
             await("Did not scroll to middle") { list.firstVisiblePosition == 15 }
+            var jumpedToTop = false
+            instrumentation.runOnMainSync {
+                list.setOnScrollListener(object : android.widget.AbsListView.OnScrollListener {
+                    override fun onScrollStateChanged(view: android.widget.AbsListView?, state: Int) = Unit
+                    override fun onScroll(view: android.widget.AbsListView?, first: Int, visible: Int, total: Int) {
+                        if (first == 0 && total > 0) jumpedToTop = true
+                    }
+                })
+            }
             repeat(20) { iteration ->
                 var anchor = 0L
                 var position = 0
@@ -83,11 +120,13 @@ class DashboardRc5HostTest {
                         DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), false))
                     manager.notifyAppWidgetViewDataChanged(widgetId, R.id.legacy_list)
                 }
-                // Allow Binder data refresh and the following layout traversal before measuring.
-                Thread.sleep(700)
+                await("Host did not apply revision ${ScrollPrototypeData.revision}") {
+                    list.getChildAt(0)?.findViewById<android.widget.TextView>(R.id.stable_title)?.text?.endsWith("· r${ScrollPrototypeData.revision}") == true
+                }
                 instrumentation.waitForIdleSync()
                 instrumentation.runOnMainSync {
                     assertEquals("Position reset on pass $iteration", position, list.firstVisiblePosition)
+                    assertFalse("Transient jump-to-top on pass $iteration", jumpedToTop)
                     assertEquals("Anchor changed on pass $iteration", anchor, list.getItemIdAtPosition(list.firstVisiblePosition))
                     assertTrue("Offset changed on pass $iteration", kotlin.math.abs(offset - list.getChildAt(0).top) <= 2)
                 }

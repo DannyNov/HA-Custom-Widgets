@@ -21,12 +21,16 @@ object ScrollPrototypeData {
             val domain = listOf("switch", "light", "automation", "script", "scene")[index % 5]
             val control = DashboardControl("$domain.fixture$index", "$domain $index", domain,
                 if (revision % 2 == 0) "off" else "on")
-            DashboardCard("fixture$index", "Fixture $index", null, null, DeviceCategory.OTHER,
+            DashboardCard(if (domain in setOf("automation", "script", "scene")) "scenario:fixture$index" else "fixture$index",
+                "Fixture ${index.toString().padStart(2, '0')} · r$revision", null, null, DeviceCategory.OTHER,
                 if (index % 3 == 0) listOf(DashboardMetric("sensor.temp$index", "Temperature", "23 °C", "23", "sensor", "temperature"),
                     DashboardMetric("sensor.battery$index", "Battery", "middle", "middle", "sensor", "battery")) else emptyList(),
                 if (index % 7 == 0) (0..6).map { control.copy(entityId = "$domain.fixture${index}_$it") } else listOf(control),
-                autoOffTimer = if (domain == "switch") AutoOffTimerConfig(true, "timer.fixture$index", selectedDurationIndex = revision % 4) else null)
-        }
+                autoOffTimer = if (domain == "switch") AutoOffTimerConfig(true, "timer.fixture$index", selectedDurationIndex = revision % 4) else null,
+                scenarioRunnable = domain in setOf("automation", "script", "scene"))
+        }.map { card -> card.copy(metrics = card.metrics + card.controls.map { control ->
+            DashboardMetric(control.entityId, control.label, control.state, control.state, control.domain, null)
+        }) }
         return DashboardState(DashboardConfig(id, emptyList(), emptyMap(), cards.map { it.key },
             emptyMap(), emptyMap(), true, true), emptyList(), cards, emptyList(), MAIN_TAB_ID,
             emptySet(), emptySet(), emptyMap(), revision.toLong(), false, 0, null)
