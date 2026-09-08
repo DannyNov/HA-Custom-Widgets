@@ -42,6 +42,7 @@ class DashboardRc5HostTest {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ScrollPrototypeHost
         val manager = AppWidgetManager.getInstance(context)
         var widgetId = -1
+        lateinit var hostView: android.appwidget.AppWidgetHostView
         lateinit var list: ListView
         var observedCount = -1
         var observedChildren = -1
@@ -53,7 +54,7 @@ class DashboardRc5HostTest {
                 val component = ComponentName(context, ScrollPrototypeProvider::class.java)
                 assertTrue("Fixture widget must bind", manager.bindAppWidgetIdIfAllowed(widgetId, component))
                 val info = manager.getAppWidgetInfo(widgetId)
-                val hostView = activity.host.createView(activity, widgetId, info)
+                hostView = activity.host.createView(activity, widgetId, info)
                 activity.content.addView(hostView)
                 val views = DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), true,
                     Intent(context, ScrollPrototypeService::class.java).setData(Uri.parse("hacw://rc5-test/$widgetId")))
@@ -63,7 +64,8 @@ class DashboardRc5HostTest {
                 manager.updateAppWidget(widgetId, views)
             }
             try { await("Real remote list did not populate") {
-                val candidate = activity.content.findViewById<ListView>(R.id.legacy_list)
+                // AppWidgetHostView is a root namespace: parent.findViewById does not descend into it.
+                val candidate = hostView.findViewById<ListView>(R.id.legacy_list)
                 observedCount = candidate?.count ?: -1
                 observedChildren = candidate?.childCount ?: -1
                 if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) { list = candidate; true } else false
