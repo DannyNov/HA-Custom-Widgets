@@ -5,14 +5,11 @@ import android.app.PendingIntent
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
-import android.appwidget.AppWidgetProviderInfo
-import android.appwidget.AppWidgetHostView
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.FrameLayout
-import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.danila.hacustomwidgets.R
 import java.util.concurrent.LinkedBlockingQueue
@@ -22,7 +19,8 @@ object ScrollPrototypeData {
     @Volatile var revision = 0
     @Volatile var factoryRows = -1
     @Volatile var factoryRevision = -1L
-    @Volatile var providerUpdates = 0
+    @Volatile var lifecycleUpdates = 0
+    @Volatile var initialPublications = 0
     val clicks = LinkedBlockingQueue<Intent>()
     fun state(id: Int): DashboardState {
         val cards = (0 until 30).map { index ->
@@ -63,10 +61,15 @@ class ScrollPrototypeReceiver : BroadcastReceiver() {
 
 class ScrollPrototypeProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        // Binding on API 26 may deliver the lifecycle update more than once. The fixture
-        // publishes one canonical initial view; later test revisions are collection-only.
-        if (ScrollPrototypeData.providerUpdates > 0) return
-        ids.forEach { widgetId ->
+        // Record the framework lifecycle only. The test publishes after this callback and
+        // the host's initial layout work have both drained.
+        ScrollPrototypeData.lifecycleUpdates++
+    }
+
+    companion object {
+        @Synchronized
+        fun publishInitial(context: Context, manager: AppWidgetManager, widgetId: Int) {
+            check(ScrollPrototypeData.initialPublications == 0)
             val views = DashboardStableCollection.buildViews(context, widgetId,
                 ScrollPrototypeData.state(42), true,
                 Intent(context, ScrollPrototypeService::class.java)
@@ -76,31 +79,19 @@ class ScrollPrototypeProvider : AppWidgetProvider() {
                     .setData(android.net.Uri.parse("hacw://rc5-click/$widgetId")),
                 PendingIntent.FLAG_UPDATE_CURRENT))
             manager.updateAppWidget(widgetId, views)
+            ScrollPrototypeData.initialPublications++
         }
-        ScrollPrototypeData.providerUpdates++
     }
-}
-
-class ScrollPrototypeHostView(context: Context) : AppWidgetHostView(context) {
-    @Volatile var acceptOuterUpdates = true
-    override fun updateAppWidget(remoteViews: RemoteViews?) {
-        if (acceptOuterUpdates) super.updateAppWidget(remoteViews)
-    }
-}
-
-class ScrollPrototypeAppWidgetHost(context: Context) : AppWidgetHost(context, 605) {
-    override fun onCreateView(context: Context, appWidgetId: Int,
-        appWidget: AppWidgetProviderInfo): AppWidgetHostView = ScrollPrototypeHostView(context)
 }
 
 class ScrollPrototypeHost : Activity() {
-    lateinit var host: ScrollPrototypeAppWidgetHost
+    lateinit var host: AppWidgetHost
     lateinit var content: FrameLayout
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         content = FrameLayout(this)
         setContentView(content)
-        host = ScrollPrototypeAppWidgetHost(this)
+        host = AppWidgetHost(this, 605)
         host.startListening()
     }
     override fun onDestroy() {

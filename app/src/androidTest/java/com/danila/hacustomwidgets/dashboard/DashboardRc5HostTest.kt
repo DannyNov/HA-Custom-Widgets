@@ -47,17 +47,26 @@ class DashboardRc5HostTest {
         try {
             instrumentation.runOnMainSync {
                 ScrollPrototypeData.revision = 0
-                ScrollPrototypeData.providerUpdates = 0
+                ScrollPrototypeData.lifecycleUpdates = 0
+                ScrollPrototypeData.initialPublications = 0
                 ScrollPrototypeData.clicks.clear()
                 widgetId = activity.host.allocateAppWidgetId()
                 val component = ComponentName(context, ScrollPrototypeProvider::class.java)
                 assertTrue("Fixture widget must bind", manager.bindAppWidgetIdIfAllowed(widgetId, component))
-            }
-            await("Fixture provider update did not complete") { ScrollPrototypeData.providerUpdates > 0 }
-            instrumentation.runOnMainSync {
                 val info = manager.getAppWidgetInfo(widgetId)
                 hostView = activity.host.createView(activity, widgetId, info)
                 activity.content.addView(hostView)
+            }
+            await("System provider lifecycle did not complete") {
+                ScrollPrototypeData.lifecycleUpdates > 0 &&
+                    hostView.findViewById<ListView>(R.id.legacy_list) != null
+            }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                ScrollPrototypeProvider.publishInitial(context, manager, widgetId)
+            }
+            await("Fixture initial publication did not complete") {
+                ScrollPrototypeData.initialPublications == 1
             }
             try { await("Real remote list did not populate") {
                 // AppWidgetHostView is a root namespace: parent.findViewById does not descend into it.
@@ -66,7 +75,6 @@ class DashboardRc5HostTest {
                 observedChildren = candidate?.childCount ?: -1
                 if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) {
                     list = candidate
-                    (hostView as ScrollPrototypeHostView).acceptOuterUpdates = false
                     true
                 } else false
             } } catch (error: AssertionError) {
@@ -183,6 +191,38 @@ class DashboardRc5HostTest {
                 activity.finish()
             }
         }
+    }
+
+    @Test fun repositoryBuildsOneSharedDeviceCardInTemperatureHumidityBatteryOrder() {
+        val isolated = object : android.content.ContextWrapper(context) {
+            private val prefix = "rc5-shared-${java.util.UUID.randomUUID()}-"
+            override fun getSharedPreferences(name: String, mode: Int) =
+                super.getSharedPreferences(prefix + name, mode)
+        }
+        val deviceId = "environment-device"
+        val entities = listOf(
+            com.danila.hacustomwidgets.data.model.HaEntity("sensor.battery", "81", "Battery", "%", null,
+                deviceId = deviceId, deviceClass = "battery"),
+            com.danila.hacustomwidgets.data.model.HaEntity("sensor.humidity", "44", "Humidity", "%", null,
+                deviceId = deviceId, deviceClass = "humidity"),
+            com.danila.hacustomwidgets.data.model.HaEntity("sensor.temperature", "23", "Temperature", "°C", null,
+                deviceId = deviceId, deviceClass = "temperature"),
+        )
+        val catalog = com.danila.hacustomwidgets.data.model.HaCatalog(listOf(
+            com.danila.hacustomwidgets.data.model.HaDeviceGroup(
+                com.danila.hacustomwidgets.data.model.HaDevice(deviceId, "Environment"), entities,
+            ),
+        ))
+        val widgetId = 905
+        val config = DashboardConfig(widgetId, emptyList(), emptyMap(), listOf(deviceId),
+            emptyMap(), emptyMap(), true, true)
+        val repository = DashboardRepository(isolated)
+        repository.saveConfiguration(config, catalog)
+        val card = repository.get(widgetId)!!.cards.single()
+        assertEquals(deviceId, card.key)
+        assertEquals(listOf("sensor.temperature", "sensor.humidity", "sensor.battery"),
+            card.metrics.map { it.entityId })
+        assertEquals(1, repository.get(widgetId)!!.cards.count { it.key == deviceId })
     }
 
     @Test fun staticRowsReapplyWithoutAccumulatingChildrenOrPendingGlyphs() {
