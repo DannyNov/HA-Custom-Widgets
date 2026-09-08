@@ -60,6 +60,9 @@ class ScrollPrototypeReceiver : BroadcastReceiver() {
 
 class ScrollPrototypeProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        // Binding on API 26 may deliver the lifecycle update more than once. The fixture
+        // publishes one canonical initial view; later test revisions are collection-only.
+        if (ScrollPrototypeData.providerUpdates > 0) return
         ids.forEach { widgetId ->
             val views = DashboardStableCollection.buildViews(context, widgetId,
                 ScrollPrototypeData.state(42), true,
