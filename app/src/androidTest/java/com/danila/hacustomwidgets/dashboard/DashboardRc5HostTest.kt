@@ -147,8 +147,14 @@ class DashboardRc5HostTest {
                     manager.notifyAppWidgetViewDataChanged(widgetId, R.id.legacy_list)
                 }
                 try { await("Host did not apply revision ${ScrollPrototypeData.revision}") {
-                    list.getChildAt(0)?.findViewById<android.widget.TextView>(R.id.stable_title)?.text?.endsWith("· r${ScrollPrototypeData.revision}") == true &&
-                        list.getChildAt(1)?.findViewById<android.widget.TextView>(R.id.stable_title)?.text?.endsWith("· r${ScrollPrototypeData.revision}") == true
+                    // API 26 refreshes visible collection children asynchronously. Starting the next
+                    // notification after only the first rows changed can coalesce it into the active
+                    // refresh, so wait until the complete visible window has reached this revision.
+                    list.childCount >= 2 && (0 until list.childCount).all { child ->
+                        list.getChildAt(child)
+                            .findViewById<android.widget.TextView>(R.id.stable_title)
+                            ?.text?.endsWith("· r${ScrollPrototypeData.revision}") == true
+                    }
                 } } catch (error: AssertionError) {
                     var visible = ""
                     instrumentation.runOnMainSync { visible = "position=${list.firstVisiblePosition} " +
