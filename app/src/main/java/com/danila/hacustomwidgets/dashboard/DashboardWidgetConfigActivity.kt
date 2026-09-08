@@ -81,7 +81,9 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
                 DashboardConfigurator(
                     container = container,
                     appWidgetId = appWidgetId,
-                    existing = container.dashboards.getConfig(appWidgetId),
+                    existing = container.dashboards.getConfig(appWidgetId).also {
+                        DashboardPipelineDiagnostics.config("CONFIG_UI_READ", it)
+                    },
                     onSave = { config, catalog ->
                         container.dashboards.saveConfiguration(config, catalog)
                         container.dashboardEvents.ensureStarted("CONFIGURATION_SAVE", reconcileIfStale = false)

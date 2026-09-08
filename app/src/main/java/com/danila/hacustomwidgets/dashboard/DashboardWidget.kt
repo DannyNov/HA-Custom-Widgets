@@ -62,6 +62,7 @@ class DashboardWidget : GlanceAppWidget() {
         val repository = (context.applicationContext as HaWidgetApplication).container.dashboards
         val states = repository.observe(appWidgetId)
         val started = System.currentTimeMillis()
+        DashboardPipelineDiagnostics.event(appWidgetId, null, "GLANCE_PROVIDE")
         Log.d(TAG, "provideGlance started widgetId=$appWidgetId ts=$started")
         provideContent {
             val compositionStarted = SystemClock.elapsedRealtime()
@@ -817,6 +818,8 @@ class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = DashboardWidget()
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        appWidgetIds.forEach { DashboardPipelineDiagnostics.event(it, null, "PROVIDER_UPDATE",
+            "api=${android.os.Build.VERSION.SDK_INT} path=${if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) "legacy" else "glance-super"}") }
         val container = (context.applicationContext as HaWidgetApplication).container
         Log.i(
             TAG,
@@ -831,6 +834,8 @@ class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager,
         appWidgetId: Int, newOptions: android.os.Bundle) {
+        DashboardPipelineDiagnostics.event(appWidgetId, null, "PROVIDER_OPTIONS",
+            "path=${if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) "legacy" else "glance-super"}")
         if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
             DashboardLegacyCollection.update(context, appWidgetId, bind = true)
         } else super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)

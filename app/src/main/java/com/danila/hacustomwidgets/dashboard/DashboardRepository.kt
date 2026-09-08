@@ -46,11 +46,13 @@ class DashboardRepository(context: Context) {
 
     @Synchronized
     fun saveConfiguration(config: DashboardConfig, catalog: HaCatalog) {
+        DashboardPipelineDiagnostics.config("CONFIG_SAVE", config)
         configPrefs.edit()
             .putString(key(config.appWidgetId, "config"), config.toJson().toString())
             .putStringSet(KEY_IDS, configuredIds() + config.appWidgetId.toString())
             .apply()
         updateFromCatalog(config.appWidgetId, catalog)
+        DashboardPipelineDiagnostics.config("CONFIG_READ_BACK", getConfig(config.appWidgetId))
     }
 
     fun getConfig(appWidgetId: Int): DashboardConfig? = configPrefs
@@ -564,6 +566,7 @@ class DashboardRepository(context: Context) {
                 "cardsTotal=${cards.size} cardsInSelectedSpace=$selectedCount entitiesTotal=${structure.entityIds.size} " +
                 "structureBytes=${structure.structureBytes}",
         )
+        DashboardPipelineDiagnostics.model(result)
         return result
     }
 

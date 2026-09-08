@@ -56,6 +56,8 @@ class DashboardRenderCoordinator(
                 val target = maxOf(slot.requested.get(), revisionState.requestedRenderRevision)
                 if (target <= revisionState.renderedRevision) return
                 val reason = slot.reason
+                DashboardPipelineDiagnostics.event(appWidgetId, target, "RENDERER_SELECTED",
+                    "api=${android.os.Build.VERSION.SDK_INT} reason=$reason static=${StableCollectionPolicy.use(android.os.Build.VERSION.SDK_INT)} bind=${reason in setOf("NAVIGATION", "CATALOG")}")
                 val started = SystemClock.elapsedRealtime()
                 Log.d(TAG, "RENDER_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId revision=$target reason=$reason monotonicMs=$started")
                 try {
