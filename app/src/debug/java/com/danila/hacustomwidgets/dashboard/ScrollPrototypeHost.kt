@@ -3,6 +3,7 @@ package com.danila.hacustomwidgets.dashboard
 import android.app.Activity
 import android.app.PendingIntent
 import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -17,6 +18,7 @@ object ScrollPrototypeData {
     @Volatile var revision = 0
     @Volatile var factoryRows = -1
     @Volatile var factoryRevision = -1L
+    @Volatile var providerUpdates = 0
     val clicks = LinkedBlockingQueue<Intent>()
     fun state(id: Int): DashboardState {
         val cards = (0 until 30).map { index ->
@@ -55,7 +57,22 @@ class ScrollPrototypeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) { ScrollPrototypeData.clicks.offer(intent) }
 }
 
-class ScrollPrototypeProvider : AppWidgetProvider()
+class ScrollPrototypeProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        ids.forEach { widgetId ->
+            val views = DashboardStableCollection.buildViews(context, widgetId,
+                ScrollPrototypeData.state(42), true,
+                Intent(context, ScrollPrototypeService::class.java)
+                    .setData(android.net.Uri.parse("hacw://rc5-test/$widgetId")))
+            views.setPendingIntentTemplate(R.id.legacy_list, PendingIntent.getBroadcast(context, widgetId,
+                Intent(context, ScrollPrototypeReceiver::class.java)
+                    .setData(android.net.Uri.parse("hacw://rc5-click/$widgetId")),
+                PendingIntent.FLAG_UPDATE_CURRENT))
+            manager.updateAppWidget(widgetId, views)
+        }
+        ScrollPrototypeData.providerUpdates++
+    }
+}
 
 class ScrollPrototypeHost : Activity() {
     lateinit var host: AppWidgetHost

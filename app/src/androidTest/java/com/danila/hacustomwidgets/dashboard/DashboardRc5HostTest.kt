@@ -1,10 +1,8 @@
 package com.danila.hacustomwidgets.dashboard
 
-import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
-import android.net.Uri
 import android.view.View
 import android.widget.ListView
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -49,19 +47,17 @@ class DashboardRc5HostTest {
         try {
             instrumentation.runOnMainSync {
                 ScrollPrototypeData.revision = 0
+                ScrollPrototypeData.providerUpdates = 0
                 ScrollPrototypeData.clicks.clear()
                 widgetId = activity.host.allocateAppWidgetId()
                 val component = ComponentName(context, ScrollPrototypeProvider::class.java)
                 assertTrue("Fixture widget must bind", manager.bindAppWidgetIdIfAllowed(widgetId, component))
+            }
+            await("Fixture provider update did not complete") { ScrollPrototypeData.providerUpdates > 0 }
+            instrumentation.runOnMainSync {
                 val info = manager.getAppWidgetInfo(widgetId)
                 hostView = activity.host.createView(activity, widgetId, info)
                 activity.content.addView(hostView)
-                val views = DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), true,
-                    Intent(context, ScrollPrototypeService::class.java).setData(Uri.parse("hacw://rc5-test/$widgetId")))
-                views.setPendingIntentTemplate(R.id.legacy_list, PendingIntent.getBroadcast(context, widgetId,
-                    Intent(context, ScrollPrototypeReceiver::class.java).setData(Uri.parse("hacw://rc5-click/$widgetId")),
-                    PendingIntent.FLAG_UPDATE_CURRENT))
-                manager.updateAppWidget(widgetId, views)
             }
             try { await("Real remote list did not populate") {
                 // AppWidgetHostView is a root namespace: parent.findViewById does not descend into it.
