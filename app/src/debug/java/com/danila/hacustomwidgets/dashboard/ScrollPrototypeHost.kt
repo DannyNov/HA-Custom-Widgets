@@ -16,6 +16,7 @@ import java.util.concurrent.LinkedBlockingQueue
 object ScrollPrototypeData {
     @Volatile var revision = 0
     @Volatile var factoryRows = -1
+    @Volatile var factoryRevision = -1L
     val clicks = LinkedBlockingQueue<Intent>()
     fun state(id: Int): DashboardState {
         val cards = (0 until 30).map { index ->
@@ -46,6 +47,7 @@ class ScrollPrototypeService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory =
         DashboardStableService.Factory(this, 42) { ScrollPrototypeData.state(42).also {
             ScrollPrototypeData.factoryRows = DashboardStableRows(this, 42).rows(it).size
+            ScrollPrototypeData.factoryRevision = it.stateRevision
         } }
 }
 

@@ -108,7 +108,11 @@ class DashboardRc5HostTest {
             assertTrue(deliveredKinds.containsAll(setOf("control:switch", "control:light", "control:automation",
                 "scenario:automation", "scenario:script", "scenario:scene", "timer")))
             instrumentation.runOnMainSync { list.setSelectionFromTop(15, -7) }
-            await("Did not scroll to middle") { list.firstVisiblePosition == 15 }
+            await("Did not load the middle viewport") {
+                list.firstVisiblePosition == 15 && list.childCount >= 2 &&
+                    list.getChildAt(0).findViewById<android.widget.TextView>(R.id.stable_title)?.text?.startsWith("Fixture 15") == true &&
+                    list.getChildAt(1).findViewById<android.widget.TextView>(R.id.stable_title)?.text?.startsWith("Fixture 16") == true
+            }
             var jumpedToTop = false
             instrumentation.runOnMainSync {
                 list.setOnScrollListener(object : android.widget.AbsListView.OnScrollListener {
@@ -142,8 +146,14 @@ class DashboardRc5HostTest {
                         DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), false))
                     manager.notifyAppWidgetViewDataChanged(widgetId, R.id.legacy_list)
                 }
-                await("Host did not apply revision ${ScrollPrototypeData.revision}") {
-                    list.getChildAt(0)?.findViewById<android.widget.TextView>(R.id.stable_title)?.text?.endsWith("· r${ScrollPrototypeData.revision}") == true
+                try { await("Host did not apply revision ${ScrollPrototypeData.revision}") {
+                    list.getChildAt(0)?.findViewById<android.widget.TextView>(R.id.stable_title)?.text?.endsWith("· r${ScrollPrototypeData.revision}") == true &&
+                        list.getChildAt(1)?.findViewById<android.widget.TextView>(R.id.stable_title)?.text?.endsWith("· r${ScrollPrototypeData.revision}") == true
+                } } catch (error: AssertionError) {
+                    var visible = ""
+                    instrumentation.runOnMainSync { visible = "position=${list.firstVisiblePosition} " +
+                        (0 until list.childCount).joinToString { list.getChildAt(it).findViewById<android.widget.TextView>(R.id.stable_title)?.text.toString() } }
+                    throw AssertionError("Expected revision=${ScrollPrototypeData.revision}; factory=${ScrollPrototypeData.factoryRevision}; $visible", error)
                 }
                 instrumentation.waitForIdleSync()
                 instrumentation.runOnMainSync {
