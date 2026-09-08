@@ -50,7 +50,11 @@ internal class DashboardStableRows(private val context: Context, private val wid
                 card.controls.firstOrNull()?.let { control ->
                     if (card.scenarioRunnable) {
                         val status = state.scenarioRunStatusByEntity[control.entityId]
-                        add(Button(tr("Run", "Запустить"), scenarioLaunchIcon(status), R.drawable.circle_accent,
+                        add(Button(tr("Run", "Запустить"), scenarioLaunchIcon(status), when (status) {
+                            DashboardOperationStatus.CONFIRMED -> R.drawable.circle_switch_on
+                            DashboardOperationStatus.FAILED, DashboardOperationStatus.TIMEOUT -> R.drawable.circle_problem
+                            else -> R.drawable.circle_accent
+                        },
                             action("scenario", card.key, control), status))
                     }
                     if (ScenarioDisplayPolicy.showStateToggle(control.domain)) add(power(control))
@@ -71,7 +75,9 @@ internal class DashboardStableRows(private val context: Context, private val wid
         return (0 until count).map { page ->
             val pageButtons = buttons.drop(page * 8).take(8)
             val metrics = card.metrics.drop(page * 12).take(12)
-            val views = RemoteViews(context.packageName, R.layout.dashboard_stable_card)
+            val compactHeader = buttons.size <= 2 && card.autoOffTimer == null
+            val views = RemoteViews(context.packageName,
+                if (compactHeader) R.layout.dashboard_stable_card_compact else R.layout.dashboard_stable_card)
             fun id(name: String) = context.resources.getIdentifier("stable_$name", "id", context.packageName)
             fun visible(name: String, value: Boolean) = views.setViewVisibility(id(name), if (value) View.VISIBLE else View.GONE)
             views.setTextViewText(R.id.stable_title, card.title)
@@ -89,6 +95,7 @@ internal class DashboardStableRows(private val context: Context, private val wid
                 visible("button_$slot", button != null)
                 views.setBoolean(id("button_$slot"), "setEnabled", button != null && !unavailable)
                 views.setTextViewText(id("label_$slot"), button?.label.orEmpty())
+                visible("label_$slot", !compactHeader)
                 views.setImageViewResource(id("icon_$slot"), PendingGlyphPolicy.icon(button?.icon ?: R.drawable.ic_power, button?.status))
                 views.setInt(id("icon_$slot"), "setBackgroundResource", button?.background ?: R.drawable.circle_secondary)
                 views.setContentDescription(id("button_$slot"), button?.label.orEmpty())

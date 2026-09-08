@@ -49,12 +49,13 @@ object DashboardLegacyCollection {
         android.util.Log.d("HAWidgetLegacy", "${if (initial) "BIND" else "DATA_ONLY"} widgetId=$id adapter=${LegacyCollectionPolicy.adapterIdentity(id)}")
     }
 
-    internal fun buildViews(context: Context, id: Int, state: DashboardState?, initial: Boolean): RemoteViews {
+    internal fun buildViews(context: Context, id: Int, state: DashboardState?, initial: Boolean,
+        adapterIntent: Intent = Intent(context, DashboardLegacyService::class.java)
+            .setData(Uri.parse(LegacyCollectionPolicy.adapterIdentity(id)))
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.dashboard_legacy)
         if (initial) {
-            views.setRemoteAdapter(R.id.legacy_list, Intent(context, DashboardLegacyService::class.java)
-                .setData(Uri.parse(LegacyCollectionPolicy.adapterIdentity(id)))
-                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id))
+            views.setRemoteAdapter(R.id.legacy_list, adapterIntent)
             views.setPendingIntentTemplate(R.id.legacy_list, PendingIntent.getBroadcast(context, id,
                 Intent(context, DashboardLegacyActionReceiver::class.java)
                     .setData(Uri.parse("hacw://dashboard/$id/action")),

@@ -14,6 +14,12 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.glance.GlanceTheme
+import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
+import androidx.glance.appwidget.GlanceRemoteViews
+import kotlinx.coroutines.runBlocking
 
 @RunWith(AndroidJUnit4::class)
 class DashboardRc5HostTest {
@@ -30,12 +36,15 @@ class DashboardRc5HostTest {
     }
 
     @Test fun realRemoteAdapterDeliversClicksAndPreservesViewportAcrossTwentyUpdates() {
-        instrumentation.uiAutomation.executeShellCommand("appwidget grantbind --package ${context.packageName} --user 0").close()
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
+            "appwidget grantbind --package ${context.packageName} --user 0")).use { it.readBytes() }
         val activity = instrumentation.startActivitySync(Intent(context, ScrollPrototypeHost::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ScrollPrototypeHost
         val manager = AppWidgetManager.getInstance(context)
         var widgetId = -1
         lateinit var list: ListView
+        var observedCount = -1
+        var observedChildren = -1
         try {
             instrumentation.runOnMainSync {
                 ScrollPrototypeData.revision = 0
@@ -46,17 +55,20 @@ class DashboardRc5HostTest {
                 val info = manager.getAppWidgetInfo(widgetId)
                 val hostView = activity.host.createView(activity, widgetId, info)
                 activity.content.addView(hostView)
-                val views = DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), true)
-                views.setRemoteAdapter(R.id.legacy_list, Intent(context, ScrollPrototypeService::class.java)
-                    .setData(Uri.parse("hacw://rc5-test/$widgetId")))
+                val views = DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), true,
+                    Intent(context, ScrollPrototypeService::class.java).setData(Uri.parse("hacw://rc5-test/$widgetId")))
                 views.setPendingIntentTemplate(R.id.legacy_list, PendingIntent.getBroadcast(context, widgetId,
                     Intent(context, ScrollPrototypeReceiver::class.java).setData(Uri.parse("hacw://rc5-click/$widgetId")),
                     PendingIntent.FLAG_UPDATE_CURRENT))
                 manager.updateAppWidget(widgetId, views)
             }
-            await("Real remote list did not populate") {
+            try { await("Real remote list did not populate") {
                 val candidate = activity.content.findViewById<ListView>(R.id.legacy_list)
+                observedCount = candidate?.count ?: -1
+                observedChildren = candidate?.childCount ?: -1
                 if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) { list = candidate; true } else false
+            } } catch (error: AssertionError) {
+                throw AssertionError("Remote list count=$observedCount children=$observedChildren; factory=${ScrollPrototypeData.factoryRows}", error)
             }
             val fixture = ScrollPrototypeData.state(42)
             val deliveredKinds = mutableSetOf<String>()
@@ -143,10 +155,11 @@ class DashboardRc5HostTest {
         instrumentation.runOnMainSync {
             val renderer = DashboardStableRows(context, 42)
             val state = ScrollPrototypeData.state(42)
-            val root = renderer.card(state.cards.first(), state).first().views.apply(context, null)
+            val roots = mutableMapOf<Int, View>()
             repeat(20) {
                 state.cards.forEach { card ->
                     val views = renderer.card(card, state).first().views
+                    val root = roots.getOrPut(views.layoutId) { views.apply(context, null) }
                     views.reapply(context, root)
                     val fresh = views.apply(context, null)
                     fun structure(view: View): String = buildString {
@@ -156,6 +169,77 @@ class DashboardRc5HostTest {
                     }
                     assertEquals(structure(fresh), structure(root))
                 }
+            }
+        }
+    }
+
+    @Test fun staticGlyphSlotReplacesPendingAndRestoresNormalAfterReapply() {
+        instrumentation.runOnMainSync {
+            val renderer = DashboardStableRows(context, 42)
+            val state = ScrollPrototypeData.state(42)
+            fun pixels(drawable: android.graphics.drawable.Drawable): IntArray {
+                val bitmap = android.graphics.Bitmap.createBitmap(28, 28, android.graphics.Bitmap.Config.ARGB_8888)
+                drawable.setBounds(0, 0, 28, 28)
+                drawable.draw(android.graphics.Canvas(bitmap))
+                return IntArray(28 * 28).also { bitmap.getPixels(it, 0, 28, 0, 0, 28, 28); bitmap.recycle() }
+            }
+            val pendingPixels = pixels(context.getDrawable(R.drawable.ic_launch_pending)!!)
+            listOf("light", "switch", "automation", "script", "scene", "timer").forEach { domain ->
+                val control = DashboardControl("$domain.pending", domain, domain, "on")
+                val card = DashboardCard(if (domain in setOf("automation", "script", "scene")) "scenario:$domain" else domain,
+                    domain, null, null, DeviceCategory.OTHER, emptyList(), listOf(control), scenarioRunnable = true)
+                val normal = renderer.card(card, state).first().views
+                val root = normal.apply(context, null)
+                val icon = root.findViewById<android.widget.ImageView>(R.id.stable_icon_0)
+                val normalPixels = pixels(icon.drawable)
+                DashboardOperationStatus.entries.filter { it.isActive }.forEach { status ->
+                    val busy = state.copy(operationStatusByEntity = mapOf(control.entityId to status),
+                        scenarioRunStatusByEntity = mapOf(control.entityId to status))
+                    renderer.card(card, busy).first().views.reapply(context, root)
+                    assertArrayEquals("Pending glyph for $domain", pendingPixels, pixels(icon.drawable))
+                    assertEquals(View.VISIBLE, icon.visibility)
+                    normal.reapply(context, root)
+                    assertArrayEquals("Restored glyph for $domain", normalPixels, pixels(icon.drawable))
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalGlanceRemoteViewsApi::class)
+    @Test fun glancePendingContainsOnlyReplacementGlyph() = runBlocking {
+        val composer = GlanceRemoteViews()
+        for (domain in listOf("light", "switch", "automation", "script", "scene", "timer")) {
+            val control = DashboardControl(if (domain == "timer") "switch.timer" else "$domain.pending",
+                domain, if (domain == "timer") "switch" else domain, "on")
+            val card = DashboardCard(if (domain in setOf("automation", "script", "scene")) "scenario:$domain" else domain,
+                domain, null, null, DeviceCategory.OTHER, emptyList(), listOf(control),
+                autoOffTimer = if (domain == "timer") AutoOffTimerConfig(true, "timer.pending") else null,
+                scenarioRunnable = true)
+            val statuses = mapOf(control.entityId to DashboardOperationStatus.PENDING, "timer.pending" to DashboardOperationStatus.PENDING)
+            val views = composer.compose(context, DpSize(250.dp, 500.dp)) {
+                GlanceTheme { DashboardDeviceCard(card, 42, 250, true, statuses, statuses) }
+            }.remoteViews
+            instrumentation.runOnMainSync {
+                fun pixels(drawable: android.graphics.drawable.Drawable): IntArray {
+                    val bitmap = android.graphics.Bitmap.createBitmap(28, 28, android.graphics.Bitmap.Config.ARGB_8888)
+                    drawable.setBounds(0, 0, 28, 28)
+                    drawable.draw(android.graphics.Canvas(bitmap))
+                    return IntArray(28 * 28).also { bitmap.getPixels(it, 0, 28, 0, 0, 28, 28); bitmap.recycle() }
+                }
+                val pending = pixels(context.getDrawable(R.drawable.ic_launch_pending)!!)
+                val forbidden = listOf(R.drawable.ic_power, R.drawable.ic_timer, R.drawable.ic_launch_play)
+                    .map { pixels(context.getDrawable(it)!!) }
+                var pendingCount = 0
+                fun inspect(view: View) {
+                    if (view is android.widget.ImageView && view.drawable != null && view.visibility == View.VISIBLE) {
+                        val value = pixels(view.drawable)
+                        if (value.contentEquals(pending)) pendingCount++
+                        assertFalse("Normal glyph overlaps pending: $domain", forbidden.any { it.contentEquals(value) })
+                    }
+                    if (view is android.view.ViewGroup) repeat(view.childCount) { inspect(view.getChildAt(it)) }
+                }
+                inspect(views.apply(context, null))
+                assertTrue("Missing pending image for $domain", pendingCount > 0)
             }
         }
     }

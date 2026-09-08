@@ -15,12 +15,11 @@ internal object StableCollectionPolicy {
 }
 
 internal object DashboardStableCollection {
-    fun buildViews(context: Context, id: Int, state: DashboardState?, initial: Boolean): RemoteViews =
-        DashboardLegacyCollection.buildViews(context, id, state, initial).apply {
-            if (initial) setRemoteAdapter(R.id.legacy_list, Intent(context, DashboardStableService::class.java)
-                .setData(Uri.parse(StableCollectionPolicy.identity(id)))
-                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id))
-        }
+    fun buildViews(context: Context, id: Int, state: DashboardState?, initial: Boolean,
+        adapterIntent: Intent = Intent(context, DashboardStableService::class.java)
+            .setData(Uri.parse(StableCollectionPolicy.identity(id)))
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)): RemoteViews =
+        DashboardLegacyCollection.buildViews(context, id, state, initial, adapterIntent)
 
     fun update(context: Context, id: Int, bind: Boolean = false) {
         val manager = AppWidgetManager.getInstance(context)
@@ -56,7 +55,7 @@ class DashboardStableService : RemoteViewsService() {
         override fun getViewAt(position: Int) = rows.getOrNull(position)?.views
         override fun getItemId(position: Int) = rows.getOrNull(position)?.key?.let(DashboardStatePolicy::stableCollectionId) ?: 0L
         override fun hasStableIds() = true
-        override fun getViewTypeCount() = 2
+        override fun getViewTypeCount() = 3
         override fun getLoadingView(): RemoteViews? = null
     }
 }
