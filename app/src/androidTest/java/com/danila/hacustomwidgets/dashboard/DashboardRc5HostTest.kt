@@ -168,6 +168,9 @@ class DashboardRc5HostTest {
                     assertEquals("Anchor changed on pass $iteration", anchor, list.getItemIdAtPosition(list.firstVisiblePosition))
                     assertTrue("Offset changed on pass $iteration", kotlin.math.abs(offset - list.getChildAt(0).top) <= 2)
                 }
+                // Let Oreo complete the coalesced data-only retry before producing the next
+                // synthetic action. Physical taps and HA round-trips naturally provide this gap.
+                if (android.os.Build.VERSION.SDK_INT in 26..27) Thread.sleep(2_100)
             }
         } finally {
             instrumentation.runOnMainSync {
