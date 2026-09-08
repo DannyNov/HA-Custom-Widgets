@@ -33,7 +33,7 @@ internal object DashboardStableCollection {
             synchronized(this) { retryByWidget.remove(id) }
         }
         retryByWidget[id] = retry
-        retryHandler.postDelayed(retry, 500)
+        retryHandler.postDelayed(retry, 2_000)
     }
 
     fun buildViews(context: Context, id: Int, state: DashboardState?, initial: Boolean,
