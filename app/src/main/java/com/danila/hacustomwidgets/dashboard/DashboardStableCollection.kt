@@ -4,9 +4,6 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.danila.hacustomwidgets.HaWidgetApplication
@@ -18,23 +15,8 @@ internal object StableCollectionPolicy {
 }
 
 internal object DashboardStableCollection {
-    private val retryHandler by lazy { Handler(Looper.getMainLooper()) }
-    private val retryByWidget = mutableMapOf<Int, Runnable>()
-
-    @Synchronized
-    internal fun notifyDataChanged(manager: AppWidgetManager, id: Int) {
+    internal fun notifyDataChanged(manager: AppWidgetManager, id: Int) =
         manager.notifyAppWidgetViewDataChanged(id, R.id.legacy_list)
-        if (Build.VERSION.SDK_INT !in 26..27) return
-        retryByWidget.remove(id)?.let(retryHandler::removeCallbacks)
-        // Oreo can refresh the factory snapshot but leave visible collection children stale
-        // during a burst. A single coalesced data-only retry does not rebind the adapter.
-        val retry = Runnable {
-            manager.notifyAppWidgetViewDataChanged(id, R.id.legacy_list)
-            synchronized(this) { retryByWidget.remove(id) }
-        }
-        retryByWidget[id] = retry
-        retryHandler.postDelayed(retry, 5_000)
-    }
 
     fun buildViews(context: Context, id: Int, state: DashboardState?, initial: Boolean,
         adapterIntent: Intent = Intent(context, DashboardStableService::class.java)
@@ -51,13 +33,13 @@ internal object DashboardStableCollection {
         if (initial) {
             manager.updateAppWidget(id, views)
             prefs.edit().putBoolean("bound:$id", true).apply()
-        } else manager.partiallyUpdateAppWidget(id, views)
+        }
+        // API 26 may replace the entire ListView even for a partial outer RemoteViews update.
+        // Routine state changes therefore update only the already-bound collection adapter.
         notifyDataChanged(manager, id)
     }
 
-    @Synchronized
     fun forget(context: Context, id: Int) {
-        retryByWidget.remove(id)?.let(retryHandler::removeCallbacks)
         context.getSharedPreferences("dashboard_static_hosts_v2", Context.MODE_PRIVATE).edit().remove("bound:$id").apply()
     }
 }

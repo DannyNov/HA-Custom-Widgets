@@ -142,8 +142,6 @@ class DashboardRc5HostTest {
                 assertTrue(intent.getStringExtra("entity").orEmpty().isNotEmpty())
                 ScrollPrototypeData.revision++
                 instrumentation.runOnMainSync {
-                    manager.partiallyUpdateAppWidget(widgetId,
-                        DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), false))
                     DashboardStableCollection.notifyDataChanged(manager, widgetId)
                 }
                 try { await("Host did not apply revision ${ScrollPrototypeData.revision}") {
@@ -170,6 +168,9 @@ class DashboardRc5HostTest {
                 }
                 instrumentation.waitForIdleSync()
                 instrumentation.runOnMainSync {
+                    assertSame("Routine update replaced the ListView on pass $iteration",
+                        list, hostView.findViewById<ListView>(R.id.legacy_list))
+                    assertTrue("ListView detached on pass $iteration", list.isAttachedToWindow)
                     assertEquals("Position reset on pass $iteration", position, list.firstVisiblePosition)
                     assertFalse("Transient jump-to-top on pass $iteration", jumpedToTop)
                     assertEquals("Anchor changed on pass $iteration", anchor, list.getItemIdAtPosition(list.firstVisiblePosition))
