@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".dashboard.ScrollPrototypeHost" android:exported="false" />
+        <service android:name=".dashboard.ScrollPrototypeService" android:permission="android.permission.BIND_REMOTEVIEWS" android:exported="false" />
+        <receiver android:name=".dashboard.ScrollPrototypeReceiver" android:exported="false" />
+        <receiver android:name=".dashboard.ScrollPrototypeProvider" android:exported="true">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/scroll_prototype_info" />
+        </receiver>
+    </application>
+</manifest>

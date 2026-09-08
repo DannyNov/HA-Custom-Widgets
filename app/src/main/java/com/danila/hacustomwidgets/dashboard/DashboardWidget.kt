@@ -469,7 +469,8 @@ internal fun DashboardDeviceCard(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Image(
-                                    ImageProvider(R.drawable.ic_timer),
+                                    ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_timer,
+                                        operationStatuses[timerConfig.timerEntityId])),
                                     contentDescription = tr("Timer", "Таймер"),
                                     modifier = GlanceModifier.width(28.dp).height(28.dp),
                                 )
@@ -581,13 +582,12 @@ private fun PrimaryPowerButton(
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                ImageProvider(R.drawable.ic_power),
+                ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_power, operationStatus)),
                 contentDescription = if (control.state == "on") tr("Turn off", "Выключить") else tr("Turn on", "Включить"),
                 modifier = GlanceModifier.width(28.dp).height(28.dp),
             )
             Text(
                 when {
-                    operationStatus?.isActive == true -> "…"
                     operationStatus in setOf(DashboardOperationStatus.FAILED, DashboardOperationStatus.TIMEOUT) -> "!"
                     else -> ""
                 },

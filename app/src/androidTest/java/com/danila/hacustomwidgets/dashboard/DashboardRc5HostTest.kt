@@ -1,0 +1,123 @@
+package com.danila.hacustomwidgets.dashboard
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Intent
+import android.net.Uri
+import android.view.View
+import android.widget.ListView
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.danila.hacustomwidgets.R
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.concurrent.TimeUnit
+
+@RunWith(AndroidJUnit4::class)
+class DashboardRc5HostTest {
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val context get() = instrumentation.targetContext
+    private fun await(message: String, predicate: () -> Boolean) {
+        repeat(150) {
+            var done = false
+            instrumentation.runOnMainSync { done = predicate() }
+            if (done) return
+            Thread.sleep(100)
+        }
+        fail(message)
+    }
+
+    @Test fun realRemoteAdapterDeliversClicksAndPreservesViewportAcrossTwentyUpdates() {
+        instrumentation.uiAutomation.executeShellCommand("appwidget grantbind --package ${context.packageName} --user 0").close()
+        val activity = instrumentation.startActivitySync(Intent(context, ScrollPrototypeHost::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ScrollPrototypeHost
+        val manager = AppWidgetManager.getInstance(context)
+        var widgetId = -1
+        lateinit var list: ListView
+        try {
+            instrumentation.runOnMainSync {
+                ScrollPrototypeData.revision = 0
+                ScrollPrototypeData.clicks.clear()
+                widgetId = activity.host.allocateAppWidgetId()
+                val component = ComponentName(context, ScrollPrototypeProvider::class.java)
+                assertTrue("Fixture widget must bind", manager.bindAppWidgetIdIfAllowed(widgetId, component))
+                val info = manager.getAppWidgetInfo(widgetId)
+                val hostView = activity.host.createView(activity, widgetId, info)
+                activity.content.addView(hostView)
+                val views = DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), true)
+                views.setRemoteAdapter(R.id.legacy_list, Intent(context, ScrollPrototypeService::class.java)
+                    .setData(Uri.parse("hacw://rc5-test/$widgetId")))
+                views.setPendingIntentTemplate(R.id.legacy_list, PendingIntent.getBroadcast(context, widgetId,
+                    Intent(context, ScrollPrototypeReceiver::class.java).setData(Uri.parse("hacw://rc5-click/$widgetId")),
+                    PendingIntent.FLAG_UPDATE_CURRENT))
+                manager.updateAppWidget(widgetId, views)
+            }
+            await("Real remote list did not populate") {
+                val candidate = activity.content.findViewById<ListView>(R.id.legacy_list)
+                if (candidate != null && candidate.count >= 30 && candidate.childCount > 0) { list = candidate; true } else false
+            }
+            instrumentation.runOnMainSync { list.setSelectionFromTop(15, -7) }
+            await("Did not scroll to middle") { list.firstVisiblePosition == 15 }
+            repeat(20) { iteration ->
+                var anchor = 0L
+                var position = 0
+                var offset = 0
+                instrumentation.runOnMainSync {
+                    anchor = list.getItemIdAtPosition(list.firstVisiblePosition)
+                    position = list.firstVisiblePosition
+                    offset = list.getChildAt(0).top
+                    val button = list.getChildAt(0).findViewById<View>(R.id.stable_button_0)
+                    assertNotNull(button)
+                    assertTrue("Click must have listener on API ${android.os.Build.VERSION.SDK_INT}", button.performClick())
+                }
+                val intent = ScrollPrototypeData.clicks.poll(5, TimeUnit.SECONDS)
+                assertNotNull("Click was not delivered on pass $iteration", intent)
+                assertEquals("control", intent!!.getStringExtra("action"))
+                assertEquals(42, intent.getIntExtra("widget", -1))
+                assertTrue(intent.getStringExtra("entity").orEmpty().isNotEmpty())
+                ScrollPrototypeData.revision++
+                instrumentation.runOnMainSync {
+                    manager.partiallyUpdateAppWidget(widgetId,
+                        DashboardStableCollection.buildViews(context, widgetId, ScrollPrototypeData.state(42), false))
+                    manager.notifyAppWidgetViewDataChanged(widgetId, R.id.legacy_list)
+                }
+                // Allow Binder data refresh and the following layout traversal before measuring.
+                Thread.sleep(700)
+                instrumentation.waitForIdleSync()
+                instrumentation.runOnMainSync {
+                    assertEquals("Position reset on pass $iteration", position, list.firstVisiblePosition)
+                    assertEquals("Anchor changed on pass $iteration", anchor, list.getItemIdAtPosition(list.firstVisiblePosition))
+                    assertTrue("Offset changed on pass $iteration", kotlin.math.abs(offset - list.getChildAt(0).top) <= 2)
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                if (widgetId >= 0) activity.host.deleteAppWidgetId(widgetId)
+                activity.finish()
+            }
+        }
+    }
+
+    @Test fun staticRowsReapplyWithoutAccumulatingChildrenOrPendingGlyphs() {
+        instrumentation.runOnMainSync {
+            val renderer = DashboardStableRows(context, 42)
+            val state = ScrollPrototypeData.state(42)
+            val root = renderer.card(state.cards.first(), state).first().views.apply(context, null)
+            repeat(20) {
+                state.cards.forEach { card ->
+                    val views = renderer.card(card, state).first().views
+                    views.reapply(context, root)
+                    val fresh = views.apply(context, null)
+                    fun structure(view: View): String = buildString {
+                        append(view.id).append(':').append(view.visibility)
+                        if (view is android.widget.TextView) append(view.text)
+                        if (view is android.view.ViewGroup) repeat(view.childCount) { append(structure(view.getChildAt(it))) }
+                    }
+                    assertEquals(structure(fresh), structure(root))
+                }
+            }
+        }
+    }
+}

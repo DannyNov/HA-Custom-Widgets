@@ -1,0 +1,3 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp" android:minHeight="350dp" android:updatePeriodMillis="0"
+    android:initialLayout="@layout/dashboard_legacy" android:widgetCategory="home_screen" />
