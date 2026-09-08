@@ -157,8 +157,15 @@ class DashboardRc5HostTest {
                     }
                 } } catch (error: AssertionError) {
                     var visible = ""
-                    instrumentation.runOnMainSync { visible = "position=${list.firstVisiblePosition} " +
-                        (0 until list.childCount).joinToString { list.getChildAt(it).findViewById<android.widget.TextView>(R.id.stable_title)?.text.toString() } }
+                    instrumentation.runOnMainSync {
+                        val current = hostView.findViewById<ListView>(R.id.legacy_list)
+                        fun titles(value: ListView?) = if (value == null) "<missing>" else
+                            (0 until value.childCount).joinToString { value.getChildAt(it)
+                                .findViewById<android.widget.TextView>(R.id.stable_title)?.text.toString() }
+                        visible = "sameList=${current === list} attached=${list.isAttachedToWindow} " +
+                            "position=${list.firstVisiblePosition} old=[${titles(list)}] " +
+                            "currentPosition=${current?.firstVisiblePosition} current=[${titles(current)}]"
+                    }
                     throw AssertionError("Expected revision=${ScrollPrototypeData.revision}; factory=${ScrollPrototypeData.factoryRevision}; $visible", error)
                 }
                 instrumentation.waitForIdleSync()
