@@ -87,7 +87,7 @@ class DashboardRc4RepositoryTest {
         val fresh = entity(60, now)
         store.reconcile(store.get("timer.rc4")!!, fresh)
         assertTrue(store.markAccepted("timer.rc4", "local", now.plusSeconds(2).toEpochMilli()))
-        assertEquals(fresh.timerFinishesAt, Instant.ofEpochMilli(store.get("timer.rc4")!!.finishAt).toString())
+        assertEquals(Instant.parse(fresh.timerFinishesAt).toEpochMilli(), store.get("timer.rc4")!!.finishAt)
         assertFalse(TimerResetPolicy.showOverlay(store.get("timer.rc4")!!, now.toEpochMilli()))
         assertFalse(store.markAccepted("timer.rc4", "obsolete", now.toEpochMilli()))
     }
