@@ -46,6 +46,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.SupportDialog
@@ -110,6 +112,22 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
 }
 
 internal enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, GROUP_ORDER, SCENARIOS }
+
+internal data class DashboardGroupingLabelLayoutContract(
+    val horizontalInsetDp: Int,
+    val fillsAvailableWidth: Boolean,
+    val textAlign: TextAlign,
+    val maxLines: Int,
+    val overflow: TextOverflow,
+)
+
+internal val dashboardGroupingLabelLayout = DashboardGroupingLabelLayoutContract(
+    horizontalInsetDp = 4,
+    fillsAvailableWidth = true,
+    textAlign = TextAlign.Start,
+    maxLines = 1,
+    overflow = TextOverflow.Ellipsis,
+)
 
 internal fun previousConfigScreen(screen: ConfigScreen): ConfigScreen = when (screen) {
     ConfigScreen.TIMER -> ConfigScreen.ENTITIES
@@ -421,8 +439,14 @@ private fun DashboardOverview(
                         }
                         if (enabled) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp), modifier = Modifier.weight(1f), onClick = { onCycleGrouping(space.id) }) {
-                                    Text(tr("Grouping: ${grouping[space.id].label()}", "Группировка: ${grouping[space.id].label()}"))
+                                TextButton(contentPadding = PaddingValues(horizontal = dashboardGroupingLabelLayout.horizontalInsetDp.dp, vertical = 0.dp), modifier = Modifier.weight(1f), onClick = { onCycleGrouping(space.id) }) {
+                                    Text(
+                                        text = dashboardGroupingLabel(grouping[space.id]),
+                                        modifier = if (dashboardGroupingLabelLayout.fillsAvailableWidth) Modifier.fillMaxWidth() else Modifier,
+                                        textAlign = dashboardGroupingLabelLayout.textAlign,
+                                        maxLines = dashboardGroupingLabelLayout.maxLines,
+                                        overflow = dashboardGroupingLabelLayout.overflow,
+                                    )
                                 }
                                 if (grouping[space.id] == DashboardGrouping.TYPES) {
                                     TextButton(contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp), modifier = Modifier.weight(1f), onClick = { onOrderGroups(space.id) }) { Text(tr("Group order ›", "Порядок групп ›")) }
@@ -856,7 +880,10 @@ private fun DashboardGrouping.next() = when (this) {
     DashboardGrouping.NONE -> DashboardGrouping.ROOMS
 }
 
-private fun DashboardGrouping?.label() = when (this) {
+internal fun dashboardGroupingLabel(grouping: DashboardGrouping?): String =
+    tr("Grouping: ${grouping.label()}", "Группировка: ${grouping.label()}")
+
+internal fun DashboardGrouping?.label() = when (this) {
     DashboardGrouping.ROOMS -> tr("by rooms", "по помещениям")
     DashboardGrouping.TYPES -> tr("by device type", "по типам устройств")
     DashboardGrouping.NONE, null -> tr("no grouping", "без группировки")
