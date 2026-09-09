@@ -133,6 +133,7 @@ jobs:
           disable-animations: true
           script: |
             adb install "$RUNNER_TEMP/source.apk"
+            adb shell run-as com.danila.hacustomwidgets mkdir -p files
             adb shell run-as com.danila.hacustomwidgets touch files/upgrade-marker
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell run-as com.danila.hacustomwidgets ls files/upgrade-marker | grep -F 'files/upgrade-marker'
