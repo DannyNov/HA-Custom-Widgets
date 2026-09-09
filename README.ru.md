@@ -1,10 +1,33 @@
 # HA Custom Widgets
 
-[English version](README.md) · [Telegram-сообщество](https://t.me/HACustomWidgets) · [Политика конфиденциальности](https://dannynov.github.io/HA-Custom-Widgets/privacy-policy/)
+<p align="center">
+  <img src="docs/images/app-icon.png" width="120" alt="Иконка HA Custom Widgets">
+</p>
+
+<p align="center">
+  <a href="README.md">English version</a> · <a href="https://t.me/HACustomWidgets">Telegram-сообщество</a> · <a href="https://dannynov.github.io/HA-Custom-Widgets/privacy-policy/">Политика конфиденциальности</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/feature-ru.png" alt="HA Custom Widgets">
+</p>
 
 Нативные виджеты Home Assistant для домашнего экрана Android. Приложение подключается напрямую к адресу Home Assistant, который указывает пользователь. Имена сущностей, устройств, помещений и этажей остаются такими, как их передаёт Home Assistant.
 
 При русском языке системы интерфейс русский, при любом другом — английский.
+
+## Скриншоты
+
+<p align="center">
+  <img src="docs/images/screenshots/ru/01-dashboard.jpg" width="31%" alt="HA Dashboard — освещение и датчики">
+  <img src="docs/images/screenshots/ru/02-controls.jpg" width="31%" alt="HA Dashboard — розетки и выключатели">
+  <img src="docs/images/screenshots/ru/03-timer.jpg" width="31%" alt="HA Dashboard — активный таймер автоотключения">
+</p>
+<p align="center">
+  <img src="docs/images/screenshots/ru/04-scenarios.jpg" width="31%" alt="Настройка сценариев">
+  <img src="docs/images/screenshots/ru/05-main-tab.jpg" width="31%" alt="Настройка вкладки Главное">
+  <img src="docs/images/screenshots/ru/06-card-order.jpg" width="31%" alt="Порядок карточек Dashboard">
+</p>
 
 ## Возможности
 

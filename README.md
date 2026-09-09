@@ -1,10 +1,33 @@
 # HA Custom Widgets
 
-[Русская версия](README.ru.md) · [Telegram community](https://t.me/HACustomWidgets) · [Privacy Policy](https://dannynov.github.io/HA-Custom-Widgets/privacy-policy/)
+<p align="center">
+  <img src="docs/images/app-icon.png" width="120" alt="HA Custom Widgets icon">
+</p>
+
+<p align="center">
+  <a href="README.ru.md">Русская версия</a> · <a href="https://t.me/HACustomWidgets">Telegram community</a> · <a href="https://dannynov.github.io/HA-Custom-Widgets/privacy-policy/">Privacy Policy</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/feature-en.png" alt="HA Custom Widgets">
+</p>
 
 Native Android home-screen widgets for Home Assistant. The app connects directly to the Home Assistant address configured by the user. Entity, device, area and floor names remain unchanged.
 
 Russian system locales use the Russian interface. Every other locale uses English.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/screenshots/en/01-dashboard.jpg" width="31%" alt="HA Dashboard lights and sensors">
+  <img src="docs/images/screenshots/en/02-controls.jpg" width="31%" alt="HA Dashboard outlets and switches">
+  <img src="docs/images/screenshots/en/03-timer.jpg" width="31%" alt="HA Dashboard active auto-off timer">
+</p>
+<p align="center">
+  <img src="docs/images/screenshots/en/04-scenarios.jpg" width="31%" alt="Scenario configuration">
+  <img src="docs/images/screenshots/en/05-main-tab.jpg" width="31%" alt="Main tab configuration">
+  <img src="docs/images/screenshots/en/06-card-order.jpg" width="31%" alt="Dashboard card ordering">
+</p>
 
 ## Features
 
