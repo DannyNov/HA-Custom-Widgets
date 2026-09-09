@@ -19,7 +19,7 @@ class DashboardRc7LayoutPolicyTest {
         )
         assertTrue(dashboardGroupingLabelLayout.leftColumnWeight in 0.55f..0.60f)
         assertTrue(dashboardGroupingLabelLayout.rightColumnWeight in 0.40f..0.45f)
-        assertTrue(dashboardGroupingLabelLayout.horizontalInsetDp > 0)
+        assertTrue(dashboardGroupingLabelLayout.textHorizontalInsetDp >= 8)
         assertTrue(dashboardGroupingLabelLayout.fillsAvailableWidth)
         assertEquals(TextAlign.Start, dashboardGroupingLabelLayout.textAlign)
         assertEquals(2, dashboardGroupingLabelLayout.maxLines)
@@ -27,7 +27,7 @@ class DashboardRc7LayoutPolicyTest {
         assertEquals(TextOverflow.Clip, dashboardGroupingLabelLayout.overflow)
 
         listOf(1f, 1.5f, 2f, 3f, 4f).forEach { density ->
-            assertTrue(dashboardGroupingLabelLayout.horizontalInsetDp * density >= density)
+            assertTrue(dashboardGroupingLabelLayout.textHorizontalInsetDp * density >= 8f * density)
         }
     }
 

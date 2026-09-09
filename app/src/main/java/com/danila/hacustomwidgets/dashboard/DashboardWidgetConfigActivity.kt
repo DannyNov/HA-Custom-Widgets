@@ -117,7 +117,7 @@ internal enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_C
 internal data class DashboardGroupingLabelLayoutContract(
     val leftColumnWeight: Float,
     val rightColumnWeight: Float,
-    val horizontalInsetDp: Int,
+    val textHorizontalInsetDp: Int,
     val fillsAvailableWidth: Boolean,
     val textAlign: TextAlign,
     val maxLines: Int,
@@ -128,7 +128,7 @@ internal data class DashboardGroupingLabelLayoutContract(
 internal val dashboardGroupingLabelLayout = DashboardGroupingLabelLayoutContract(
     leftColumnWeight = 0.58f,
     rightColumnWeight = 0.42f,
-    horizontalInsetDp = 4,
+    textHorizontalInsetDp = 8,
     fillsAvailableWidth = true,
     textAlign = TextAlign.Start,
     maxLines = 2,
@@ -449,10 +449,11 @@ private fun DashboardOverview(
                         }
                         if (enabled) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(contentPadding = PaddingValues(horizontal = dashboardGroupingLabelLayout.horizontalInsetDp.dp, vertical = 0.dp), modifier = Modifier.weight(dashboardGroupingLabelLayout.leftColumnWeight), onClick = { onCycleGrouping(space.id) }) {
+                                TextButton(contentPadding = PaddingValues(vertical = 0.dp), modifier = Modifier.weight(dashboardGroupingLabelLayout.leftColumnWeight), onClick = { onCycleGrouping(space.id) }) {
                                     Text(
                                         text = dashboardGroupingLabel(grouping[space.id]),
-                                        modifier = if (dashboardGroupingLabelLayout.fillsAvailableWidth) Modifier.fillMaxWidth() else Modifier,
+                                        modifier = (if (dashboardGroupingLabelLayout.fillsAvailableWidth) Modifier.fillMaxWidth() else Modifier)
+                                            .padding(horizontal = dashboardGroupingLabelLayout.textHorizontalInsetDp.dp),
                                         textAlign = dashboardGroupingLabelLayout.textAlign,
                                         maxLines = dashboardGroupingLabelLayout.maxLines,
                                         softWrap = dashboardGroupingLabelLayout.softWrap,
