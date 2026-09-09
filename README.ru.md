@@ -1,6 +1,6 @@
 # HA Custom Widgets
 
-[English version](README.md) · [Telegram-сообщество](https://t.me/HACustomWidgets)
+[English version](README.md) · [Telegram-сообщество](https://t.me/HACustomWidgets) · [Политика конфиденциальности](https://dannynov.github.io/HA-Custom-Widgets/privacy-policy/)
 
 Нативные виджеты Home Assistant для домашнего экрана Android. Приложение подключается напрямую к адресу Home Assistant, который указывает пользователь. Имена сущностей, устройств, помещений и этажей остаются такими, как их передаёт Home Assistant.
 
@@ -91,11 +91,9 @@ Copyright 2026 Danila Novikov. Проект распространяется п�
 
 HA Custom Widgets — независимый проект, не связанный с проектом Home Assistant или Open Home Foundation и не одобренный ими.
 
-## Таймер автоотключения (RC4)
+## Таймер автоотключения
 
 Приложение запускает/перезапускает связанный таймер HA и отображает серверное состояние.
 Для фактического выключения switch/light нужна автоматизация Home Assistant по событию
-`timer.finished`. RC4 не отправляет автоматический `turn_off` с телефона. Без автоматизации
+`timer.finished`. Приложение не отправляет автоматический `turn_off` с телефона. Без автоматизации
 таймер может завершиться, а выключатель остаться ON. [Пример настройки](docs/TIMER_AUTO_OFF.md).
-Старые задания автоотключения RC2/RC3 отменяются при обновлении. Финальный v0.6.1 должен
-иметь versionCode >=37.
