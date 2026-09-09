@@ -132,7 +132,6 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: |
-            set -euo pipefail
             adb install "$RUNNER_TEMP/source.apk"
             adb shell run-as com.danila.hacustomwidgets touch files/upgrade-marker
             adb install -r app/build/outputs/apk/debug/app-debug.apk
