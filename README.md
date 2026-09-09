@@ -25,7 +25,7 @@ Manual automation launch preserves its conditions (`skip_condition=false`). A di
 
 ## Requirements
 
-- Android 8.0 (API 26) or later;
+- Android 12 (API 31) or later;
 - a Home Assistant instance reachable from the phone;
 - a Home Assistant Long-Lived Access Token.
 

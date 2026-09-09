@@ -59,20 +59,8 @@ class DashboardRenderCoordinator(
                 val started = SystemClock.elapsedRealtime()
                 Log.d(TAG, "RENDER_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId revision=$target reason=$reason monotonicMs=$started")
                 try {
-                    if (StableCollectionPolicy.use(android.os.Build.VERSION.SDK_INT)) {
-                        slot.force.set(false)
-                        DashboardStableCollection.update(
-                            applicationContext,
-                            appWidgetId,
-                            bind = reason in setOf("NAVIGATION", "CATALOG"),
-                        )
-                    } else if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
-                        slot.force.set(false)
-                        DashboardLegacyCollection.update(applicationContext, appWidgetId)
-                    } else {
-                        val activeSession = repository.publishForRender(appWidgetId, slot.force.getAndSet(false))
-                        if (!activeSession) performDashboardWidgetUpdate(applicationContext, appWidgetId)
-                    }
+                    val activeSession = repository.publishForRender(appWidgetId, slot.force.getAndSet(false))
+                    if (!activeSession) performDashboardWidgetUpdate(applicationContext, appWidgetId)
                     DashboardCountdownWorker.schedule(applicationContext, appWidgetId, repository.get(appWidgetId))
                     repository.markRendered(appWidgetId, target)
                     Log.d(

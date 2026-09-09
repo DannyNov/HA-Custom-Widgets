@@ -25,7 +25,7 @@
 
 ## Требования
 
-- Android 8.0 (API 26) или новее;
+- Android 12 (API 31) или новее;
 - доступный с телефона сервер Home Assistant;
 - Long-Lived Access Token Home Assistant.
 

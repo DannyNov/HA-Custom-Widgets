@@ -90,22 +90,6 @@ class DashboardRc3RecyclingTest {
     private fun clickCount(view: View): Int = (if (view.hasOnClickListeners()) 1 else 0) +
         if (view is ViewGroup) (0 until view.childCount).sumOf { clickCount(view.getChildAt(it)) } else 0
 
-    @Test fun nativeRowResetIsIdempotentAcrossHeterogeneousRows() {
-        instrumentation.runOnMainSync {
-            val factory = DashboardLegacyService.Factory(context, 42)
-            val root = wire(factory.card(fixtures().first(), state())).apply(context, null)
-            repeat(10) { pass ->
-                val sequence = if (pass % 2 == 0) fixtures() else fixtures().reversed()
-                sequence.forEach { card ->
-                    val views = wire(factory.card(card, state()))
-                    val fresh = views.apply(context, null)
-                    views.reapply(context, root)
-                    assertEquals("native rebind ${card.key}, pass $pass", snapshot(fresh), snapshot(root))
-                }
-            }
-        }
-    }
-
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
     @Test fun fallbackRowsMatchFreshBindingAfterRepeatedApplyAndReapply() = runBlocking {
         val composer = GlanceRemoteViews()
@@ -139,7 +123,81 @@ class DashboardRc3RecyclingTest {
         }
     }
 
-    @Test fun nativeCollectionRemainsDisabledOnEverySupportedApi() {
-        (26..36).forEach { assertFalse("Unsafe collection enabled on API $it", LegacyCollectionPolicy.useLegacy(it)) }
+    @Test fun repositoryBuildsOneSharedDeviceCardInTemperatureHumidityBatteryOrder() {
+        val isolated = object : android.content.ContextWrapper(context) {
+            private val prefix = "rc6-shared-${java.util.UUID.randomUUID()}-"
+            override fun getSharedPreferences(name: String, mode: Int) =
+                super.getSharedPreferences(prefix + name, mode)
+        }
+        val deviceId = "environment-device"
+        val entities = listOf(
+            com.danila.hacustomwidgets.data.model.HaEntity("sensor.battery", "81", "Battery", "%", null,
+                deviceId = deviceId, deviceClass = "battery"),
+            com.danila.hacustomwidgets.data.model.HaEntity("sensor.humidity", "44", "Humidity", "%", null,
+                deviceId = deviceId, deviceClass = "humidity"),
+            com.danila.hacustomwidgets.data.model.HaEntity("sensor.temperature", "23", "Temperature", "°C", null,
+                deviceId = deviceId, deviceClass = "temperature"),
+        )
+        val catalog = com.danila.hacustomwidgets.data.model.HaCatalog(listOf(
+            com.danila.hacustomwidgets.data.model.HaDeviceGroup(
+                com.danila.hacustomwidgets.data.model.HaDevice(deviceId, "Environment"), entities,
+            ),
+        ))
+        val widgetId = 906
+        val config = DashboardConfig(widgetId, emptyList(), emptyMap(), listOf(deviceId),
+            emptyMap(), emptyMap(), true, true)
+        val repository = DashboardRepository(isolated)
+        repository.saveConfiguration(config, catalog)
+        val card = repository.get(widgetId)!!.cards.single()
+        assertEquals(deviceId, card.key)
+        assertEquals(listOf("sensor.temperature", "sensor.humidity", "sensor.battery"),
+            card.metrics.map { it.entityId })
+        assertEquals(1, repository.get(widgetId)!!.cards.count { it.key == deviceId })
+    }
+
+    @OptIn(ExperimentalGlanceRemoteViewsApi::class)
+    @Test fun glancePowerTimerAndScenarioPendingUseOnlyReplacementGlyph() = runBlocking {
+        val composer = GlanceRemoteViews()
+        for (domain in listOf("light", "switch", "automation", "script", "scene", "timer")) {
+            val control = DashboardControl(if (domain == "timer") "switch.timer" else "$domain.pending",
+                domain, if (domain == "timer") "switch" else domain, "on")
+            val card = DashboardCard(if (domain in setOf("automation", "script", "scene")) "scenario:$domain" else domain,
+                domain, null, null, DeviceCategory.OTHER, emptyList(), listOf(control),
+                autoOffTimer = if (domain == "timer") AutoOffTimerConfig(true, "timer.pending") else null,
+                scenarioRunnable = true)
+            val statuses = mapOf(control.entityId to DashboardOperationStatus.PENDING,
+                "timer.pending" to DashboardOperationStatus.PENDING)
+            val views = composer.compose(context, DpSize(250.dp, 500.dp)) {
+                GlanceTheme { DashboardDeviceCard(card, 42, 250, true, statuses, statuses) }
+            }.remoteViews
+            instrumentation.runOnMainSync {
+                fun pixels(drawable: android.graphics.drawable.Drawable): IntArray {
+                    val bitmap = Bitmap.createBitmap(28, 28, Bitmap.Config.ARGB_8888)
+                    drawable.setBounds(0, 0, 28, 28)
+                    drawable.draw(Canvas(bitmap))
+                    return IntArray(28 * 28).also {
+                        bitmap.getPixels(it, 0, 28, 0, 0, 28, 28)
+                        bitmap.recycle()
+                    }
+                }
+                val pending = pixels(context.getDrawable(com.danila.hacustomwidgets.R.drawable.ic_launch_pending)!!)
+                val forbidden = listOf(
+                    com.danila.hacustomwidgets.R.drawable.ic_power,
+                    com.danila.hacustomwidgets.R.drawable.ic_timer,
+                    com.danila.hacustomwidgets.R.drawable.ic_launch_play,
+                ).map { pixels(context.getDrawable(it)!!) }
+                var pendingCount = 0
+                fun inspect(view: View) {
+                    if (view is ImageView && view.drawable != null && view.visibility == View.VISIBLE) {
+                        val value = pixels(view.drawable)
+                        if (value.contentEquals(pending)) pendingCount++
+                        assertFalse("Normal glyph overlaps pending: $domain", forbidden.any { it.contentEquals(value) })
+                    }
+                    if (view is ViewGroup) repeat(view.childCount) { inspect(view.getChildAt(it)) }
+                }
+                inspect(views.apply(context, null))
+                assertTrue("Missing pending image for $domain", pendingCount > 0)
+            }
+        }
     }
 }

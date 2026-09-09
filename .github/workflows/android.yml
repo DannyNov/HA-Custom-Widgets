@@ -39,7 +39,7 @@ jobs:
             -alias "$HA_DEBUG_KEY_ALIAS" > /dev/null
           printf 'HA_DEBUG_KEYSTORE_PATH=%s\n' "$keystore_path" >> "$GITHUB_ENV"
       - name: Compile, test and build non-debuggable release
-        run: gradle testDebugUnitTest assembleRelease --stacktrace
+        run: gradle testDebugUnitTest assembleRelease bundleRelease --stacktrace
       - name: Verify APK signature
         run: |
           set -euo pipefail
@@ -54,8 +54,8 @@ jobs:
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
           badging="$($AAPT dump badging "$apk")"
-          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='38' versionName='0.6.1'"
-          printf '%s\n' "$badging" | grep -Fx "sdkVersion:'26'"
+          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='41' versionName='0.6.1-rc6'"
+          printf '%s\n' "$badging" | grep -Fx "sdkVersion:'31'"
           printf '%s\n' "$badging" | grep -Fx "targetSdkVersion:'36'"
           if printf '%s\n' "$badging" | grep -q '^application-debuggable:'; then
             echo 'APK unexpectedly contains android:debuggable=true' >&2
@@ -63,20 +63,21 @@ jobs:
           fi
           {
             printf 'applicationId=com.danila.hacustomwidgets\n'
-            printf 'versionName=0.6.1\n'
-            printf 'versionCode=38\n'
+            printf 'versionName=0.6.1-rc6\n'
+            printf 'versionCode=41\n'
             printf 'debuggable=false\n'
           } | tee app/build/outputs/apk/release/build-info.txt
           sha256sum "$apk" | tee app/build/outputs/apk/release/apk-sha256.txt
           "$AAPT" dump xmltree "$apk" AndroidManifest.xml | grep -F 'RealtimeNotificationListenerService'
           ! grep -REn 'activeNotifications|notification\.extras|onNotificationPosted|onNotificationRemoved' \
               app/src/main/java/com/danila/hacustomwidgets/realtime
-          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.6.1-rc5.apk
+          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.6.1-rc6.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HA-Custom-Widgets-v0.6.1-rc5-release
+          name: HA-Custom-Widgets-v0.6.1-rc6-release
           path: |
-            app/build/outputs/apk/release/HAWidgets-v0.6.1-rc5.apk
+            app/build/outputs/apk/release/HAWidgets-v0.6.1-rc6.apk
+            app/build/outputs/bundle/release/app-release.aab
             app/build/outputs/apk/release/signature.txt
             app/build/outputs/apk/release/apk-sha256.txt
             app/build/outputs/apk/release/build-info.txt

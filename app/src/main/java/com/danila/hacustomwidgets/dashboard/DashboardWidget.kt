@@ -824,22 +824,17 @@ class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
                 "widgetIds=${appWidgetIds.joinToString()} source=SYSTEM",
         )
         container.dashboardEvents.ensureStarted("APPWIDGET_UPDATE")
-        if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
-            appWidgetIds.forEach { DashboardLegacyCollection.update(context, it, bind = true) }
-        } else super.onUpdate(context, appWidgetManager, appWidgetIds)
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager,
         appWidgetId: Int, newOptions: android.os.Bundle) {
-        if (LegacyCollectionPolicy.useLegacy(android.os.Build.VERSION.SDK_INT)) {
-            DashboardLegacyCollection.update(context, appWidgetId, bind = true)
-        } else super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val container = (context.applicationContext as HaWidgetApplication).container
         appWidgetIds.forEach(container.dashboards::delete)
-        appWidgetIds.forEach { DashboardLegacyCollection.forget(context, it) }
         container.dashboardEvents.stopIfUnused()
         super.onDeleted(context, appWidgetIds)
     }

@@ -99,13 +99,6 @@ class DashboardRc2PolicyTest {
         val restBefore = VersionedEntityState("timer.t", "idle", "idle", 1_100_000L, 1)
         assertTrue(DashboardStatePolicy.decide(restBefore, delta.state, TimerResetPolicy.timestamp(delta.lastUpdated), null).accept)
     }
-    @Test fun adapterIdentityIsIndependentOfEntityAndSessionRevisions() {
-        assertEquals("hacw://dashboard/42/collection/v1", LegacyCollectionPolicy.adapterIdentity(42))
-        assertNotEquals(LegacyCollectionPolicy.adapterIdentity(42), LegacyCollectionPolicy.adapterIdentity(43))
-        assertFalse(LegacyCollectionPolicy.useLegacy(26))
-        assertFalse(LegacyCollectionPolicy.useLegacy(29))
-        assertFalse(LegacyCollectionPolicy.useLegacy(31))
-    }
     @Test fun sceneIsPlayOnlyEvenWhenItsStateIsUnknown() {
         assertFalse(ScenarioDisplayPolicy.showStateToggle("scene"))
         assertEquals("turn_on", ScenarioPolicy.runService("scene"))

@@ -24,10 +24,4 @@ class DashboardRc5PolicyTest {
         assertEquals(listOf("sensor.temperature", "sensor.humidity", "sensor.battery"),
             defaultMetricOrder(metrics).map { it.entityId })
     }
-
-    @Test fun staticCollectionIsLimitedToLegacyAndroidAndHasStableIdentity() {
-        (26..36).forEach { assertEquals(it <= 30, StableCollectionPolicy.use(it)) }
-        assertEquals(StableCollectionPolicy.identity(42), StableCollectionPolicy.identity(42))
-        assertNotEquals(StableCollectionPolicy.identity(42), StableCollectionPolicy.identity(43))
-    }
 }
