@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -114,20 +115,29 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
 internal enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, GROUP_ORDER, SCENARIOS }
 
 internal data class DashboardGroupingLabelLayoutContract(
+    val leftColumnWeight: Float,
+    val rightColumnWeight: Float,
     val horizontalInsetDp: Int,
     val fillsAvailableWidth: Boolean,
     val textAlign: TextAlign,
     val maxLines: Int,
+    val softWrap: Boolean,
     val overflow: TextOverflow,
 )
 
 internal val dashboardGroupingLabelLayout = DashboardGroupingLabelLayoutContract(
+    leftColumnWeight = 0.58f,
+    rightColumnWeight = 0.42f,
     horizontalInsetDp = 4,
     fillsAvailableWidth = true,
     textAlign = TextAlign.Start,
-    maxLines = 1,
-    overflow = TextOverflow.Ellipsis,
+    maxLines = 2,
+    softWrap = true,
+    overflow = TextOverflow.Clip,
 )
+
+internal fun showGroupOrderButton(grouping: DashboardGrouping?): Boolean =
+    grouping == DashboardGrouping.TYPES
 
 internal fun previousConfigScreen(screen: ConfigScreen): ConfigScreen = when (screen) {
     ConfigScreen.TIMER -> ConfigScreen.ENTITIES
@@ -439,17 +449,35 @@ private fun DashboardOverview(
                         }
                         if (enabled) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(contentPadding = PaddingValues(horizontal = dashboardGroupingLabelLayout.horizontalInsetDp.dp, vertical = 0.dp), modifier = Modifier.weight(1f), onClick = { onCycleGrouping(space.id) }) {
+                                TextButton(contentPadding = PaddingValues(horizontal = dashboardGroupingLabelLayout.horizontalInsetDp.dp, vertical = 0.dp), modifier = Modifier.weight(dashboardGroupingLabelLayout.leftColumnWeight), onClick = { onCycleGrouping(space.id) }) {
                                     Text(
                                         text = dashboardGroupingLabel(grouping[space.id]),
                                         modifier = if (dashboardGroupingLabelLayout.fillsAvailableWidth) Modifier.fillMaxWidth() else Modifier,
                                         textAlign = dashboardGroupingLabelLayout.textAlign,
                                         maxLines = dashboardGroupingLabelLayout.maxLines,
+                                        softWrap = dashboardGroupingLabelLayout.softWrap,
                                         overflow = dashboardGroupingLabelLayout.overflow,
                                     )
                                 }
-                                if (grouping[space.id] == DashboardGrouping.TYPES) {
-                                    TextButton(contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp), modifier = Modifier.weight(1f), onClick = { onOrderGroups(space.id) }) { Text(tr("Group order ›", "Порядок групп ›")) }
+                                Box(
+                                    modifier = Modifier.weight(dashboardGroupingLabelLayout.rightColumnWeight),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (showGroupOrderButton(grouping[space.id])) {
+                                        TextButton(
+                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            onClick = { onOrderGroups(space.id) },
+                                        ) {
+                                            Text(
+                                                text = tr("Group order ›", "Порядок групп ›"),
+                                                textAlign = TextAlign.Center,
+                                                maxLines = dashboardGroupingLabelLayout.maxLines,
+                                                softWrap = dashboardGroupingLabelLayout.softWrap,
+                                                overflow = dashboardGroupingLabelLayout.overflow,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
