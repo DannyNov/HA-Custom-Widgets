@@ -1,4 +1,4 @@
-name: v0.6.1-rc7 compile and tests
+name: v0.6.1 compile and tests
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: v0.6.1-rc7-test-results
+          name: v0.6.1-test-results
           path: app/build/test-results/testDebugUnitTest
           if-no-files-found: error
 
@@ -87,7 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v0.6.1-rc7-glance-api-${{ matrix.api }}
+          name: v0.6.1-glance-api-${{ matrix.api }}
           path: |
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v0.6.1-rc7-upgrade-${{ matrix.source }}-api-31
+          name: v0.6.1-upgrade-${{ matrix.source }}-api-31
           path: |
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected

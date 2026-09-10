@@ -54,7 +54,7 @@ jobs:
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
           badging="$($AAPT dump badging "$apk")"
-          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='42' versionName='0.6.1-rc7'"
+          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='43' versionName='0.6.1'"
           printf '%s\n' "$badging" | grep -Fx "sdkVersion:'31'"
           printf '%s\n' "$badging" | grep -Fx "targetSdkVersion:'36'"
           if printf '%s\n' "$badging" | grep -q '^application-debuggable:'; then
@@ -63,20 +63,20 @@ jobs:
           fi
           {
             printf 'applicationId=com.danila.hacustomwidgets\n'
-            printf 'versionName=0.6.1-rc7\n'
-            printf 'versionCode=42\n'
+            printf 'versionName=0.6.1\n'
+            printf 'versionCode=43\n'
             printf 'debuggable=false\n'
           } | tee app/build/outputs/apk/release/build-info.txt
           sha256sum "$apk" | tee app/build/outputs/apk/release/apk-sha256.txt
           "$AAPT" dump xmltree "$apk" AndroidManifest.xml | grep -F 'RealtimeNotificationListenerService'
           ! grep -REn 'activeNotifications|notification\.extras|onNotificationPosted|onNotificationRemoved' \
               app/src/main/java/com/danila/hacustomwidgets/realtime
-          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.6.1-rc7.apk
+          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.6.1.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HA-Custom-Widgets-v0.6.1-rc7-release
+          name: HA-Custom-Widgets-v0.6.1-release
           path: |
-            app/build/outputs/apk/release/HAWidgets-v0.6.1-rc7.apk
+            app/build/outputs/apk/release/HAWidgets-v0.6.1.apk
             app/build/outputs/bundle/release/app-release.aab
             app/build/outputs/apk/release/signature.txt
             app/build/outputs/apk/release/apk-sha256.txt
