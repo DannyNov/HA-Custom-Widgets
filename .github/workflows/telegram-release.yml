@@ -3,18 +3,24 @@ name: Telegram final release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing final release tag (check prior delivery before dispatch)'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: telegram-release-${{ github.event.release.id }}
+  group: telegram-release-${{ github.event.release.tag_name || inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
   notify:
     # Never resend on rerun, including after an ambiguous network failure.
-    if: ${{ !github.event.release.draft && !github.event.release.prerelease && github.run_attempt == 1 }}
+    if: ${{ github.run_attempt == 1 && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && !github.event.release.draft && !github.event.release.prerelease)) }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish once to the channel
@@ -22,17 +28,27 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         with:
           script: |
-            const release = context.payload.release;
-            if (!/^v?\d+\.\d+\.\d+(?:\.\d+)?$/.test(release.tag_name)) {
-              core.notice('Not a final version tag; skipped.');
+            const manual = context.eventName === 'workflow_dispatch';
+            const tag = manual ? process.env.RELEASE_TAG : context.payload.release?.tag_name;
+            if (!/^v?\d+\.\d+\.\d+(?:\.\d+)?$/.test(tag || '')) {
+              if (manual) core.setFailed('Enter an existing final version tag.');
+              else core.notice('Not a final version tag; skipped.');
+              return;
+            }
+            const release = manual
+              ? (await github.rest.repos.getReleaseByTag({...context.repo, tag})).data
+              : context.payload.release;
+            if (release.tag_name !== tag || release.draft || release.prerelease) {
+              core.setFailed('Release must match the requested tag and be final, not draft or prerelease.');
               return;
             }
             const token = process.env.TELEGRAM_BOT_TOKEN;
             const chatId = process.env.TELEGRAM_CHAT_ID;
             if (!token || !chatId) {
-              core.notice('Telegram secrets are missing; no message sent. Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID for future releases.');
+              core.setFailed('Telegram secrets are missing; no message sent.');
               return;
             }
             // Do not log request URLs or exceptions: they may contain the token.
@@ -56,21 +72,23 @@ jobs:
               core.setFailed('Destination must be the HACustomWidgets channel.');
               return;
             }
-            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
-              ...context.repo, release_id: release.id, per_page: 100
-            });
-            const apk = assets.find(a => a.state === 'uploaded' && a.name === `HAWidgets-${release.tag_name}.apk`)
-              || assets.find(a => a.state === 'uploaded' && a.name.toLowerCase().endsWith('.apk'));
-            const title = `${release.name || release.tag_name} (${release.tag_name})`.slice(0, 300);
-            const footer = `\n\nGitHub Release: ${release.html_url}` + (apk ? `\nAPK: ${apk.browser_download_url}` : '');
+            // Keep release prose and link labels, with the Release page as the only URL.
+            // This transforms only the Telegram copy, never the GitHub Release.
+            const withoutUrls = text => text
+              .replace(/!?\[([^\]]*)\]\(https?:\/\/[^\s)]+\)/gi, '$1')
+              .replace(/https?:\/\/[^\s<>]+/gi, '')
+              .replace(/www\.[^\s<>]+/gi, '');
+            const title = withoutUrls(`${release.name || release.tag_name} (${release.tag_name})`).slice(0, 300);
+            const footer = `\n\nGitHub Release: ${release.html_url}`;
             // Plain text: no Markdown/HTML parsing, shell interpolation or code evaluation.
             // JS length counts UTF-16 units, conservatively handling emoji as well.
             const budget = Math.max(0, 4000 - title.length - footer.length - 4);
-            const body = release.body || 'Новая версия опубликована.';
+            const body = withoutUrls(release.body || 'Новая версия опубликована.');
             const excerpt = body.length > budget ? body.slice(0, Math.max(0, budget - 1)).replace(/[\uD800-\uDBFF]$/, '') + '…' : body;
             const sent = await telegram('sendMessage', {
               chat_id: chat.id,
               text: `${title}\n\n${excerpt}${footer}`,
               link_preview_options: {is_disabled: true}
             });
-            await core.summary.addRaw(`Telegram message sent: ${sent.message_id}`).write();
+            core.info(`Telegram message sent: ${sent.message_id}; release tag: ${tag}`);
+            await core.summary.addRaw(`Telegram message sent: ${sent.message_id}\nRelease: ${release.html_url}\nDestination: @HACustomWidgets\nOnly URL: GitHub Release (no direct APK link).`).write();
