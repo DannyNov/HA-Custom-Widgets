@@ -9,6 +9,11 @@ on:
         description: 'Existing final release tag (check prior delivery before dispatch)'
         required: true
         type: string
+      replace_v061_message_4:
+        description: 'Replace only v0.6.1 message 4 in @HACustomWidgets (delete, then send)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -29,6 +34,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          REPLACE_V061_MESSAGE_4: ${{ inputs.replace_v061_message_4 }}
         with:
           script: |
             const manual = context.eventName === 'workflow_dispatch';
@@ -72,22 +78,62 @@ jobs:
               core.setFailed('Destination must be the HACustomWidgets channel.');
               return;
             }
-            // Keep release prose and link labels, with the Release page as the only URL.
+            // Only an explicitly curated announcement may become Telegram prose.
             // This transforms only the Telegram copy, never the GitHub Release.
             const withoutUrls = text => text
               .replace(/!?\[([^\]]*)\]\(https?:\/\/[^\s)]+\)/gi, '$1')
               .replace(/https?:\/\/[^\s<>]+/gi, '')
               .replace(/www\.[^\s<>]+/gi, '');
-            const title = withoutUrls(`${release.name || release.tag_name} (${release.tag_name})`).slice(0, 300);
+            const releaseName = withoutUrls(release.name || tag).trim();
+            const title = (releaseName.includes(tag) ? releaseName : `${releaseName} (${tag})`).slice(0, 300);
             const footer = `\n\nGitHub Release: ${release.html_url}`;
-            // Plain text: no Markdown/HTML parsing, shell interpolation or code evaluation.
-            // JS length counts UTF-16 units, conservatively handling emoji as well.
-            const budget = Math.max(0, 4000 - title.length - footer.length - 4);
-            const body = withoutUrls(release.body || 'Новая версия опубликована.');
-            const excerpt = body.length > budget ? body.slice(0, Math.max(0, budget - 1)).replace(/[\uD800-\uDBFF]$/, '') + '…' : body;
+            // Require exactly one correctly ordered pair; never fall back to full release prose.
+            const source = release.body || '';
+            const startMarker = '<!-- telegram:start -->';
+            const endMarker = '<!-- telegram:end -->';
+            const start = source.indexOf(startMarker);
+            const end = source.indexOf(endMarker);
+            const validBlock = start >= 0 && end > start
+              && source.indexOf(startMarker, start + startMarker.length) === -1
+              && source.indexOf(endMarker, end + endMarker.length) === -1;
+            const announcement = validBlock
+              ? withoutUrls(source.slice(start + startMarker.length, end)).trim() : '';
+            const fallback = 'RU: Новая версия опубликована.\n\nEN: A new release is available.';
+            // Fail closed to a short fallback for oversized or diagnostic blocks.
+            const diagnostics = /build identity|package\s*:|versioncode|minSdk|targetSdk|certificate|(?:commit|APK|source)\s*(?:SHA|:)|SHA[-\s]?256|\bCI\s*:|(?:unit|regression|host)\s+tests?|test\s+counts?/i;
+            const body = announcement && announcement.length <= 1200 && !diagnostics.test(announcement)
+              ? announcement : fallback;
+            // Plain text, one Release URL, with no Markdown/HTML parsing.
+            const message = `${title}\n\n${body}${footer}`;
+            if (message.length > 2000) {
+              core.setFailed('Announcement exceeds the short-message limit; nothing sent.');
+              return;
+            }
+            const replacing = process.env.REPLACE_V061_MESSAGE_4 === 'true';
+            if (replacing) {
+              if (!manual || tag !== 'v0.6.1' || !announcement || body === fallback) {
+                core.setFailed('Replacement requires manual v0.6.1 with a valid short announcement.');
+                return;
+              }
+              // This bot sent message 4. can_post_messages permits deleting its own channel posts.
+              const bot = await telegram('getMe', {});
+              const member = await telegram('getChatMember', {chat_id: chat.id, user_id: bot.id});
+              if (member.status !== 'administrator' || !(member.can_post_messages || member.can_delete_messages)) {
+                core.setFailed('Deletion requires can_post_messages for this bot own post, or can_delete_messages. No permissions changed; nothing deleted or sent.');
+                return;
+              }
+              // No retries: an ambiguous delete must never lead to an extra post.
+              const deleted = await telegram('deleteMessage', {chat_id: chat.id, message_id: 4});
+              if (deleted !== true) {
+                core.setFailed('Deletion of message 4 was not confirmed; nothing sent.');
+                return;
+              }
+              core.info('Deleted message 4 in @HACustomWidgets.');
+              await core.summary.addRaw('Deleted message 4 in @HACustomWidgets.\n').write();
+            }
             const sent = await telegram('sendMessage', {
               chat_id: chat.id,
-              text: `${title}\n\n${excerpt}${footer}`,
+              text: message,
               link_preview_options: {is_disabled: true}
             });
             core.info(`Telegram message sent: ${sent.message_id}; release tag: ${tag}`);
