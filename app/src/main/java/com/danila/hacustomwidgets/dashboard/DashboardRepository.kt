@@ -122,12 +122,13 @@ class DashboardRepository(context: Context) {
     }
 
     @Synchronized
-    fun requiresCatalogRefresh(appWidgetId: Int): Boolean {
+    fun requiresCatalogRefresh(appWidgetId: Int, now: Long = System.currentTimeMillis()): Boolean {
         ensureMigrated(appWidgetId)
         val structure = structurePrefs.getString(structureKey(appWidgetId), null)?.let {
             runCatching { JSONObject(it) }.getOrNull()
         } ?: return true
-        return structure.optInt("schema", 0) < STORAGE_SCHEMA_VERSION
+        return structure.optInt("schema", 0) < STORAGE_SCHEMA_VERSION ||
+            DashboardCatalogPolicy.isDue(structure.optLong("catalog_updated_at", 0L), now)
     }
 
     @Synchronized
@@ -136,8 +137,8 @@ class DashboardRepository(context: Context) {
         val catalogSpaceIds = catalog.spaces().map { it.id }
         val migrated = migrateLegacyUnassigned(storedConfig, catalog)
         val config = migrated.copy(
-            visibleSpaceIds = migrated.visibleSpaceIds.filter { it in catalogSpaceIds },
-            spaceOrderIds = DashboardOrderPolicy.merge(migrated.spaceOrderIds, catalogSpaceIds),
+            // Missing objects are excluded by presentation, not erased from user preferences.
+            spaceOrderIds = DashboardCustomizationPolicy.mergeRetainingMissing(migrated.spaceOrderIds, catalogSpaceIds),
         )
         if (config != storedConfig) {
             configPrefs.edit().putString(key(appWidgetId, "config"), config.toJson().toString()).apply()
@@ -167,6 +168,7 @@ class DashboardRepository(context: Context) {
         }.distinctBy { it.entityId }
         val structure = JSONObject()
             .put("schema", STORAGE_SCHEMA_VERSION)
+            .put("catalog_updated_at", System.currentTimeMillis())
             .put("spaces", spacesJson(spaces))
             .put("cards", cardsJson(cards))
             .put("scenarios", scenariosJson(scenarios))
@@ -533,9 +535,7 @@ class DashboardRepository(context: Context) {
             listOfNotNull(SCENARIOS_TAB_ID.takeIf { config.scenariosEnabled })
         val storedTab = configPrefs.getString(key(appWidgetId, "selected_tab"), MAIN_TAB_ID) ?: MAIN_TAB_ID
         val selectedTab = DashboardStatePolicy.resolveSelectedTab(storedTab, visibleTabs)
-        if (selectedTab != storedTab) {
-            configPrefs.edit().putString(key(appWidgetId, "selected_tab"), selectedTab).apply()
-        }
+        // Fall back while a space is absent, retaining the user's tab for its return.
         val result = DashboardState(
             config = config,
             spaces = spaces,
@@ -651,7 +651,7 @@ class DashboardRepository(context: Context) {
                     buildList {
                         addAll(card.metrics.map { it.entityId })
                         addAll(card.controls.map { it.entityId })
-                        card.autoOffTimer?.timerEntityId?.let(::add)
+                        card.timerState?.entityId?.let(::add)
                     }
                 }.plus(scenarios.map { it.entityId }).distinct()
                 val areaCards = cards.filter { it.areaId != null }.groupBy { requireNotNull(it.areaId) }

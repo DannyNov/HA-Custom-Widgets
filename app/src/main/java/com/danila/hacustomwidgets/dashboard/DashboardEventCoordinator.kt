@@ -5,6 +5,8 @@ import android.os.SystemClock
 import android.util.Log
 import com.danila.hacustomwidgets.data.WidgetRepository
 import com.danila.hacustomwidgets.data.model.HaEntity
+import com.danila.hacustomwidgets.data.model.HaCatalog
+import com.danila.hacustomwidgets.data.security.HomeAssistantConnection
 import com.danila.hacustomwidgets.data.remote.EntitySubscriptionMode
 import com.danila.hacustomwidgets.data.remote.HomeAssistantClient
 import com.danila.hacustomwidgets.data.remote.StateChangedWebSocketListener
@@ -33,6 +35,8 @@ class DashboardEventCoordinator(
     private val dashboards: DashboardRepository,
     private val widgets: WidgetRepository,
     private val widgetRenders: EntityWidgetRenderCoordinator,
+    private val fetchCatalog: suspend (HomeAssistantConnection) -> HaCatalog = client::getCatalog,
+    private val fetchEntities: suspend (HomeAssistantConnection, List<String>) -> List<HaEntity> = client::getEntities,
 ) {
     private val appContext = context.applicationContext
     private val syncPrefs = appContext.getSharedPreferences("dashboard_sync_freshness", Context.MODE_PRIVATE)
@@ -101,7 +105,7 @@ class DashboardEventCoordinator(
 
     fun screenInteractiveChanged(interactive: Boolean) {
         screenInteractive = interactive
-        if (interactive) ensureStarted("SCREEN_ON", reconcileIfStale = false)
+        if (interactive) ensureStarted("SCREEN_ON", reconcileIfStale = true)
         else invalidateGeneration("screen_off", reconnect = false)
     }
 
@@ -154,24 +158,31 @@ class DashboardEventCoordinator(
         if (dashboardConfigs.isEmpty() && deviceConfigs.isEmpty()) return@withLock true
         val now = System.currentTimeMillis()
         val allIds = dashboardConfigs.map { it.appWidgetId } + deviceConfigs.map { it.appWidgetId }
-        if (allIds.all { lastSyncAt(it) >= requestedAt } ||
-            (!force && allIds.all { DashboardEventPolicy.isSnapshotFresh(lastSyncAt(it), now) })
+        val catalogConfigs = dashboardConfigs.filter {
+            source == DashboardStateSource.MANUAL_REFRESH || dashboards.requiresCatalogRefresh(it.appWidgetId, now)
+        }
+        if ((catalogConfigs.isEmpty() && allIds.all { lastSyncAt(it) >= requestedAt }) ||
+            (catalogConfigs.isEmpty() && !force && allIds.all { DashboardEventPolicy.isSnapshotFresh(lastSyncAt(it), now) })
         ) return@withLock true
         val started = SystemClock.elapsedRealtime()
         counters.restReconciliations.incrementAndGet()
         log("RECONCILE_START", "source=$reason dashboards=${dashboardConfigs.size} deviceWidgets=${deviceConfigs.size}")
         try {
             val connection = connectionStore.load() ?: return@withLock false
-            val normal = dashboardConfigs.filterNot { dashboards.requiresCatalogRefresh(it.appWidgetId) }
+            val normal = dashboardConfigs.filterNot { it in catalogConfigs }
             val ids = (normal.flatMap { dashboards.entityIds(it.appWidgetId) } +
                 deviceConfigs.flatMap { config -> config.metrics.map { it.entityId } }).distinct()
-            val byId = if (ids.isEmpty()) emptyMap() else client.getEntities(connection, ids).associateBy(HaEntity::entityId)
+            // One complete fetch serves every due Dashboard and supplies states for other widgets.
+            // Fetch before applying anything; failure keeps the old snapshot and freshness intact.
+            val catalog = if (catalogConfigs.isEmpty()) null else fetchCatalog(connection)
+            val byId = catalog?.groups?.flatMap { it.entities }?.associateBy(HaEntity::entityId)
+                ?: if (ids.isEmpty()) emptyMap() else fetchEntities(connection, ids).associateBy(HaEntity::entityId)
             normal.forEach { config ->
                 val entities = dashboards.entityIds(config.appWidgetId).mapNotNull(byId::get)
                 if (entities.isNotEmpty()) dashboards.updateEntityStates(config.appWidgetId, entities, source)
             }
-            dashboardConfigs.filter { it !in normal }.forEach { config ->
-                dashboards.updateFromCatalog(config.appWidgetId, client.getCatalog(connection))
+            catalogConfigs.forEach { config ->
+                dashboards.updateFromCatalog(config.appWidgetId, requireNotNull(catalog))
             }
             deviceConfigs.forEach { config ->
                 widgets.updateStates(config.appWidgetId, config.metrics.mapNotNull { byId[it.entityId] })
