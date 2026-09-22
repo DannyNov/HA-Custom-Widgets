@@ -148,7 +148,12 @@ class DashboardRepository(context: Context) {
         val allEntities = catalog.groups.flatMap { it.entities }.distinctBy { it.entityId }
         val entitiesById = allEntities.associateBy { it.entityId }
         val assignedTimerIds = CompositeTimerPresentationPolicy.assignedTimerIds(config.autoOffTimersByDevice)
-        val previousCardOrder = structure(appWidgetId)?.cards.orEmpty().map { it.key }
+        val previousCards = structure(appWidgetId)?.cards.orEmpty()
+        val previousCatalogAt = structurePrefs.getString(structureKey(appWidgetId), null)
+            ?.let { runCatching { JSONObject(it).optLong("catalog_updated_at", 0L) }.getOrDefault(0L) } ?: 0L
+        // v0.6.1 sorted at render time; seed the retained order from what users actually saw.
+        val previousCardOrder = (if (previousCatalogAt == 0L) previousCards.sortedBy { it.title.lowercase() }
+            else previousCards).map { it.key }
         val cardsByKey = catalog.groups.mapNotNull { group ->
             group.copy(entities = group.entities.filterNot {
                 it.domain in SCENARIO_DOMAINS || it.entityId in assignedTimerIds
