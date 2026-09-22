@@ -164,6 +164,8 @@ class DashboardCatalogRegressionTest {
         f.remote = catalog(group("other", "B"), group("old", "Z"), group("new", "C"))
         f.expire(809); assertTrue(f.sync())
         assertEquals(listOf("old", "other", "new"), f.repo.get(809)!!.cards.map { it.key })
+        assertEquals(listOf("old", "other", "new"), f.repo.get(809)!!.cards.orderedBy(null).map { it.key })
+        assertEquals(listOf("other", "old", "new"), f.repo.get(809)!!.cards.orderedBy(listOf("other")).map { it.key })
         assertEquals(cfg, f.repo.getConfig(809))
         assertEquals(listOf("old", "other", "new"), DashboardRepository(f.context).get(809)!!.cards.map { it.key })
     }
