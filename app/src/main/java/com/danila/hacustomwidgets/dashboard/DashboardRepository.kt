@@ -148,13 +148,18 @@ class DashboardRepository(context: Context) {
         val allEntities = catalog.groups.flatMap { it.entities }.distinctBy { it.entityId }
         val entitiesById = allEntities.associateBy { it.entityId }
         val assignedTimerIds = CompositeTimerPresentationPolicy.assignedTimerIds(config.autoOffTimersByDevice)
-        val cards = catalog.groups.mapNotNull { group ->
+        val previousCardOrder = structure(appWidgetId)?.cards.orEmpty().map { it.key }
+        val cardsByKey = catalog.groups.mapNotNull { group ->
             group.copy(entities = group.entities.filterNot {
                 it.domain in SCENARIO_DOMAINS || it.entityId in assignedTimerIds
             })
                 .takeIf { it.entities.isNotEmpty() }
                 ?.toDashboardCard(config, areaNames, entitiesById)
-        }
+        }.associateBy { it.key }
+        // Catalog transport is name-sorted. Keep existing positions on rename; append new cards.
+        val cards = DashboardCustomizationPolicy.mergeRetainingMissing(
+            previousCardOrder, cardsByKey.values.sortedBy { it.title.lowercase() }.map { it.key },
+        ).mapNotNull(cardsByKey::get)
         val scenarios = catalog.groups.flatMap { group ->
             group.entities.filter { it.domain in SCENARIO_DOMAINS }.map { entity ->
                 DashboardScenarioAction(

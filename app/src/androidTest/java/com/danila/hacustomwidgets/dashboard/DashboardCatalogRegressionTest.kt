@@ -156,4 +156,15 @@ class DashboardCatalogRegressionTest {
         assertEquals("Renamed floor", f.repo.get(808)!!.spaces.single().name)
         assertEquals(cfg, f.repo.getConfig(808))
     }
+    @Test fun renameRetainsDefaultCardPositionWithoutAnExplicitUserOrder() = runBlocking {
+        val cfg = config(809).copy(cardOrderBySpace = emptyMap())
+        val f = Fixture(isolated(), catalog(group("old", "A"), group("other", "B")), cfg)
+        assertEquals(listOf("old", "other"), f.repo.get(809)!!.cards.map { it.key })
+        // getCatalog returns groups sorted by their current names, reversing these two cards.
+        f.remote = catalog(group("other", "B"), group("old", "Z"), group("new", "C"))
+        f.expire(809); assertTrue(f.sync())
+        assertEquals(listOf("old", "other", "new"), f.repo.get(809)!!.cards.map { it.key })
+        assertEquals(cfg, f.repo.getConfig(809))
+        assertEquals(listOf("old", "other", "new"), DashboardRepository(f.context).get(809)!!.cards.map { it.key })
+    }
 }

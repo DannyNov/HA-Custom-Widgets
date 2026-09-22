@@ -790,7 +790,7 @@ private fun scenarioSections(state: DashboardState): List<DashboardSection> {
 }
 
 private fun List<DashboardCard>.orderedBy(order: List<String>?): List<DashboardCard> {
-    if (order.isNullOrEmpty()) return sortedBy { it.title.lowercase() }
+    if (order.isNullOrEmpty()) return this
     val rank = order.withIndex().associate { it.value to it.index }
     return sortedWith(compareBy<DashboardCard> { rank[it.key] ?: Int.MAX_VALUE }.thenBy { it.title.lowercase() })
 }
