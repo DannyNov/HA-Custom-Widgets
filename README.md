@@ -12,7 +12,7 @@
   <img src="docs/images/feature-en.png" alt="HA Custom Widgets">
 </p>
 
-Native Android home-screen widgets for Home Assistant. The app connects directly to the Home Assistant address configured by the user. Entity, device, area and floor names remain unchanged.
+Native Android home-screen widgets for Home Assistant. Build a customizable dashboard with device controls, sensors, timers and scenarios. The app connects directly to the Home Assistant address configured by the user. Entity, device, area and floor names remain unchanged.
 
 Russian system locales use the Russian interface. Every other locale uses English.
 
@@ -54,7 +54,7 @@ Manual automation launch preserves its conditions (`skip_condition=false`). A di
 
 ## Installation
 
-1. Download `HAWidgets-v0.6.0.3.apk` from the GitHub Release.
+1. Open the [latest GitHub Release](https://github.com/DannyNov/HA-Custom-Widgets/releases/latest) and download the APK (`HAWidgets-v*.apk`) from **Assets**.
 2. Allow APK installation from the browser or file manager used to open it.
 3. Install the APK and open **HA Custom Widgets**.
 4. Enter the Home Assistant URL and Long-Lived Access Token, then select **Check and save**.
