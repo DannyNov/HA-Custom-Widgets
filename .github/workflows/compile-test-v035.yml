@@ -9,6 +9,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Verify Final provenance and monotonically increasing version
+        shell: bash
+        run: |
+          set -euo pipefail
+          rc=7fe94a6bee9c0994161a046b73f978b37074043c
+          test "$(git rev-parse v0.6.1.1-rc1^{commit})" = "$rc"
+          git diff --exit-code "$rc" HEAD -- app/src app/proguard-rules.pro build.gradle.kts settings.gradle.kts gradle.properties gradle
+          python3 - <<'PY'
+          import re, subprocess
+          from pathlib import Path
+          rc = "7fe94a6bee9c0994161a046b73f978b37074043c"
+          old = subprocess.check_output(["git", "show", f"{rc}:app/build.gradle.kts"], text=True)
+          final = Path("app/build.gradle.kts").read_text()
+          expected = old.replace("versionCode = 45", "versionCode = 46").replace('versionName = "0.6.1.1-rc1"', 'versionName = "0.6.1.1"')
+          assert final == expected, "Only the two final version values may change in app/build.gradle.kts"
+          history = subprocess.check_output(["git", "log", "--all", "-p", "--", "app/build.gradle.kts"], text=True)
+          codes = [int(x) for x in re.findall(r"^[+ -]\s*versionCode\s*=\s*(\d+)", history, re.M)]
+          assert codes and max(codes) == 46, f"Unexpected historical maximum: {max(codes, default=0)}"
+          assert 46 > 45
+          print("FINAL_PROVENANCE_PASS: production, resources, manifest, tests and dependencies unchanged from RC1; versionCode=46")
+          PY
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -102,6 +125,8 @@ jobs:
             ref: f8c7a9c8a9a11d823873a274ae9f2eb340314499
           - source: rc6
             ref: 7cd3cc5ca5238cd330c7dedf91f107f33bc3e737
+          - source: v0.6.1.1-rc1
+            ref: 7fe94a6bee9c0994161a046b73f978b37074043c
           - source: v0.6.1
             ref: 8de943565dee235213ae5abb3e87f7bbd08179f2
     steps:
@@ -148,9 +173,9 @@ jobs:
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
 
-  publish-rc1:
-    # Explicit, one-release authorization. Never publishes from PRs, main or arbitrary tags.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/catalog-refresh-0.6.1.1'
+  prepare-final:
+    # User approved RC1 on a physical phone. Prepare this Final only after main CI passes.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [compile-test, glance-host, upgrade]
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -158,11 +183,11 @@ jobs:
       actions: read
       contents: write
     concurrency:
-      group: publish-v0.6.1.1-rc1
+      group: prepare-v0.6.1.1
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
-      - name: Publish the authorized RC after tests and signed build
+      - name: Prepare authorized Final draft after tests and signed build
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -171,16 +196,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag=v0.6.1.1-rc1
+          tag=v0.6.1.1
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
-          grep -F 'versionName = "0.6.1.1-rc1"' app/build.gradle.kts
-          grep -F 'versionCode = 45' app/build.gradle.kts
+          grep -F 'versionName = "0.6.1.1"' app/build.gradle.kts
+          grep -F 'versionCode = 46' app/build.gradle.kts
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo 'RC already exists; refusing to replace it.' >&2
+            echo 'Final already exists; refusing to replace it.' >&2
             exit 1
           fi
           if test -n "$(git ls-remote origin "refs/tags/$tag")"; then
-            echo 'RC tag already exists; refusing to reuse it.' >&2
+            echo 'Final tag already exists; refusing to reuse it.' >&2
             exit 1
           fi
           # The signing workflow is independent. Accept only a successful push build of this SHA.
@@ -197,51 +222,28 @@ jobs:
             sleep 30
           done
           test -n "$signed_run"
-          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.1.1-rc1-release --dir rc-assets
+          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.1.1-release --dir rc-assets
           asset_dir=rc-assets/apk/release
-          apk="$asset_dir/HAWidgets-v0.6.1.1-rc1.apk"
+          apk="$asset_dir/HAWidgets-v0.6.1.1.apk"
           test -s "$apk"
           grep -Fx 'applicationId=com.danila.hacustomwidgets' "$asset_dir/build-info.txt"
-          grep -Fx 'versionName=0.6.1.1-rc1' "$asset_dir/build-info.txt"
-          grep -Fx 'versionCode=45' "$asset_dir/build-info.txt"
+          grep -Fx 'versionName=0.6.1.1' "$asset_dir/build-info.txt"
+          grep -Fx 'versionCode=46' "$asset_dir/build-info.txt"
           grep -Fx 'debuggable=false' "$asset_dir/build-info.txt"
           grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' "$asset_dir/signature.txt"
           apk_sha=$(sha256sum "$apk" | cut -d ' ' -f 1)
           test "$apk_sha" = "$(cut -d ' ' -f 1 "$asset_dir/apk-sha256.txt")"
-          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.1.1-rc1.apk > "$asset_dir/apk-sha256.txt"
+          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.1.1.apk > "$asset_dir/apk-sha256.txt"
           printf 'sourceCommit=%s\n' "$SOURCE_SHA" >> "$asset_dir/build-info.txt"
-          cat > rc-notes.md <<EOF
-          ## Русский
-
-          Публичная тестовая версия для Android 12+. Финальный релиз ещё не одобрен: требуется физическая проверка.
-
-          - Исправлено автоматическое появление новых устройств и обновление названий в Dashboard без открытия настроек.
-          - Каталог обновляется через фоновую синхронизацию с интервалом 15 минут и при возвращении на экран, если устарел. Android может задержать фоновый запуск. Ручное обновление получает каталог сразу.
-          - Сохранены пользовательские порядок, видимость, избранное, группировка, сценарии и настройки таймеров. Учтены удаление и перенос объектов между помещениями.
-          - Установите APK поверх v0.6.1 без удаления приложения. Проверьте добавление и переименование без открытия настроек, удаление/перемещение, сохранность порядка/видимости/таймеров.
-
-          ## English
-
-          Public test candidate for Android 12+. Physical verification is required before Final approval.
-
-          Fixes automatic Dashboard catalog discovery and renamed devices/entities/spaces. Preserves user configuration, handles removal and area changes, and keeps state-only updates lightweight. Catalog freshness is 15 minutes, checked by background and foreground reconciliation; Android may defer background execution. Manual refresh reloads the catalog immediately.
-
-          Install over v0.6.1 without uninstalling. Test additions, renames, removals/area moves and retained ordering, visibility and timers.
-
-          ## Build identity
-
-          - Version: 0.6.1.1-rc1 / 45
-          - Package: com.danila.hacustomwidgets; minSdk 31; targetSdk 36; debuggable=false
-          - Source commit: $SOURCE_SHA
-          - APK SHA-256: $apk_sha
-          - Signing certificate SHA-256: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a
-          - Tests: https://github.com/$GH_REPO/actions/runs/$TEST_RUN_ID
-          - Signed build: https://github.com/$GH_REPO/actions/runs/$signed_run
-
-          No Telegram announcement for this RC. Final requires the user's physical-test confirmation and unchanged production code from the approved RC.
-          EOF
-          # Upload while draft, then publish only as Pre-release, never Latest.
+          cp RELEASE_NOTES_v0.6.1.1.md final-notes.md
+          {
+            printf '\n## Verified build\n\n'
+            printf -- '- Final commit: %s\n' "$SOURCE_SHA"
+            printf -- '- APK SHA-256: %s\n' "$apk_sha"
+            printf -- '- CI: https://github.com/%s/actions/runs/%s\n' "$GH_REPO" "$TEST_RUN_ID"
+            printf -- '- Signed build: https://github.com/%s/actions/runs/%s\n' "$GH_REPO" "$signed_run"
+          } >> final-notes.md
+          # A user-session publication of this verified draft triggers the existing Telegram release workflow.
           gh release create "$tag" "$apk" "$asset_dir/apk-sha256.txt" "$asset_dir/build-info.txt" "$asset_dir/signature.txt" \
-            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.1.1-rc1' --notes-file rc-notes.md --draft --prerelease --latest=false
-          gh release edit "$tag" --draft=false --prerelease --latest=false
+            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.1.1' --notes-file final-notes.md --draft
           gh release view "$tag" --json url,isDraft,isPrerelease,tagName,targetCommitish

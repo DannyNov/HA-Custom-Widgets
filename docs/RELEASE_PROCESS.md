@@ -10,4 +10,4 @@ Required flow: development → automated tests/CI → public GitHub Pre-release 
 - Final receives the ordinary GitHub Release and short RU/EN Telegram announcement to `@HACustomWidgets`. The existing Telegram workflow must continue excluding draft, prerelease and RC tags. Do not manually dispatch an RC announcement.
 - Keep application ID, permanent signing identity, Android 12+ / minSdk 31 / targetSdk 36, Glance, and HA-owned timer auto-off unchanged unless explicitly authorized separately.
 
-Current authorization: publish only `v0.6.1.1-rc1` after successful CI. Code 44 was used for internal corrective candidates, so RC1 uses 45. No authorization to publish Final `v0.6.1.1` or merge to main has been given.
+Current authorization (2026-09-25): the user successfully tested v0.6.1.1-rc1 on a physical phone and explicitly approved Final v0.6.1.1 and merging to main. RC1 is 7fe94a6bee9c0994161a046b73f978b37074043c / versionCode 45. Final uses versionCode 46, above the verified historical production/RC/diagnostic maximum of 45, with identical production sources and dependencies. Only final version/release metadata and an additional RC1 upgrade matrix entry are changed.
