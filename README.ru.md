@@ -11,10 +11,10 @@
 <p align="center">
   <a href="https://github.com/DannyNov/HA-Custom-Widgets/releases/latest"><img src="https://img.shields.io/github/v/release/DannyNov/HA-Custom-Widgets?style=flat&amp;label=release&amp;color=007EC6" alt="Release"></a>
   <a href="https://github.com/DannyNov/HA-Custom-Widgets" title="Open the repository and click Star"><img src="https://img.shields.io/github/stars/DannyNov/HA-Custom-Widgets?style=flat&amp;label=stars&amp;color=DFB317" alt="GitHub stars"></a>
-  <img src="https://img.shields.io/badge/Android-12%2B-3DDC84?style=flat&amp;logo=android&amp;logoColor=white" alt="Android 12+ (API 31+)">
+  <a href="#требования"><img src="https://img.shields.io/badge/Android-12%2B-3DDC84?style=flat&amp;logo=android&amp;logoColor=white" alt="Android 12+ (API 31+)"></a>
   <a href="https://github.com/DannyNov/HA-Custom-Widgets/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-007EC6?style=flat" alt="License: Apache 2.0"></a>
-  <img src="https://img.shields.io/badge/Kotlin-7F52FF?style=flat&amp;logo=kotlin&amp;logoColor=white" alt="Kotlin">
-  <img src="https://img.shields.io/badge/Home%20Assistant-18BCF2?style=flat&amp;logo=homeassistant&amp;logoColor=white" alt="Home Assistant">
+  <a href="https://github.com/DannyNov/HA-Custom-Widgets/tree/main/app/src/main/java/com/danila/hacustomwidgets"><img src="https://img.shields.io/badge/Kotlin-7F52FF?style=flat&amp;logo=kotlin&amp;logoColor=white" alt="Kotlin"></a>
+  <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/Home%20Assistant-18BCF2?style=flat&amp;logo=homeassistant&amp;logoColor=white" alt="Home Assistant"></a>
 </p>
 
 <p align="center">
