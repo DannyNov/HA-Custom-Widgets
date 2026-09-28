@@ -17,7 +17,7 @@ class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val container = (applicationContext as HaWidgetApplication).container
         container.dashboardEvents.workerStarted("PERIODIC_SYNC")
         container.connectionStore.load() ?: return Result.success()
-        val hasWidgets = container.dashboards.all().isNotEmpty() || container.widgets.all().isNotEmpty()
+        val hasWidgets = container.dashboards.all().isNotEmpty()
         if (!hasWidgets) return Result.success()
         container.dashboardEvents.ensureStarted("PERIODIC_WORK", reconcileIfStale = false)
         val success = container.dashboardEvents.reconcileNow(
@@ -25,12 +25,6 @@ class WidgetSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
             force = true,
             source = DashboardStateSource.PERIODIC_REFRESH,
         )
-        if (!success) {
-            container.widgets.all().forEach {
-                container.widgets.saveError(it.appWidgetId, "Ошибка фонового обновления")
-                container.widgetRenders.request(it.appWidgetId, "PERIODIC_FAILURE")
-            }
-        }
         return if (success) Result.success() else Result.retry()
     }
 

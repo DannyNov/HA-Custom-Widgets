@@ -3,7 +3,6 @@ package com.danila.hacustomwidgets.dashboard
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
-import com.danila.hacustomwidgets.data.WidgetRepository
 import com.danila.hacustomwidgets.data.model.HaEntity
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import com.danila.hacustomwidgets.data.security.HomeAssistantConnection
@@ -11,7 +10,6 @@ import com.danila.hacustomwidgets.data.remote.EntitySubscriptionMode
 import com.danila.hacustomwidgets.data.remote.HomeAssistantClient
 import com.danila.hacustomwidgets.data.remote.StateChangedWebSocketListener
 import com.danila.hacustomwidgets.data.security.SecureConnectionStore
-import com.danila.hacustomwidgets.widget.EntityWidgetRenderCoordinator
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
@@ -27,14 +25,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.WebSocket
 
-/** One process-scoped HA transport shared by every Dashboard and Device widget. */
+/** One process-scoped HA transport shared by every Dashboard instance. */
 class DashboardEventCoordinator(
     context: Context,
     private val connectionStore: SecureConnectionStore,
     private val client: HomeAssistantClient,
     private val dashboards: DashboardRepository,
-    private val widgets: WidgetRepository,
-    private val widgetRenders: EntityWidgetRenderCoordinator,
     private val fetchCatalog: suspend (HomeAssistantConnection) -> HaCatalog = client::getCatalog,
     private val fetchEntities: suspend (HomeAssistantConnection, List<String>) -> List<HaEntity> = client::getEntities,
 ) {
@@ -154,10 +150,9 @@ class DashboardEventCoordinator(
         val requestedAt = System.currentTimeMillis()
         return reconcileMutex.withLock {
         val dashboardConfigs = dashboards.all().filter { appWidgetId == null || it.appWidgetId == appWidgetId }
-        val deviceConfigs = widgets.all().filter { appWidgetId == null || it.appWidgetId == appWidgetId }
-        if (dashboardConfigs.isEmpty() && deviceConfigs.isEmpty()) return@withLock true
+        if (dashboardConfigs.isEmpty()) return@withLock true
         val now = System.currentTimeMillis()
-        val allIds = dashboardConfigs.map { it.appWidgetId } + deviceConfigs.map { it.appWidgetId }
+        val allIds = dashboardConfigs.map { it.appWidgetId }
         val catalogConfigs = dashboardConfigs.filter {
             source == DashboardStateSource.MANUAL_REFRESH || dashboards.requiresCatalogRefresh(it.appWidgetId, now)
         }
@@ -166,12 +161,11 @@ class DashboardEventCoordinator(
         ) return@withLock true
         val started = SystemClock.elapsedRealtime()
         counters.restReconciliations.incrementAndGet()
-        log("RECONCILE_START", "source=$reason dashboards=${dashboardConfigs.size} deviceWidgets=${deviceConfigs.size}")
+        log("RECONCILE_START", "source=$reason dashboards=${dashboardConfigs.size}")
         try {
             val connection = connectionStore.load() ?: return@withLock false
             val normal = dashboardConfigs.filterNot { it in catalogConfigs }
-            val ids = (normal.flatMap { dashboards.entityIds(it.appWidgetId) } +
-                deviceConfigs.flatMap { config -> config.metrics.map { it.entityId } }).distinct()
+            val ids = normal.flatMap { dashboards.entityIds(it.appWidgetId) }.distinct()
             // One complete fetch serves every due Dashboard and supplies states for other widgets.
             // Fetch before applying anything; failure keeps the old snapshot and freshness intact.
             val catalog = if (catalogConfigs.isEmpty()) null else fetchCatalog(connection)
@@ -183,10 +177,6 @@ class DashboardEventCoordinator(
             }
             catalogConfigs.forEach { config ->
                 dashboards.updateFromCatalog(config.appWidgetId, requireNotNull(catalog))
-            }
-            deviceConfigs.forEach { config ->
-                widgets.updateStates(config.appWidgetId, config.metrics.mapNotNull { byId[it.entityId] })
-                widgetRenders.request(config.appWidgetId, "RECONCILIATION")
             }
             val completedAt = System.currentTimeMillis()
             syncPrefs.edit().also { editor ->
@@ -211,7 +201,7 @@ class DashboardEventCoordinator(
     internal fun snapshot() = DashboardSocketSnapshot(socketState, socketGeneration, connectionId, lastMessageAt, lastEventAt)
 
     private fun desiredEntityIds(): Set<String> =
-        (dashboards.all().flatMap { dashboards.entityIds(it.appWidgetId) } + widgets.entityIds()).toSet()
+        dashboards.all().flatMap { dashboards.entityIds(it.appWidgetId) }.toSet()
 
     private suspend fun connectionLoop() {
         while (scope.isActive) {
@@ -366,19 +356,10 @@ class DashboardEventCoordinator(
             if (relevant.isNotEmpty()) dashboards.updateEntityStates(widgetId, relevant, DashboardStateSource.EVENT)
         }
         counters.renders.addAndGet(dashboardIds.size.toLong())
-        val deviceIds = entities.flatMap { widgets.widgetsContainingEntity(it.entityId) }.distinct()
-        deviceIds.forEach { widgetId ->
-            val relevant = widgets.get(widgetId)?.metrics.orEmpty().mapNotNull { byId[it.entityId] }
-            if (relevant.isNotEmpty()) {
-                widgets.updateStates(widgetId, relevant)
-                widgetRenders.request(widgetId, reason)
-                counters.renders.incrementAndGet()
-            }
-        }
         if (initial) {
             val confirmedAt = System.currentTimeMillis()
             syncPrefs.edit().also { editor ->
-                (dashboards.all().map { it.appWidgetId } + widgets.all().map { it.appWidgetId })
+                dashboards.all().map { it.appWidgetId }
                     .distinct()
                     .forEach { editor.putLong(syncKey(it), confirmedAt) }
             }.apply()

@@ -16,15 +16,6 @@
         <receiver android:name=".dashboard.DashboardTimerAlarmReceiver" android:exported="false" />
 
         <activity
-            android:name=".widget.EntityStateWidgetConfigActivity"
-            android:exported="true"
-            android:theme="@style/Theme.HaCustomWidgets">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
-            </intent-filter>
-        </activity>
-
-        <activity
             android:name=".dashboard.DashboardWidgetConfigActivity"
             android:exported="true"
             android:theme="@style/Theme.HaCustomWidgets">
@@ -51,19 +42,6 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
-
-        <receiver
-            android:name=".widget.EntityStateWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_entity_state">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="android.appwidget.action.APPWIDGET_DELETED" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/entity_state_widget_info" />
-        </receiver>
 
         <receiver
             android:name=".dashboard.DashboardWidgetReceiver"

@@ -2,7 +2,7 @@ package com.danila.hacustomwidgets.dashboard
 
 import android.content.Context
 import android.util.Log
-import com.danila.hacustomwidgets.data.WidgetRepository
+import com.danila.hacustomwidgets.data.MetricLabels
 import com.danila.hacustomwidgets.data.model.HaCatalog
 import com.danila.hacustomwidgets.data.model.HaDeviceGroup
 import com.danila.hacustomwidgets.data.model.HaEntity
@@ -743,7 +743,7 @@ class DashboardRepository(context: Context) {
             serviceAction(entity)?.let {
                 DashboardControl(
                     entityId = entity.entityId,
-                    label = WidgetRepository.compactMetricName(title, entity.friendlyName),
+                    label = MetricLabels.compactMetricName(title, entity.friendlyName),
                     domain = entity.domain,
                     state = entity.state,
                 )
@@ -754,7 +754,7 @@ class DashboardRepository(context: Context) {
         val timerId = timerConfig?.timerEntityId
         val timerEntity = timerId?.let(entitiesById::get)
         fun HaEntity.asMetric() = DashboardMetric(
-            entityId, WidgetRepository.compactMetricName(title, friendlyName), displayState, state,
+            entityId, MetricLabels.compactMetricName(title, friendlyName), displayState, state,
             domain, deviceClass, timerDuration, timerRemaining, timerFinishesAt,
         )
         return DashboardCard(
@@ -766,7 +766,7 @@ class DashboardRepository(context: Context) {
             metrics = ordered.map { entity ->
                 DashboardMetric(
                     entityId = entity.entityId,
-                    label = WidgetRepository.compactMetricName(title, entity.friendlyName),
+                    label = MetricLabels.compactMetricName(title, entity.friendlyName),
                     state = entity.displayState,
                     rawState = entity.state,
                     domain = entity.domain,

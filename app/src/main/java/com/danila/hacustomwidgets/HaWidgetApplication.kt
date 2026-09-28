@@ -21,6 +21,7 @@ class HaWidgetApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.danila.hacustomwidgets.data.LegacyEntityWidgetCleanup.run(this)
         Log.i(
             "HAWidgetLifecycle",
             "PROCESS_START processStartId=${DashboardDiagnostics.processStartId} " +

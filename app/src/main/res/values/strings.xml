@@ -3,6 +3,4 @@
     <string name="app_name">HA Custom Widgets</string>
     <string name="widget_dashboard">HA Dashboard</string>
     <string name="widget_dashboard_description">Home Assistant Dashboard</string>
-    <string name="widget_entity_state">HA device metrics</string>
-    <string name="widget_description">Shows current states of selected Home Assistant device entities</string>
 </resources>
