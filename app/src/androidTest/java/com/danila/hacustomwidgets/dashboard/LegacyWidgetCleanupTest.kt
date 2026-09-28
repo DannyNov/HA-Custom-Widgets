@@ -29,7 +29,7 @@ class LegacyWidgetCleanupTest {
             base.packageManager.queryIntentActivities(intent, 0).map { it.activityInfo.name })
     }
 
-    @Test fun legacyRecordsAndCachesAreRemovedWithoutTouchingDashboardOrConnection() {
+    @Test fun legacyRecordsAndCachesAreRemovedWithoutTouchingDashboard() {
         val c = isolated()
         val legacy = c.getSharedPreferences("entity_widgets", 0)
         legacy.edit().putStringSet("configured_widget_ids", setOf("701"))
@@ -60,5 +60,17 @@ class LegacyWidgetCleanupTest {
         LegacyEntityWidgetCleanup.run(c)
         assertEquals(mapOf("preserved" to "value"), prefs.all)
         assertTrue(c.getSharedPreferences("entity_widgets", 0).all.isEmpty())
+    }
+
+    @Test fun obsoleteGlanceIndexIsRebuiltEvenWithoutLegacyConfiguration() {
+        val c = isolated()
+        val index = File(c.filesDir, "datastore/GlanceAppWidgetManager.preferences_pb")
+        index.parentFile!!.mkdirs()
+        index.writeText("com.danila.hacustomwidgets.widget.EntityStateWidgetReceiver")
+        LegacyEntityWidgetCleanup.run(c)
+        assertFalse(index.exists())
+        index.writeText("com.danila.hacustomwidgets.dashboard.DashboardWidgetReceiver")
+        LegacyEntityWidgetCleanup.run(c)
+        assertTrue(index.exists())
     }
 }

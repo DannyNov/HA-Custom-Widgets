@@ -10,6 +10,14 @@ import java.io.File
  */
 object LegacyEntityWidgetCleanup {
     fun run(context: Context) {
+        // This is only Glance's generated receiver-to-class index, not widget configuration.
+        // Before Glance is initialized it is safe to invalidate the old index; the manager
+        // reconstructs it from installed providers on first access, including Dashboard.
+        val index = File(context.filesDir, "datastore/GlanceAppWidgetManager.preferences_pb")
+        runCatching {
+            if (index.isFile && index.readText().contains(
+                    "com.danila.hacustomwidgets.widget.EntityStateWidgetReceiver")) index.delete()
+        }
         val legacy = context.getSharedPreferences("entity_widgets", Context.MODE_PRIVATE)
         if (legacy.all.isEmpty()) return
         val dashboard = context.getSharedPreferences("dashboard_widgets", Context.MODE_PRIVATE)

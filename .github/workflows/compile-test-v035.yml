@@ -20,13 +20,13 @@ jobs:
           from pathlib import Path
           current = Path("app/build.gradle.kts").read_text()
           assert 'versionName = "0.6.2-rc1"' in current
-          assert 'versionCode = 47' in current
+          assert 'versionCode = 48' in current
           history = subprocess.check_output(["git", "log", "--all", "-p", "--", "app/build.gradle.kts"], text=True)
           codes = [int(x) for x in re.findall(r"^[+ -]\s*versionCode\s*=\s*(\d+)", history, re.M)]
-          assert codes and max(codes) == 47
+          assert codes and max(codes) == 48
           base = subprocess.check_output(["git", "show", "28b1aaab6b0e6788b75f1a94eedda3eea0b268ad:app/build.gradle.kts"], text=True)
-          assert current == base.replace("versionCode = 46", "versionCode = 47").replace('versionName = "0.6.1.1"', 'versionName = "0.6.2-rc1"')
-          print("RC_VERSION_PASS: versionCode=47; dependencies and signing unchanged")
+          assert current == base.replace("versionCode = 46", "versionCode = 48").replace('versionName = "0.6.1.1"', 'versionName = "0.6.2-rc1"')
+          print("RC_VERSION_PASS: versionCode=48; dependencies and signing unchanged")
           PY
       - uses: actions/setup-java@v5
         with:
@@ -205,7 +205,7 @@ jobs:
           tag=v0.6.2-rc1
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
           grep -F 'versionName = "0.6.2-rc1"' app/build.gradle.kts
-          grep -F 'versionCode = 47' app/build.gradle.kts
+          grep -F 'versionCode = 48' app/build.gradle.kts
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'RC already exists; refusing to replace it.' >&2
             exit 1
@@ -236,7 +236,7 @@ jobs:
           test -s "$apk"
           grep -Fx 'applicationId=com.danila.hacustomwidgets' "$asset_dir/build-info.txt"
           grep -Fx 'versionName=0.6.2-rc1' "$asset_dir/build-info.txt"
-          grep -Fx 'versionCode=47' "$asset_dir/build-info.txt"
+          grep -Fx 'versionCode=48' "$asset_dir/build-info.txt"
           grep -Fx 'debuggable=false' "$asset_dir/build-info.txt"
           grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' "$asset_dir/signature.txt"
           apk_sha=$(sha256sum "$apk" | cut -d ' ' -f 1)

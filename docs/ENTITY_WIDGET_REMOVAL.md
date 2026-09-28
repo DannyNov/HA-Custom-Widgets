@@ -2,7 +2,7 @@
 
 Base: main `28b1aaab6b0e6788b75f1a94eedda3eea0b268ad`. Stable:
 `v0.6.1.1`, `df0fff631634657403b5436d8a7440de91f79cba`, versionCode 46.
-All published tags and branch tips were checked; no 0.6.2 RC existed. RC1 uses 47;
+All published tags and branch tips were checked; no 0.6.2 RC existed. RC1 uses 48;
 CI also checks the full fetched version history before allowing publication.
 
 ## Dependency audit
@@ -69,3 +69,5 @@ Publication is gated on successful tests, host/upgrade jobs and a signed release
 build of the exact source SHA. Signing secrets and certificate are unchanged.
 Only a public `prerelease=true`, non-Latest RC is published. Final remains gated
 on explicit physical phone approval; Telegram workflow is unchanged.
+
+Glance's generated receiver-to-class index is invalidated before Glance starts if it still names the removed receiver. Glance rebuilds it from installed providers; Dashboard per-instance data is retained. This also covers an abandoned legacy configuration. VersionCode 48 supersedes the unpublished CI build 47.
