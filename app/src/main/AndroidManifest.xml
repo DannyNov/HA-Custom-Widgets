@@ -13,6 +13,7 @@
         android:theme="@style/Theme.HaCustomWidgets"
         android:usesCleartextTraffic="true">
 
+        <activity android:name=".dashboard.BrightnessActivity" android:exported="false" android:theme="@style/Theme.HaCustomWidgets.Brightness" />
         <receiver android:name=".dashboard.DashboardTimerAlarmReceiver" android:exported="false" />
 
         <activity

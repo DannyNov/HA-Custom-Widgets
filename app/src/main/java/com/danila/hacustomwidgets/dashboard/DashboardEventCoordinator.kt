@@ -381,7 +381,9 @@ class DashboardEventCoordinator(
         log("WS_DISCONNECTED", "reason=$reason reconnect=false")
     }
 
+    var onTransportInvalidated: () -> Unit = {}
     private fun invalidateGeneration(reason: String, reconnect: Boolean) {
+        onTransportInvalidated()
         val socket = synchronized(stateLock) {
             stageDeadlineJob?.cancel()
             currentSocket.also {
@@ -407,6 +409,7 @@ class DashboardEventCoordinator(
             }
         }
         if (!accepted) return stale("failure:$reason", generation, id)
+        onTransportInvalidated()
         socket.cancel()
         counters.wsReconnects.incrementAndGet()
         if (error == null) log("WS_DISCONNECTED", "reason=$reason")

@@ -12,12 +12,15 @@ class AppContainer(context: Context) {
     val connectionStore = SecureConnectionStore(context)
     val client = HomeAssistantClient()
     val dashboards = DashboardRepository(context)
+    val brightness = com.danila.hacustomwidgets.dashboard.BrightnessCoordinator(connectionStore, client, dashboards)
+    init { dashboards.brightnessOverlay = brightness::overlay }
     val dashboardRenders = DashboardRenderCoordinator(context, dashboards)
     init { dashboards.attachRenderRequester(dashboardRenders::request) }
     val dashboardEvents = DashboardEventCoordinator(
         context, connectionStore, client, dashboards,
     )
     init {
+        dashboardEvents.onTransportInvalidated = brightness::invalidate
         dashboards.attachConfigurationChanged(dashboardEvents::subscriptionSetChanged)
     }
     val dashboardStartup = DashboardStartupCoordinator(

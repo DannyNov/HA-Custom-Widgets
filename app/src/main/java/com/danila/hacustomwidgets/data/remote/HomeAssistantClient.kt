@@ -194,7 +194,11 @@ class HomeAssistantClient(
                             val event = message.optJSONObject("event") ?: return@runCatching
                             val newState = event.optJSONObject("data")?.optJSONObject("new_state")
                             if (newState != null) {
-                                listener.onEntities(webSocket, subscriptionId, listOf(newState.toEntity()), false)
+                                listener.onEntities(webSocket, subscriptionId, listOf(newState.toEntity()), false)                            } else if (event.optString("event_type") == "state_changed") {
+                                val id = event.optJSONObject("data")?.optString("entity_id")
+                                if (!id.isNullOrBlank()) listener.onEntities(webSocket, subscriptionId, listOf(
+                                    HaEntity(id, "unavailable", id, null, event.optNullableString("time_fired")),
+                                ), false)
                             } else {
                                 val parser = compressedParsers.getOrPut(subscriptionId) {
                                     if (compressedParsers.size >= MAX_RETAINED_SUBSCRIPTION_PARSERS) {
@@ -401,6 +405,7 @@ class HomeAssistantClient(
             timerDuration = attributes.optNullableString("duration"),
             timerRemaining = attributes.optNullableString("remaining"),
             timerFinishesAt = attributes.optNullableString("finishes_at"),
+            brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
         )
     }
 
@@ -497,6 +502,7 @@ internal class CompressedEntitySubscriptionParser {
                     timerDuration = attributes.optNullableString("duration"),
                     timerRemaining = attributes.optNullableString("remaining"),
                     timerFinishesAt = attributes.optNullableString("finishes_at"),
+            brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
                 )
             }
         }
@@ -537,6 +543,7 @@ internal class CompressedEntitySubscriptionParser {
             timerDuration = attributes.optNullableString("duration"),
             timerRemaining = attributes.optNullableString("remaining"),
             timerFinishesAt = attributes.optNullableString("finishes_at"),
+            brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
         )
     }
 
@@ -548,6 +555,7 @@ internal class CompressedEntitySubscriptionParser {
         current?.timerDuration?.let { put("duration", it) }
         current?.timerRemaining?.let { put("remaining", it) }
         current?.timerFinishesAt?.let { put("finishes_at", it) }
+        current?.brightness?.toAttributes()?.let { old -> old.keys().forEach { put(it, old.get(it)) } }
         updates?.keys()?.let { keys -> while (keys.hasNext()) keys.next().let { put(it, updates.get(it)) } }
     }
 

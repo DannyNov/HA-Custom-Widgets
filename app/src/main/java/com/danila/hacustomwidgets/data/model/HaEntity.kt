@@ -16,6 +16,7 @@ data class HaEntity(
     val hiddenBy: String? = null,
     val disabledBy: String? = null,
     val lastChanged: String? = null,
+    val brightness: LightBrightness = LightBrightness(),
     val timerDuration: String? = null,
     val timerRemaining: String? = null,
     val timerFinishesAt: String? = null,

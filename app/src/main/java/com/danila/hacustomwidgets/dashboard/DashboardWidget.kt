@@ -347,13 +347,16 @@ internal fun DashboardDeviceCard(
                 Text(
                     card.title,
                     modifier = GlanceModifier.defaultWeight(),
-                    maxLines = 1,
+                    maxLines = 2,
                     style = TextStyle(
                         color = ColorProvider(R.color.widget_primary),
                         fontSize = if (compact) 12.sp else 14.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
+                if (card.visibleControls.size == 1 && card.visibleControls.first().brightnessCapable) {
+                    BrightnessControls(androidx.glance.LocalContext.current, card.visibleControls.first(), appWidgetId, widthDp)
+                }
                 if (unavailable) {
                     Text(tr("⚠ Unavailable", "⚠ Недоступно"), style = TextStyle(color = semantic, fontSize = 10.sp))
                 } else if (unknown && !card.key.startsWith("scenario:")) {
@@ -382,7 +385,7 @@ internal fun DashboardDeviceCard(
                             ),
                         )
                     }
-                } else if (card.visibleControls.size == 1 && card.autoOffTimer == null) {
+                } else if (card.visibleControls.size == 1 && (card.autoOffTimer == null || card.visibleControls.first().brightnessCapable)) {
                     val control = card.visibleControls.first()
                     if (PrimaryPowerButtonPolicy.supports(control)) {
                         PrimaryPowerButton(
@@ -427,6 +430,7 @@ internal fun DashboardDeviceCard(
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        if (!primary.brightnessCapable)
                         Box(
                             modifier = GlanceModifier.defaultWeight(),
                             contentAlignment = Alignment.Center,
@@ -497,7 +501,16 @@ internal fun DashboardDeviceCard(
                     }
                 }
             }
-            if (card.visibleControls.size > 1 && !unavailable) {
+            if (card.visibleControls.size > 1 && card.visibleControls.any { it.brightnessCapable }) {
+                card.visibleControls.forEach { control ->
+                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(control.label, modifier = GlanceModifier.defaultWeight(), maxLines = 2,
+                            style = TextStyle(color = ColorProvider(R.color.widget_primary), fontSize = if (compact) 12.sp else 14.sp))
+                        BrightnessControls(androidx.glance.LocalContext.current, control, appWidgetId, widthDp)
+                        PrimaryPowerButton(card.key, control, appWidgetId, operationStatuses[control.entityId])
+                    }
+                }
+            } else if (card.visibleControls.size > 1 && !unavailable) {
                 Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                 val controlColumns = if (widthDp >= 320) 3 else 2
                 val controlWidth = ((widthDp - 36) / controlColumns).coerceAtLeast(76)
