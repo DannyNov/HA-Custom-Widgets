@@ -345,7 +345,7 @@ internal fun DashboardDeviceCard(
         ) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    card.title,
+                    primaryControl?.takeIf { card.visibleControls.size == 1 && it.brightnessCapable }?.friendlyName ?: card.title,
                     modifier = GlanceModifier.defaultWeight(),
                     maxLines = if (card.visibleControls.any { it.brightnessCapable }) 2 else 1,
                     style = TextStyle(
@@ -504,7 +504,7 @@ internal fun DashboardDeviceCard(
             if (card.visibleControls.size > 1 && card.visibleControls.any { it.brightnessCapable }) {
                 card.visibleControls.forEach { control ->
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(control.label, modifier = GlanceModifier.defaultWeight(), maxLines = 2,
+                        Text(control.friendlyName, modifier = GlanceModifier.defaultWeight(), maxLines = 2,
                             style = TextStyle(color = ColorProvider(R.color.widget_primary), fontSize = if (compact) 12.sp else 14.sp))
                         BrightnessControls(androidx.glance.LocalContext.current, control, appWidgetId, widthDp)
                         if (PrimaryPowerButtonPolicy.supports(control)) {

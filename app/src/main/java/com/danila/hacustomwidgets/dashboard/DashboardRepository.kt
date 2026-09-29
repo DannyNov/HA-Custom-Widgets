@@ -78,10 +78,13 @@ class DashboardRepository(context: Context) {
             .joinToString("") { byte -> "%02x".format(byte) }
     }
 
-    fun brightnessTruth(entityId: String): VersionedEntityState? = widgetsContainingEntity(entityId)
-        .mapNotNull { atomicStore.read(it).entities[entityId] }
-        .filter { it.brightnessConnectionId == brightnessConnectionId() }
-        .maxByOrNull { it.confirmedHaLastUpdatedMillis ?: Long.MIN_VALUE }
+    fun brightnessTruth(entityId: String): VersionedEntityState? {
+        if (!entityId.startsWith("light.")) return null
+        val connection = brightnessConnectionId()
+        return widgetsContainingEntity(entityId).mapNotNull { atomicStore.read(it).entities[entityId] }
+            .filter { it.brightnessConnectionId == connection }
+            .maxByOrNull { it.confirmedHaLastUpdatedMillis ?: Long.MIN_VALUE }
+    }
 
     @Synchronized
     fun brightnessChanged(entityId: String) {
@@ -771,6 +774,7 @@ class DashboardRepository(context: Context) {
                     label = MetricLabels.compactMetricName(title, entity.friendlyName),
                     domain = entity.domain,
                     state = entity.state,
+                    friendlyName = entity.friendlyName,
                 )
             }
         }.filterNot { it.entityId == config.autoOffTimersByDevice[key]?.timerEntityId }
@@ -1000,6 +1004,7 @@ class DashboardRepository(context: Context) {
                         card.controls.forEach { control ->
                             controls.put(
                                 JSONObject().put("id", control.entityId).put("label", control.label)
+                                    .put("friendly_name", control.friendlyName)
                                     .put("domain", control.domain).put("state", control.state),
                             )
                         }
@@ -1052,6 +1057,7 @@ class DashboardRepository(context: Context) {
                             DashboardControl(
                                 control.getString("id"), control.optString("label"),
                                 control.optString("domain"), control.optString("state"),
+                                friendlyName = control.optString("friendly_name", control.optString("label")),
                             ),
                         )
                     }

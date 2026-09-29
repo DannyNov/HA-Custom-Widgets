@@ -28,6 +28,9 @@ class LightBrightnessTest {
         assertEquals(70, LightBrightness.step(65, 1))
         assertEquals(60, LightBrightness.step(65, -1))
         assertEquals(1, LightBrightness.step(5, -1))
+        assertEquals(1, LightBrightness.step(1, -1))
+        assertEquals(100, LightBrightness.step(95, 1))
+        assertEquals(95, LightBrightness.step(100, -1))
         assertEquals(100, LightBrightness.step(100, 1))
     }
     @Test fun persistenceKeepsInvalidModernPresence() {

@@ -40,9 +40,11 @@ class DashboardActionWorker(context: Context, params: WorkerParameters) : Corout
             val serviceData = if (operation.domain == "automation" && operation.service == "trigger") {
                 mapOf("skip_condition" to false)
             } else emptyMap<String, Boolean>()
-            container.brightness.power(entityId) {
+            val sendService: suspend () -> Unit = {
                 container.client.callService(connection, operation.domain, operation.service, entityId, serviceData)
             }
+            if (operation.domain == "light") container.brightness.power(entityId, sendService)
+            else sendService()
             if (operation.desiredState == "off" && deviceKey != null) {
                 val card = container.dashboards.get(appWidgetId)?.cards?.firstOrNull { it.key == deviceKey }
                 val selectedControl = card?.let { AutoOffTimerPolicy.resolveControl(it.controls, it.autoOffTimer) }

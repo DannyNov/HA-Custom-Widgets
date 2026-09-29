@@ -51,6 +51,9 @@ class HomeAssistantClient(
         .pingInterval(60, TimeUnit.SECONDS)
         .build(),
 ) {
+    // An obsolete brightness target must not be replayed by transport recovery.
+    private val brightnessHttp = http.newBuilder().retryOnConnectionFailure(false).build()
+
     suspend fun testConnection(connection: HomeAssistantConnection) = withContext(Dispatchers.IO) {
         execute(connection, "/api/").use { response ->
             if (!response.isSuccessful) throw apiError(response.code)
@@ -142,7 +145,8 @@ class HomeAssistantClient(
             serviceData.forEach { (key, value) -> put(key, value) }
         }.toString()
             .toRequestBody(JSON_MEDIA_TYPE)
-        http.newCall(
+        val serviceHttp = if (domain == "light" && service == "turn_on" && serviceData.containsKey("brightness_pct")) brightnessHttp else http
+        serviceHttp.newCall(
             Request.Builder()
                 .url(connection.baseUrl + "/api/services/$domain/$service")
                 .header("Authorization", "Bearer ${connection.token}")
@@ -506,7 +510,7 @@ internal class CompressedEntitySubscriptionParser {
                     timerDuration = attributes.optNullableString("duration"),
                     timerRemaining = attributes.optNullableString("remaining"),
                     timerFinishesAt = attributes.optNullableString("finishes_at"),
-            brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
+                    brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
                 )
             }
         }

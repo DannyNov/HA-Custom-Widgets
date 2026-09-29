@@ -365,6 +365,7 @@ data class DashboardControl(
     val state: String,
     val brightnessCapable: Boolean = false,
     val brightnessPercent: Int? = null,
+    val friendlyName: String = label,
 )
 
 enum class PrimaryPowerButtonTone { OFF, LIGHT_ON_GREEN, SWITCH_ON_YELLOW }

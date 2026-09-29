@@ -55,6 +55,26 @@ class BrightnessHostTest {
     private fun clicks(view: View): Int = (if (view.hasOnClickListeners()) 1 else 0) +
         if (view is ViewGroup) (0 until view.childCount).sumOf { clicks(view.getChildAt(it)) } else 0
 
+    private fun descriptions(view: View): List<String> = listOfNotNull(view.contentDescription?.toString()) +
+        if (view is ViewGroup) (0 until view.childCount).flatMap { descriptions(view.getChildAt(it)) } else emptyList()
+
+    @OptIn(ExperimentalGlanceRemoteViewsApi::class)
+    @Test fun timerAndBrightnessKeepOneSeparatePowerButton() = runBlocking {
+        val light = DashboardControl("light.a", "Lamp", "light", "on", true, 65)
+        val card = DashboardCard("device", "Lamp", null, null, DeviceCategory.LIGHTING, emptyList(), listOf(light),
+            autoOffTimer = AutoOffTimerConfig(enabled = true, timerEntityId = "timer.a", controlEntityId = light.entityId),
+            timerState = DashboardMetric("timer.a", "Timer", "idle", "idle", "timer", null, "00:30:00"))
+        val remote = GlanceRemoteViews().compose(context, DpSize(320.dp, 180.dp)) {
+            GlanceTheme { DashboardDeviceCard(card, 301, 320, true, emptyMap(), emptyMap()) }
+        }.remoteViews
+        instrumentation.runOnMainSync {
+            val view = remote.apply(context, null)
+            assertEquals(1, descriptions(view).count { it == com.danila.hacustomwidgets.tr("Turn off", "Выключить") })
+            assertEquals(1, texts(view).count { it.text.toString() == "65%" })
+            assertTrue(descriptions(view).contains(com.danila.hacustomwidgets.tr("Timer", "Таймер")))
+        }
+    }
+
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
     @Test fun capabilityAndAvailabilityControlActualHostClickTargets() = runBlocking {
         val composer = GlanceRemoteViews()

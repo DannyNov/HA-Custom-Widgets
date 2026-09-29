@@ -35,7 +35,7 @@ class BrightnessActivity : ComponentActivity() {
                 val enabled = control?.brightnessCapable == true && control.state in setOf("on", "off") && selected != null
                 Surface {
                     Column(Modifier.padding(24.dp).widthIn(max = 360.dp)) {
-                        Text(control?.label ?: entityId, style = MaterialTheme.typography.titleLarge)
+                        Text(control?.friendlyName ?: entityId, style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(16.dp))
                         Text(selected?.roundToInt()?.let { "$it%" } ?: "—%", style = MaterialTheme.typography.headlineMedium)
                         if (selected != null) {
