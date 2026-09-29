@@ -27,11 +27,11 @@ jobs:
           base = subprocess.check_output(["git", "show", "7f133dd7aafb60c937c5c7e3067596806a9a6502:app/build.gradle.kts"], text=True)
           assert current == base.replace("versionCode = 48", "versionCode = 49").replace('versionName = "0.6.2-rc1"', 'versionName = "0.6.2"')
           rc = "7f133dd7aafb60c937c5c7e3067596806a9a6502"
-          subprocess.run(["git", "diff", "--exit-code", rc, "HEAD", "--", "app/src", "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "app/proguard-rules.pro"], check=True)
-          allowed = {"app/build.gradle.kts", ".github/workflows/android.yml", ".github/workflows/compile-test-v035.yml", "RELEASE_NOTES_v0.6.2.md", "docs/RELEASE_PROCESS.md"}
+          subprocess.run(["git", "diff", "--exit-code", rc, "HEAD", "--", "app/src/main", "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "app/proguard-rules.pro"], check=True)
+          allowed = {"app/build.gradle.kts", ".github/workflows/android.yml", ".github/workflows/compile-test-v035.yml", "RELEASE_NOTES_v0.6.2.md", "docs/RELEASE_PROCESS.md", "app/src/androidTest/java/com/danila/hacustomwidgets/dashboard/DashboardUpgradeTest.kt"}
           changed = set(subprocess.check_output(["git", "diff", "--name-only", rc, "HEAD"], text=True).splitlines())
           assert changed <= allowed, changed - allowed
-          print("RC_PRODUCTION_IDENTITY_PASS: all application sources, resources, manifest, tests and dependencies unchanged")
+          print("RC_PRODUCTION_IDENTITY_PASS: all application sources, resources, manifest and dependencies unchanged; only the named upgrade fixture may differ")
           print("FINAL_VERSION_PASS: versionCode=49; dependencies and signing unchanged")
           PY
       - uses: actions/setup-java@v5
@@ -114,6 +114,9 @@ jobs:
         with:
           name: v0.6.1-glance-api-${{ matrix.api }}
           path: |
+            seed-result.txt
+            pre-upgrade-result.txt
+            upgrade-result.txt
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
 
@@ -173,6 +176,7 @@ jobs:
             adb shell run-as com.danila.hacustomwidgets mkdir -p files
             adb shell run-as com.danila.hacustomwidgets touch files/upgrade-marker
             if [ "${{ matrix.fixture }}" = "true" ]; then adb install app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk; adb shell appwidget grantbind --package com.danila.hacustomwidgets --user 0; adb shell am instrument -w -e class com.danila.hacustomwidgets.dashboard.DashboardUpgradeTest -e upgradePhase seed -e withLegacy "${{ matrix.legacy }}" com.danila.hacustomwidgets.test/androidx.test.runner.AndroidJUnitRunner | tee seed-result.txt; grep -F 'OK (1 test)' seed-result.txt; fi
+            if [ "${{ matrix.fixture }}" = "true" ]; then adb shell am instrument -w -e class com.danila.hacustomwidgets.dashboard.DashboardUpgradeTest -e upgradePhase preUpgrade com.danila.hacustomwidgets.test/androidx.test.runner.AndroidJUnitRunner | tee pre-upgrade-result.txt; grep -F 'OK (1 test)' pre-upgrade-result.txt; fi
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell run-as com.danila.hacustomwidgets ls files/upgrade-marker | grep -F 'files/upgrade-marker'
             if [ "${{ matrix.fixture }}" = "true" ]; then adb shell am instrument -w -e class com.danila.hacustomwidgets.dashboard.DashboardUpgradeTest -e upgradePhase verify com.danila.hacustomwidgets.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-result.txt; grep -F 'OK (1 test)' upgrade-result.txt; fi
@@ -182,6 +186,9 @@ jobs:
         with:
           name: v0.6.1-upgrade-${{ matrix.source }}-api-31
           path: |
+            seed-result.txt
+            pre-upgrade-result.txt
+            upgrade-result.txt
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
 

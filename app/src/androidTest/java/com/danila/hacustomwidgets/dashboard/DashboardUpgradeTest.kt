@@ -25,6 +25,16 @@ class DashboardUpgradeTest {
         val marker = File(context.filesDir, "dashboard-upgrade-fixture")
         val repo = DashboardRepository(context)
         val connection = SecureConnectionStore(context)
+        fun assertConnection() {
+            val saved = context.getSharedPreferences("ha_connection", 0)
+            for (key in listOf("base_url", "access_token", "token_iv")) {
+                assertTrue("$phase: persisted connection field missing: $key", saved.contains(key))
+            }
+            val loaded = connection.load()
+            assertNotNull("$phase: connection fields exist but decryption failed", loaded)
+            assertEquals("https://upgrade-fixture.invalid", loaded!!.baseUrl)
+            assertEquals("upgrade-fixture-token", loaded.token)
+        }
         if (phase == "seed") {
             val host = AppWidgetHost(context, 6201)
             fun bind(className: String): Int {
@@ -42,6 +52,7 @@ class DashboardUpgradeTest {
                 autoOffTimersByDevice = mapOf("upgrade" to AutoOffTimerConfig(enabled = true, timerEntityId = "timer.upgrade", controlEntityId = "switch.upgrade")))
             repo.saveConfiguration(config, catalog)
             connection.save("https://upgrade-fixture.invalid", "upgrade-fixture-token")
+            assertConnection()
             val legacyId = if (args.getString("withLegacy") == "true") {
                 val id = bind("com.danila.hacustomwidgets.widget.EntityStateWidgetReceiver")
                 context.getSharedPreferences("entity_widgets", 0).edit()
@@ -59,14 +70,20 @@ class DashboardUpgradeTest {
             assertNotNull(manager.getAppWidgetInfo(dashboardId))
             if (legacyId != -1) assertNotNull(manager.getAppWidgetInfo(legacyId))
         } else {
-            assertEquals("verify", phase)
+            assertTrue("Unexpected phase: $phase", phase == "verify" || phase == "preUpgrade")
             ObjectInputStream(marker.inputStream()).use {
                 val dashboardId = it.readInt(); val legacyId = it.readInt()
                 val before = it.readObject() as Map<*, *>
                 assertEquals(before, context.getSharedPreferences("dashboard_widgets", 0).all)
                 assertNotNull(repo.getConfig(dashboardId))
-                assertEquals("upgrade-fixture-token", connection.load()!!.token)
-                assertEquals("com.danila.hacustomwidgets.dashboard.DashboardWidgetReceiver", manager.getAppWidgetInfo(dashboardId).provider.className)
+                assertConnection()
+                val dashboardInfo = manager.getAppWidgetInfo(dashboardId)
+                assertNotNull("$phase: bound Dashboard ID was lost", dashboardInfo)
+                assertEquals("com.danila.hacustomwidgets.dashboard.DashboardWidgetReceiver", dashboardInfo!!.provider.className)
+                if (phase == "preUpgrade") {
+                    if (legacyId != -1) assertNotNull("Seeded legacy widget must exist before upgrade", manager.getAppWidgetInfo(legacyId))
+                    return
+                }
                 if (legacyId != -1) {
                     assertNull(manager.getAppWidgetInfo(legacyId))
                     assertFalse(context.getSharedPreferences("dashboard_sync_freshness", 0).contains("widget_${legacyId}_last_confirmed_sync"))
