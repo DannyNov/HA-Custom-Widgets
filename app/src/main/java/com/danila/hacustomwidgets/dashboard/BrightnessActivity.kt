@@ -28,6 +28,7 @@ class BrightnessActivity : ComponentActivity() {
                 val control = dashboard?.cards?.flatMap { it.controls }?.firstOrNull { it.entityId == entityId }
                 var selected by remember { mutableStateOf<Float?>(null) }
                 var dragging by remember { mutableStateOf(false) }
+                val selection = remember { BrightnessSelection() }
                 LaunchedEffect(control?.brightnessPercent, dragging) {
                     if (!dragging) selected = control?.brightnessPercent?.toFloat()
                 }
@@ -40,9 +41,9 @@ class BrightnessActivity : ComponentActivity() {
                         if (selected != null) {
                             Slider(
                                 value = selected!!,
-                                onValueChange = { dragging = true; selected = it },
+                                onValueChange = { dragging = true; selected = it; selection.change(it) },
                                 onValueChangeFinished = {
-                                    if (dragging && enabled) selected?.roundToInt()?.let { container.brightness.submit(entityId, absolute = it) }
+                                    selection.finish(enabled)?.let { container.brightness.submit(entityId, absolute = it) }
                                     dragging = false
                                 },
                                 valueRange = 1f..100f, steps = 98, enabled = enabled,

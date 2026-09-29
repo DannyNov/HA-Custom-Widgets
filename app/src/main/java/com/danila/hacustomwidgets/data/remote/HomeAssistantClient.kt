@@ -192,13 +192,9 @@ class HomeAssistantClient(
                         "event" -> {
                             val subscriptionId = message.optInt("id")
                             val event = message.optJSONObject("event") ?: return@runCatching
-                            val newState = event.optJSONObject("data")?.optJSONObject("new_state")
+                            val newState = stateChangedEntity(event)
                             if (newState != null) {
-                                listener.onEntities(webSocket, subscriptionId, listOf(newState.toEntity()), false)                            } else if (event.optString("event_type") == "state_changed") {
-                                val id = event.optJSONObject("data")?.optString("entity_id")
-                                if (!id.isNullOrBlank()) listener.onEntities(webSocket, subscriptionId, listOf(
-                                    HaEntity(id, "unavailable", id, null, event.optNullableString("time_fired")),
-                                ), false)
+                                listener.onEntities(webSocket, subscriptionId, listOf(newState), false)
                             } else {
                                 val parser = compressedParsers.getOrPut(subscriptionId) {
                                     if (compressedParsers.size >= MAX_RETAINED_SUBSCRIPTION_PARSERS) {
@@ -389,6 +385,14 @@ class HomeAssistantClient(
             .get()
             .build(),
     ).execute()
+
+    internal fun stateChangedEntity(event: JSONObject): HaEntity? {
+        val data = event.optJSONObject("data") ?: return null
+        data.optJSONObject("new_state")?.let { return it.toEntity() }
+        if (event.optString("event_type") != "state_changed") return null
+        val id = data.optString("entity_id").takeIf { it.isNotBlank() } ?: return null
+        return HaEntity(id, "unavailable", id, null, event.optNullableString("time_fired"))
+    }
 
     private fun JSONObject.toEntity(): HaEntity {
         val id = getString("entity_id")

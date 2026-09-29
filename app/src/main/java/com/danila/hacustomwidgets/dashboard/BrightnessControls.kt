@@ -34,7 +34,8 @@ class BrightnessStepAction : ActionCallback {
 
 object BrightnessLayoutPolicy {
     // 20 outer + 24 card padding + 80 name + 144 dimmer + 48 power.
-    fun showSteps(widthDp: Int, fontScale: Float): Boolean = widthDp >= 316 && fontScale <= 1.3f
+    fun percentWidth(fontScale: Float): Float = 48f * fontScale.coerceIn(1f, 1.5f)
+    fun showSteps(widthDp: Int, fontScale: Float): Boolean = widthDp >= 268 + percentWidth(fontScale) && fontScale <= 1.3f
 }
 
 @Composable
@@ -43,20 +44,21 @@ fun BrightnessControls(context: Context, control: DashboardControl, widgetId: In
     val available = control.state in setOf("on", "off")
     val enabled = available && control.brightnessPercent != null
     val color = ColorProvider(if (enabled && control.state == "on") R.color.widget_light_on else R.color.widget_secondary)
-    val steps = BrightnessLayoutPolicy.showSteps(widthDp, context.resources.configuration.fontScale)
+    val fontScale = context.resources.configuration.fontScale
+    val steps = BrightnessLayoutPolicy.showSteps(widthDp, fontScale)
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (steps) BrightnessStep(control, -1, enabled, color)
         val intent = Intent(context, BrightnessActivity::class.java)
             .putExtra("brightness_entity", control.entityId).putExtra("brightness_widget", widgetId)
         Box(
-            modifier = GlanceModifier.width(48.dp).height(48.dp).semantics {
+            modifier = GlanceModifier.width(BrightnessLayoutPolicy.percentWidth(fontScale).dp).height(48.dp).semantics {
                 contentDescription = tr("Set brightness", "Настроить яркость") + ": " + control.label + " " + (control.brightnessPercent?.let { "$it%" } ?: "—%")
             }.let {
                 if (available) it.clickable(actionStartActivity(intent)) else it
             }, contentAlignment = Alignment.Center,
         ) {
-            Text(control.brightnessPercent?.let { "$it%" } ?: "—%", maxLines = 1,
-                style = TextStyle(color = color, fontSize = 12.sp, textAlign = TextAlign.Center))
+            Text(control.brightnessPercent?.let { "$it%" } ?: "—%", modifier = GlanceModifier.fillMaxWidth(), maxLines = 1,
+                style = TextStyle(color = color, fontSize = (12f * fontScale.coerceAtMost(2f) / fontScale).sp, textAlign = TextAlign.Center))
         }
         if (steps) BrightnessStep(control, 1, enabled, color)
     }

@@ -43,7 +43,10 @@ class BrightnessCoordinator internal constructor(
     private val running = mutableSetOf<Key>()
     private var generation = 0L
 
-    fun overlay(entityId: String): Int? = connection()?.let { latest[Key(it, entityId)]?.target }
+    fun overlay(entityId: String): Int? {
+        if (latest.keys.none { it.entity == entityId }) return null
+        return connection()?.let { latest[Key(it, entityId)]?.target }
+    }
 
     fun invalidate() {
         val ids = latest.keys.map { it.entity }

@@ -13,6 +13,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrightnessTransportTest {
+    @Test fun fullStateChangedAttributesAndEntityRemoval() {
+        val client = HomeAssistantClient()
+        val event = JSONObject("""{"event_type":"state_changed","data":{"entity_id":"light.a","new_state":{"entity_id":"light.a","state":"on","attributes":{"brightness":242,"supported_color_modes":["white"],"color_mode":"white"}}}}""")
+        val entity = client.stateChangedEntity(event)!!
+        assertTrue(entity.brightness.capable)
+        assertEquals(95, LightBrightness.percent(entity.brightness.value))
+        assertEquals("white", entity.brightness.colorMode)
+        event.getJSONObject("data").getJSONObject("new_state").getJSONObject("attributes").put("brightness", JSONObject.NULL)
+        assertNull(client.stateChangedEntity(event)!!.brightness.value)
+        event.getJSONObject("data").put("new_state", JSONObject.NULL)
+        assertEquals("unavailable", client.stateChangedEntity(event)!!.state)
+    }
+    @Test fun sliderSendsOnlyLastFinishedValueAndNeverUnknownBase() {
+        val selection = BrightnessSelection()
+        assertNull(selection.finish(true))
+        (1..100).forEach { selection.change(it.toFloat()) }
+        assertEquals(100, selection.finish(true))
+        assertNull(selection.finish(true))
+        selection.change(75f)
+        assertNull(selection.finish(false))
+        assertNull(selection.finish(true))
+        val missing = LightBrightness(null, true, listOf("brightness"))
+        assertNull(missing.displayPercent("on", 166))
+        assertNull(missing.displayPercent("off", null))
+        assertEquals(65, missing.displayPercent("off", 166))
+    }
     @Test fun restStateAndServicePayload() = runBlocking {
         val requests = mutableListOf<String>()
         val http = OkHttpClient.Builder().addInterceptor { chain ->

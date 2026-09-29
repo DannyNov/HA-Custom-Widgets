@@ -347,7 +347,7 @@ internal fun DashboardDeviceCard(
                 Text(
                     card.title,
                     modifier = GlanceModifier.defaultWeight(),
-                    maxLines = 2,
+                    maxLines = if (card.visibleControls.any { it.brightnessCapable }) 2 else 1,
                     style = TextStyle(
                         color = ColorProvider(R.color.widget_primary),
                         fontSize = if (compact) 12.sp else 14.sp,
@@ -357,9 +357,9 @@ internal fun DashboardDeviceCard(
                 if (card.visibleControls.size == 1 && card.visibleControls.first().brightnessCapable) {
                     BrightnessControls(androidx.glance.LocalContext.current, card.visibleControls.first(), appWidgetId, widthDp)
                 }
-                if (unavailable) {
+                if (unavailable && primaryControl?.brightnessCapable != true) {
                     Text(tr("⚠ Unavailable", "⚠ Недоступно"), style = TextStyle(color = semantic, fontSize = 10.sp))
-                } else if (unknown && !card.key.startsWith("scenario:")) {
+                } else if (unknown && primaryControl?.brightnessCapable != true && !card.key.startsWith("scenario:")) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
                 } else if (card.key.startsWith("scenario:")) {
                     val control = card.controls.firstOrNull()
@@ -507,7 +507,16 @@ internal fun DashboardDeviceCard(
                         Text(control.label, modifier = GlanceModifier.defaultWeight(), maxLines = 2,
                             style = TextStyle(color = ColorProvider(R.color.widget_primary), fontSize = if (compact) 12.sp else 14.sp))
                         BrightnessControls(androidx.glance.LocalContext.current, control, appWidgetId, widthDp)
-                        PrimaryPowerButton(card.key, control, appWidgetId, operationStatuses[control.entityId])
+                        if (PrimaryPowerButtonPolicy.supports(control)) {
+                            PrimaryPowerButton(card.key, control, appWidgetId, operationStatuses[control.entityId])
+                        } else {
+                            Text(controlLabel(control, operationStatuses[control.entityId]),
+                                modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
+                                    actionRunCallback<DashboardControlAction>(actionParametersOf(
+                                        DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
+                                        DashboardEntityKey to control.entityId, DashboardDomainKey to control.domain,
+                                    ))), style = TextStyle(color = semantic, fontSize = 11.sp))
+                        }
                     }
                 }
             } else if (card.visibleControls.size > 1 && !unavailable) {
@@ -575,7 +584,7 @@ private fun PrimaryPowerButton(
         modifier = GlanceModifier
             .width(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp)
             .height(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp)
-            .clickable(
+            .let { modifier -> if (control.state in setOf("unknown", "unavailable")) modifier else modifier.clickable(
                 actionRunCallback<DashboardControlAction>(
                     actionParametersOf(
                         DashboardWidgetIdKey to appWidgetId,
@@ -584,7 +593,7 @@ private fun PrimaryPowerButton(
                         DashboardDomainKey to control.domain,
                     ),
                 ),
-            ),
+            ) },
         contentAlignment = Alignment.Center,
     ) {
         Box(

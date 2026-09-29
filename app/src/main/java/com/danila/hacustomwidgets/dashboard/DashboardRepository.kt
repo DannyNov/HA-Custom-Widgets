@@ -528,6 +528,7 @@ class DashboardRepository(context: Context) {
         val structure = structure(appWidgetId) ?: return null
         val spaces = structure.spaces
         val atomic = atomicStore.read(appWidgetId, structure.entityIds)
+        val brightnessConnection = brightnessConnectionId()
         val cards = structure.cards.map { card ->
             card.copy(
                 autoOffTimer = config.autoOffTimersByDevice[card.key]?.takeIf { it.enabled },
@@ -540,7 +541,7 @@ class DashboardRepository(context: Context) {
                 },
                 controls = card.controls.map { control ->
                     atomic.entities[control.entityId]?.let {
-                        control.copy(state = it.rawState, brightnessCapable = control.domain == "light" && it.brightness.capable && it.brightnessConnectionId == brightnessConnectionId(),
+                        control.copy(state = it.rawState, brightnessCapable = control.domain == "light" && it.brightness.capable && it.brightnessConnectionId == brightnessConnection,
                             brightnessPercent = brightnessOverlay(control.entityId) ?: it.brightness.displayPercent(it.confirmedRawState, it.lastConfirmedBrightness))
                     } ?: control
                 },
