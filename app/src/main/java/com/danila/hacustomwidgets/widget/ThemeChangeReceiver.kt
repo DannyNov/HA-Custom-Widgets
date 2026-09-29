@@ -17,7 +17,6 @@ class ThemeChangeReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
-                EntityStateWidget().updateAll(context.applicationContext)
                 DashboardWidget().updateAll(context.applicationContext)
             } finally {
                 pendingResult.finish()

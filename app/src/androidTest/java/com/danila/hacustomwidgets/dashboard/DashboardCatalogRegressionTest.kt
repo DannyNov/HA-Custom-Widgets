@@ -4,11 +4,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.danila.hacustomwidgets.data.WidgetRepository
 import com.danila.hacustomwidgets.data.model.*
 import com.danila.hacustomwidgets.data.remote.HomeAssistantClient
 import com.danila.hacustomwidgets.data.security.SecureConnectionStore
-import com.danila.hacustomwidgets.widget.EntityWidgetRenderCoordinator
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -46,7 +44,6 @@ class DashboardCatalogRegressionTest {
             repo.saveConfiguration(config, initial)
             val connection = SecureConnectionStore(context).also { it.save("https://catalog-test.invalid", "fixture-token") }
             coordinator = DashboardEventCoordinator(context, connection, HomeAssistantClient(), repo,
-                WidgetRepository(context), EntityWidgetRenderCoordinator(context),
                 fetchCatalog = { catalogs++; if (fail) error("fixture failure"); remote },
                 fetchEntities = { _, ids -> states++; remote.groups.flatMap { it.entities }.filter { it.entityId in ids } })
         }

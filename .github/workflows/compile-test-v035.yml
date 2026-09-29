@@ -11,26 +11,28 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Verify Final provenance and monotonically increasing version
+      - name: Verify Final version, history and approved RC production identity
         shell: bash
         run: |
           set -euo pipefail
-          rc=7fe94a6bee9c0994161a046b73f978b37074043c
-          test "$(git rev-parse v0.6.1.1-rc1^{commit})" = "$rc"
-          git diff --exit-code "$rc" HEAD -- app/src app/proguard-rules.pro build.gradle.kts settings.gradle.kts gradle.properties gradle
           python3 - <<'PY'
           import re, subprocess
           from pathlib import Path
-          rc = "7fe94a6bee9c0994161a046b73f978b37074043c"
-          old = subprocess.check_output(["git", "show", f"{rc}:app/build.gradle.kts"], text=True)
-          final = Path("app/build.gradle.kts").read_text()
-          expected = old.replace("versionCode = 45", "versionCode = 46").replace('versionName = "0.6.1.1-rc1"', 'versionName = "0.6.1.1"')
-          assert final == expected, "Only the two final version values may change in app/build.gradle.kts"
+          current = Path("app/build.gradle.kts").read_text()
+          assert 'versionName = "0.6.2"' in current
+          assert 'versionCode = 49' in current
           history = subprocess.check_output(["git", "log", "--all", "-p", "--", "app/build.gradle.kts"], text=True)
           codes = [int(x) for x in re.findall(r"^[+ -]\s*versionCode\s*=\s*(\d+)", history, re.M)]
-          assert codes and max(codes) == 46, f"Unexpected historical maximum: {max(codes, default=0)}"
-          assert 46 > 45
-          print("FINAL_PROVENANCE_PASS: production, resources, manifest, tests and dependencies unchanged from RC1; versionCode=46")
+          assert codes and max(codes) == 49
+          base = subprocess.check_output(["git", "show", "7f133dd7aafb60c937c5c7e3067596806a9a6502:app/build.gradle.kts"], text=True)
+          assert current == base.replace("versionCode = 48", "versionCode = 49").replace('versionName = "0.6.2-rc1"', 'versionName = "0.6.2"')
+          rc = "7f133dd7aafb60c937c5c7e3067596806a9a6502"
+          subprocess.run(["git", "diff", "--exit-code", rc, "HEAD", "--", "app/src/main", "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "app/proguard-rules.pro"], check=True)
+          allowed = {"app/build.gradle.kts", ".github/workflows/android.yml", ".github/workflows/compile-test-v035.yml", "RELEASE_NOTES_v0.6.2.md", "docs/RELEASE_PROCESS.md", ".github/scripts/diagnose-fixture-persistence.sh", "app/src/androidTest/java/com/danila/hacustomwidgets/dashboard/DashboardUpgradeTest.kt"}
+          changed = set(subprocess.check_output(["git", "diff", "--name-only", rc, "HEAD"], text=True).splitlines())
+          assert changed <= allowed, changed - allowed
+          print("RC_PRODUCTION_IDENTITY_PASS: all application sources, resources, manifest and dependencies unchanged; only the named upgrade fixture may differ")
+          print("FINAL_VERSION_PASS: versionCode=49; dependencies and signing unchanged")
           PY
       - uses: actions/setup-java@v5
         with:
@@ -112,6 +114,9 @@ jobs:
         with:
           name: v0.6.1-glance-api-${{ matrix.api }}
           path: |
+            seed-result.txt
+            pre-upgrade-result.txt
+            upgrade-result.txt
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
 
@@ -129,6 +134,14 @@ jobs:
             ref: 7fe94a6bee9c0994161a046b73f978b37074043c
           - source: v0.6.1
             ref: 8de943565dee235213ae5abb3e87f7bbd08179f2
+          - source: stable-without-legacy
+            ref: df0fff631634657403b5436d8a7440de91f79cba
+            fixture: true
+            legacy: false
+          - source: stable-with-legacy
+            ref: df0fff631634657403b5436d8a7440de91f79cba
+            fixture: true
+            legacy: true
     steps:
       - uses: actions/checkout@v5
         with:
@@ -162,32 +175,86 @@ jobs:
             adb install "$RUNNER_TEMP/source.apk"
             adb shell run-as com.danila.hacustomwidgets mkdir -p files
             adb shell run-as com.danila.hacustomwidgets touch files/upgrade-marker
+            if [ "${{ matrix.fixture }}" = "true" ]; then adb install app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk; adb shell appwidget grantbind --package com.danila.hacustomwidgets --user 0; adb shell am instrument -w -e class com.danila.hacustomwidgets.dashboard.DashboardUpgradeTest -e upgradePhase seed -e withLegacy "${{ matrix.legacy }}" com.danila.hacustomwidgets.test/androidx.test.runner.AndroidJUnitRunner | tee seed-result.txt; grep -F 'OK (1 test)' seed-result.txt; fi
+            if [ "${{ matrix.fixture }}" = "true" ]; then adb shell am instrument -w -e class com.danila.hacustomwidgets.dashboard.DashboardUpgradeTest -e upgradePhase preUpgrade com.danila.hacustomwidgets.test/androidx.test.runner.AndroidJUnitRunner | tee pre-upgrade-result.txt; grep -F 'OK (1 test)' pre-upgrade-result.txt; fi
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell run-as com.danila.hacustomwidgets ls files/upgrade-marker | grep -F 'files/upgrade-marker'
+            if [ "${{ matrix.fixture }}" = "true" ]; then adb shell am instrument -w -e class com.danila.hacustomwidgets.dashboard.DashboardUpgradeTest -e upgradePhase verify com.danila.hacustomwidgets.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-result.txt; grep -F 'OK (1 test)' upgrade-result.txt; fi
             gradle connectedDebugAndroidTest --stacktrace
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: v0.6.1-upgrade-${{ matrix.source }}-api-31
           path: |
+            seed-result.txt
+            pre-upgrade-result.txt
+            upgrade-result.txt
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
 
-  prepare-final:
-    # User approved RC1 on a physical phone. Prepare this Final only after main CI passes.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  fixture-persistence-diagnostic:
+    # Reproduce the original fixture failure before any APK upgrade, then verify the fix.
+    if: github.ref == 'refs/heads/feature/remove-entity-widget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build unchanged stable app and original versus corrected test APKs
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/stable" df0fff631634657403b5436d8a7440de91f79cba
+          gradle -p "$RUNNER_TEMP/stable" assembleDebug
+          cp "$RUNNER_TEMP/stable/app/build/outputs/apk/debug/app-debug.apk" "$RUNNER_TEMP/stable.apk"
+          fixture=app/src/androidTest/java/com/danila/hacustomwidgets/dashboard/DashboardUpgradeTest.kt
+          cp "$fixture" "$RUNNER_TEMP/corrected.kt"
+          git show 7f133dd7aafb60c937c5c7e3067596806a9a6502:"$fixture" > "$fixture"
+          gradle assembleDebugAndroidTest
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$RUNNER_TEMP/original-test.apk"
+          cp "$RUNNER_TEMP/corrected.kt" "$fixture"
+          gradle assembleDebugAndroidTest
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$RUNNER_TEMP/corrected-test.apk"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install "$RUNNER_TEMP/stable.apk"
+            bash .github/scripts/diagnose-fixture-persistence.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fixture-persistence-evidence
+          path: fixture-evidence/
+
+  publish-final:
+    # User physically passed RC1 and explicitly authorized Final v0.6.2 on 2026-09-29.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1
     needs: [compile-test, glance-host, upgrade]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
-      actions: read
+      actions: write
       contents: write
     concurrency:
-      group: prepare-v0.6.1.1
+      group: publish-v0.6.2
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
-      - name: Prepare authorized Final draft after tests and signed build
+      - name: Publish authorized Final after all tests and signed build
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -196,10 +263,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag=v0.6.1.1
+          tag=v0.6.2
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
-          grep -F 'versionName = "0.6.1.1"' app/build.gradle.kts
-          grep -F 'versionCode = 46' app/build.gradle.kts
+          grep -F 'versionName = "0.6.2"' app/build.gradle.kts
+          grep -F 'versionCode = 49' app/build.gradle.kts
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'Final already exists; refusing to replace it.' >&2
             exit 1
@@ -222,28 +289,29 @@ jobs:
             sleep 30
           done
           test -n "$signed_run"
-          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.1.1-release --dir rc-assets
-          asset_dir=rc-assets/apk/release
-          apk="$asset_dir/HAWidgets-v0.6.1.1.apk"
+          # The branch must still point at the tested source; never publish stale work.
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
+          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.2-release --dir final-assets
+          asset_dir=final-assets/apk/release
+          apk="$asset_dir/HAWidgets-v0.6.2.apk"
           test -s "$apk"
           grep -Fx 'applicationId=com.danila.hacustomwidgets' "$asset_dir/build-info.txt"
-          grep -Fx 'versionName=0.6.1.1' "$asset_dir/build-info.txt"
-          grep -Fx 'versionCode=46' "$asset_dir/build-info.txt"
+          grep -Fx 'versionName=0.6.2' "$asset_dir/build-info.txt"
+          grep -Fx 'versionCode=49' "$asset_dir/build-info.txt"
           grep -Fx 'debuggable=false' "$asset_dir/build-info.txt"
           grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' "$asset_dir/signature.txt"
           apk_sha=$(sha256sum "$apk" | cut -d ' ' -f 1)
           test "$apk_sha" = "$(cut -d ' ' -f 1 "$asset_dir/apk-sha256.txt")"
-          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.1.1.apk > "$asset_dir/apk-sha256.txt"
+          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.2.apk > "$asset_dir/apk-sha256.txt"
           printf 'sourceCommit=%s\n' "$SOURCE_SHA" >> "$asset_dir/build-info.txt"
-          cp RELEASE_NOTES_v0.6.1.1.md final-notes.md
-          {
-            printf '\n## Verified build\n\n'
-            printf -- '- Final commit: %s\n' "$SOURCE_SHA"
-            printf -- '- APK SHA-256: %s\n' "$apk_sha"
-            printf -- '- CI: https://github.com/%s/actions/runs/%s\n' "$GH_REPO" "$TEST_RUN_ID"
-            printf -- '- Signed build: https://github.com/%s/actions/runs/%s\n' "$GH_REPO" "$signed_run"
-          } >> final-notes.md
-          # A user-session publication of this verified draft triggers the existing Telegram release workflow.
+          cp RELEASE_NOTES_v0.6.2.md final-notes.md
+          # GITHUB_TOKEN release events do not start other workflows. Dispatch the
+          # existing Telegram workflow once after publication; never send directly.
           gh release create "$tag" "$apk" "$asset_dir/apk-sha256.txt" "$asset_dir/build-info.txt" "$asset_dir/signature.txt" \
-            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.1.1' --notes-file final-notes.md --draft
+            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.2' --notes-file final-notes.md --latest
           gh release view "$tag" --json url,isDraft,isPrerelease,tagName,targetCommitish
+      - name: Start existing Telegram announcement workflow once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run telegram-release.yml --ref main -f release_tag=v0.6.2
