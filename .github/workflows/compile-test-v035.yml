@@ -28,7 +28,7 @@ jobs:
           assert current == base.replace("versionCode = 48", "versionCode = 49").replace('versionName = "0.6.2-rc1"', 'versionName = "0.6.2"')
           rc = "7f133dd7aafb60c937c5c7e3067596806a9a6502"
           subprocess.run(["git", "diff", "--exit-code", rc, "HEAD", "--", "app/src/main", "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "app/proguard-rules.pro"], check=True)
-          allowed = {"app/build.gradle.kts", ".github/workflows/android.yml", ".github/workflows/compile-test-v035.yml", "RELEASE_NOTES_v0.6.2.md", "docs/RELEASE_PROCESS.md", "app/src/androidTest/java/com/danila/hacustomwidgets/dashboard/DashboardUpgradeTest.kt"}
+          allowed = {"app/build.gradle.kts", ".github/workflows/android.yml", ".github/workflows/compile-test-v035.yml", "RELEASE_NOTES_v0.6.2.md", "docs/RELEASE_PROCESS.md", ".github/scripts/diagnose-fixture-persistence.sh", "app/src/androidTest/java/com/danila/hacustomwidgets/dashboard/DashboardUpgradeTest.kt"}
           changed = set(subprocess.check_output(["git", "diff", "--name-only", rc, "HEAD"], text=True).splitlines())
           assert changed <= allowed, changed - allowed
           print("RC_PRODUCTION_IDENTITY_PASS: all application sources, resources, manifest and dependencies unchanged; only the named upgrade fixture may differ")
@@ -191,6 +191,54 @@ jobs:
             upgrade-result.txt
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
+
+  fixture-persistence-diagnostic:
+    # Reproduce the original fixture failure before any APK upgrade, then verify the fix.
+    if: github.ref == 'refs/heads/feature/remove-entity-widget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build unchanged stable app and original versus corrected test APKs
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/stable" df0fff631634657403b5436d8a7440de91f79cba
+          gradle -p "$RUNNER_TEMP/stable" assembleDebug
+          cp "$RUNNER_TEMP/stable/app/build/outputs/apk/debug/app-debug.apk" "$RUNNER_TEMP/stable.apk"
+          fixture=app/src/androidTest/java/com/danila/hacustomwidgets/dashboard/DashboardUpgradeTest.kt
+          cp "$fixture" "$RUNNER_TEMP/corrected.kt"
+          git show 7f133dd7aafb60c937c5c7e3067596806a9a6502:"$fixture" > "$fixture"
+          gradle assembleDebugAndroidTest
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$RUNNER_TEMP/original-test.apk"
+          cp "$RUNNER_TEMP/corrected.kt" "$fixture"
+          gradle assembleDebugAndroidTest
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$RUNNER_TEMP/corrected-test.apk"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install "$RUNNER_TEMP/stable.apk"
+            bash .github/scripts/diagnose-fixture-persistence.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fixture-persistence-evidence
+          path: fixture-evidence/
 
   publish-final:
     # User physically passed RC1 and explicitly authorized Final v0.6.2 on 2026-09-29.

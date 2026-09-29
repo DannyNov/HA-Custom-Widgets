@@ -52,6 +52,9 @@ class DashboardUpgradeTest {
                 autoOffTimersByDevice = mapOf("upgrade" to AutoOffTimerConfig(enabled = true, timerEntityId = "timer.upgrade", controlEntityId = "switch.upgrade")))
             repo.saveConfiguration(config, catalog)
             connection.save("https://upgrade-fixture.invalid", "upgrade-fixture-token")
+            // Instrumentation can terminate the process before apply() reaches disk.
+            // Finish this fixture's pending write before allowing APK replacement.
+            assertTrue("Seed connection must be durable", context.getSharedPreferences("ha_connection", 0).edit().commit())
             assertConnection()
             val legacyId = if (args.getString("withLegacy") == "true") {
                 val id = bind("com.danila.hacustomwidgets.widget.EntityStateWidgetReceiver")
