@@ -32,6 +32,11 @@
       "sha": "598ff5c4d44acdd600f93663d36b3de0e43b7fbb",
       "code": 56,
       "result": "Not published: host caught retained regular helper task and ambiguous capsule selector. Added autoRemoveFromRecents, selected capsule by 48dp height."
+    },
+    {
+      "sha": "507c23557cfe52ac1ed862e49a42e1c30c22904d",
+      "code": 57,
+      "result": "Not published: task-record assertion still failed after Close. Explicit root-task finishAndRemoveTask added; bounded asynchronous task-removal wait preserves strict assertion."
     }
   ],
   "branches": [
@@ -220,6 +225,6 @@
       "draft": false
     }
   ],
-  "maximum": 56,
-  "selectedRcCode": 57
+  "maximum": 57,
+  "selectedRcCode": 58
 }

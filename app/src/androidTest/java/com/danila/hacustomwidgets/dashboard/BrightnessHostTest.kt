@@ -109,9 +109,14 @@ class BrightnessHostTest {
                 }
                 assertTrue("Helper must finish after $exit", activity?.isDestroyed == true)
                 val manager = context.getSystemService(android.app.ActivityManager::class.java)
-                assertFalse("No helper task retained after $exit", manager.appTasks.any {
-                    it.taskInfo.baseIntent.component?.className == BrightnessActivity::class.java.name
-                })
+                fun helperTasks() = manager.appTasks.map { it.taskInfo }.filter {
+                    it.baseIntent.component?.className == BrightnessActivity::class.java.name
+                }
+                val removalDeadline = android.os.SystemClock.uptimeMillis() + 5000
+                while (helperTasks().isNotEmpty() && android.os.SystemClock.uptimeMillis() < removalDeadline) {
+                    instrumentation.waitForIdleSync(); android.os.SystemClock.sleep(50)
+                }
+                assertTrue("No helper task retained after $exit: ${helperTasks()}", helperTasks().isEmpty())
             } finally { scenario.close() }
         }
     }

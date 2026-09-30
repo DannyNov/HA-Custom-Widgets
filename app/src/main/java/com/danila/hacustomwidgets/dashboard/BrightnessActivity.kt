@@ -20,6 +20,11 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 class BrightnessActivity : ComponentActivity() {
+    override fun finish() {
+        // Explicit Close/Back removes only our helper task; recreation never calls this.
+        if (isTaskRoot) super.finishAndRemoveTask() else super.finish()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val entityId = intent.getStringExtra("brightness_entity") ?: return finish()
