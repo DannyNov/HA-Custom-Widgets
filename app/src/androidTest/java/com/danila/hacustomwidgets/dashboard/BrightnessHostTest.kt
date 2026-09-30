@@ -81,10 +81,12 @@ class BrightnessHostTest {
             android.os.SystemClock.sleep(250)
             val screenshot = instrumentation.uiAutomation.takeScreenshot()
             assertNotNull(screenshot)
-            java.io.File(context.getExternalFilesDir(null), "rc3-floating-window.png").outputStream().use {
-                screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-            }
             screenshot.recycle()
+            // UTP uninstalls the test/target APK after the suite, including app storage.
+            // A shell-owned screenshot survives teardown for the CI visual review artifact.
+            instrumentation.uiAutomation.executeShellCommand("screencap -p /data/local/tmp/rc3-floating-window.png").use {
+                java.io.FileInputStream(it.fileDescriptor).use { output -> output.readBytes() }
+            }
         }
     }
 

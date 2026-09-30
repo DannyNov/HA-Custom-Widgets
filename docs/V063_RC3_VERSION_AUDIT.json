@@ -37,6 +37,11 @@
       "sha": "507c23557cfe52ac1ed862e49a42e1c30c22904d",
       "code": 57,
       "result": "Not published: task-record assertion still failed after Close. Explicit root-task finishAndRemoveTask added; bounded asynchronous task-removal wait preserves strict assertion."
+    },
+    {
+      "sha": "736b927fc8b3505647e6b1bf4438769b965cf5c9",
+      "code": 58,
+      "result": "Not published: all 32 host tests pass, screenshot collection failed after UTP uninstall. Save shell screenshot to /data/local/tmp; production unchanged except version."
     }
   ],
   "branches": [
@@ -225,6 +230,6 @@
       "draft": false
     }
   ],
-  "maximum": 57,
-  "selectedRcCode": 58
+  "maximum": 58,
+  "selectedRcCode": 59
 }
