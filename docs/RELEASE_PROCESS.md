@@ -2,7 +2,7 @@
 
 Required flow: development → automated tests/CI → public GitHub Pre-release `-rcN` → user physical testing → Final release.
 
-Active authorization (2026-09-30): continue from RC1 41c35c0 (code 51), fix Slider ownership and add the brightness capsule outline only. RC2 uses code 54 above audited maximum 53 (including unpublished CI candidates). Publish v0.6.3-rc2 only after exact-commit full CI and permanent signed APK/AAB gates. Preserve RC1 and draft PR #5; no Final, merge or Telegram. Physical phone approval is still required.
+Active authorization (2026-09-30): continue from RC1 41c35c0 (code 51), fix Slider ownership and add the brightness capsule outline only. RC2 uses code 55 above audited maximum 54 (including unpublished CI candidates). Publish v0.6.3-rc2 only after exact-commit full CI and permanent signed APK/AAB gates. Preserve RC1 and draft PR #5; no Final, merge or Telegram. Physical phone approval is still required.
 
 Active authorization for v0.6.3: implement brightness from v0.6.2 and publish only v0.6.3-rc1 after full automated gates and signed artifact checks. The historical Final authorizations below do not authorize a v0.6.3 Final or Telegram announcement. RC code 51 exceeds maximum 50 from the audit of 279 CI runs / 124 commits. Publication is restricted to the marked commit on feature/brightness-v063, checks exact-head CI and signed build, creates prerelease=true/latest=false, and never dispatches Telegram. User physical testing must follow before any Final work.
 

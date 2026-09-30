@@ -58,8 +58,9 @@ class BrightnessHostTest {
                         val textColor = texts(view).single { it.text.toString() == "$percent%" }.currentTextColor
                         // Compare the actual applied tint exactly. Thin strokes are antialiased;
                         // unpremultiplying a partially covered pixel can round RGB by one unit.
-                        val tint = (outline.colorFilter as android.graphics.PorterDuffColorFilter).color
-                        assertEquals(textColor, tint)
+                        val tint = textColor
+                        assertEquals(android.graphics.PorterDuffColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_ATOP),
+                            outline.colorFilter)
                         assertEquals(themed.getColor(if (state == "on") com.danila.hacustomwidgets.R.color.widget_light_on
                             else com.danila.hacustomwidgets.R.color.widget_secondary), tint)
                         assertTrue(android.graphics.Color.alpha(edge) >= 200)
