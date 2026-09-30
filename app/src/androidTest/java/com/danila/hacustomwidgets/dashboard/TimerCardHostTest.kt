@@ -72,8 +72,8 @@ class TimerCardHostTest {
                     var fixedTimer: Rect? = null
                     var fixedInterval: Rect? = null
                     var fixedTimerX: Int? = null
-                    for (minutes in listOf(30, 60, 90, 120)) {
-                        val root = render(themed, width, card(minutes))
+                    for (minutes in listOf(30, 60, 90, 120)) for (countdown in listOf("00:30:00", "01:00:00", "01:30:00", "02:00:00")) {
+                        val root = render(themed, width, card(minutes, remaining = countdown))
                         instrumentation.runOnMainSync {
                             val timerRect = bounds(root, timer(root)); val powerRect = bounds(root, power(root))
                             fixedTimerX?.let { assertEquals("Presets keep Timer anchor", it, timerRect.left) }
@@ -86,30 +86,18 @@ class TimerCardHostTest {
                             val remaining = descendants(root).filterIsInstance<TextView>().single {
                                 it.text.toString().startsWith(tr("Remaining ", "Осталось ")) }
                             val remainingRect = bounds(root, remaining)
-                            // RC7 intentionally cancels the shared interval/caption left anchor.
-                            assertTrue("Caption can extend left of interval", remainingRect.left < labelRect.left)
-                            assertTrue("Caption centered under Timer+interval", kotlin.math.abs(
-                                remainingRect.centerX() - (timerRect.left - 10 * themed.resources.displayMetrics.density + labelRect.right) / 2f) <= 2)
+                            assertEquals("Interval starts exactly above remaining", labelRect.left, remainingRect.left)
+                            assertEquals(0f, remaining.layout.getLineLeft(0), 0.01f)
                             fixedTimer?.let { assertEquals(it, timerRect) }; fixedTimer = timerRect
                             fixedInterval?.let { assertEquals(it.left, labelRect.left); assertEquals(it.right, labelRect.right) }; fixedInterval = labelRect
                             assertTrue("Remaining belongs below interval", remainingRect.top >= labelRect.bottom)
-                            assertTrue("Remaining cannot overlap Power", remainingRect.right <= powerRect.left)
-                            if (width >= 320 && scale == 1f) {
-                                val density = themed.resources.displayMetrics.density
-                                assertTrue("Timer primary zone is central", timerRect.centerX() > width * density * 0.30f)
-                                val paint = android.graphics.Paint().apply {
-                                    textSize = 11 * themed.resources.displayMetrics.scaledDensity
-                                    typeface = android.graphics.Typeface.DEFAULT_BOLD
-                                }
-                                val intervalWidth = listOf(30,60,90,120).maxOf { paint.measureText(tr("$it min", "$it мин")) / density }
-                                paint.textSize = 10 * themed.resources.displayMetrics.scaledDensity
-                                paint.typeface = android.graphics.Typeface.DEFAULT
-                                val remainingWidth = listOf(tr("Remaining 2h 0m", "Осталось 2 ч 0 мин"), tr("Paused · 1h 30m", "Пауза · 1 ч 30 мин"))
-                                    .maxOf { paint.measureText(it) / density }
-                                val oldAvailable = width - 18 - 20 - 48 - 4
-                                val oldBlock = 56 + minOf(kotlin.math.ceil(maxOf(intervalWidth, remainingWidth) + 4).toInt(), oldAvailable - 56)
-                                val rc5GlyphLeft = (9 + (width - 18 - 48 - 4 - oldBlock) / 2f + 10) * density
-                                assertTrue("Timer moved materially right of RC5: $language/$width/$scale new=${timerRect.left} old=$rc5GlyphLeft density=$density", timerRect.left >= rc5GlyphLeft + 20 * density)
+                            assertTrue("Remaining is below Power", remainingRect.top >= powerRect.bottom)
+                            assertTrue(remainingRect.right <= root.width)
+                            assertTrue(remaining.layout.height <= remaining.height)
+                            assertEquals(remaining.text.length, remaining.layout.getLineEnd(remaining.layout.lineCount - 1))
+                            if (width == 320 && scale == 1f && countdown == "01:30:00" && minutes >= 90) {
+                                assertEquals(tr("Remaining 1 h 30 min", "Осталось 1 ч 30 мин"), remaining.text.toString())
+                                assertEquals("Full normal Honor caption fits", 1, remaining.layout.lineCount)
                             }
                             assertTrue("Duration cannot overlap Power", labelRect.right <= powerRect.left)
                             assertTrue(timerRect.left >= 0 && powerRect.right <= root.width)
@@ -164,7 +152,8 @@ class TimerCardHostTest {
                 val themed = context.createConfigurationContext(Configuration(context.resources.configuration).apply { fontScale = scale })
                 var fixedTimer: Rect? = null
                 var fixedPower: Rect? = null
-                for (state in listOf("active", "paused")) for (remaining in listOf("00:01:00", "01:30:00", "01:59:00")) {
+                var fixedTextX: Int? = null
+                for (state in listOf("active", "paused")) for (remaining in listOf("00:30:00", "01:00:00", "01:30:00", "02:00:00", "00:01:00", "01:59:00")) {
                     val root = render(themed, width, card(120, state = state, remaining = remaining))
                     instrumentation.runOnMainSync {
                         val timerRect = bounds(root, timer(root)); val powerRect = bounds(root, power(root))
@@ -176,9 +165,12 @@ class TimerCardHostTest {
                             it.text.toString().startsWith(tr("Remaining ", "Осталось ")) ||
                                 it.text.toString().startsWith(tr("Paused · ", "Пауза · ")) }
                         val r = bounds(root, text)
-                        assertTrue("Caption independent of interval", r.left < bounds(root, label).left)
+                        assertEquals("Shared fixed left edge", bounds(root, label).left, r.left)
+                        fixedTextX?.let { assertEquals("Countdown cannot move left edge", it, r.left) }
+                        fixedTextX = r.left
+                        assertEquals(0f, text.layout.getLineLeft(0), 0.01f)
                         assertTrue(r.top >= bounds(root, label).bottom)
-                        assertTrue(r.right <= powerRect.left && r.bottom <= root.height)
+                        assertTrue(r.top >= powerRect.bottom && r.right <= root.width && r.bottom <= root.height)
                         if (width >= 320 && scale == 1f) {
                             assertEquals("Normal caption fits one line", 1, text.layout.lineCount)
                             assertEquals(text.text.length, text.layout.getLineEnd(0))

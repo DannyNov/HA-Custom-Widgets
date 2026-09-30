@@ -4,59 +4,56 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TimerBlockLayoutPolicyTest {
-    @Test fun primaryAnchorMovesRightOfRc5AndIgnoresRemainingWidth() {
-        val available = 360 - 18 - 20 - 48 - 4
-        val rc5Start = (available - 180) / 2
-        val layout = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, 120f, 1f)
-        assertTrue(layout.leadingSpace >= rc5Start + 32)
-        assertEquals(available / 2f, layout.leadingSpace + (48 + 30) / 2f, 1f)
-        for (remaining in listOf(0f, 40f, 120f, 200f, 600f)) {
-            val changed = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, remaining, 1f)
-            assertEquals(layout.leadingSpace, changed.leadingSpace)
-            assertEquals(layout.textWidth, changed.textWidth)
-            assertEquals(layout.blockWidth, changed.blockWidth)
-            assertEquals(layout.leadingSpace + layout.blockWidth / 2f,
-                changed.remainingLeading + changed.remainingWidth / 2f, 1f)
-            assertTrue(changed.remainingLeading >= 0)
-            assertTrue(changed.remainingLeading + changed.remainingWidth <= available)
-            assertTrue(changed.leadingSpace + changed.blockWidth <= available)
-        }
-    }
-    @Test fun anchorIsSafeAcrossWidthsFontsAndPowerModes() {
+    @Test fun bothStringsAndTimerKeepOneFixedAnchor() {
         for (width in listOf(180, 230, 250, 320, 360, 600))
             for (scale in listOf(1f, 1.5f, 2f)) for (power in listOf(false, true)) {
-                val available = width - 18 - (if (width < 250) 16 else 20) - (if (power) 48 else 0) - 4
-                val first = TimerBlockLayoutPolicy.resolve(width, true, power, 48f * scale, 0f, scale)
-                for (remaining in listOf(120f, 500f)) {
-                    val layout = TimerBlockLayoutPolicy.resolve(width, true, power, 48f * scale, remaining, scale)
-                    assertEquals(first.leadingSpace, layout.leadingSpace)
-                    assertTrue(layout.leadingSpace >= 0)
-                    assertTrue(layout.leadingSpace + layout.blockWidth <= available)
-                    assertTrue(layout.intervalHeight >= 48)
-                }
+                val first = TimerBlockLayoutPolicy.resolve(width, true, power, 48f, 0f, scale)
+                for (interval in listOf(30f, 40f, 48f, 60f))
+                    for (remaining in listOf(0f, 40f, 120f, 200f, 600f)) {
+                        val changed = TimerBlockLayoutPolicy.resolve(width, true, power, interval * scale, remaining * scale, scale)
+                        assertEquals(first.leadingSpace, changed.leadingSpace)
+                        assertEquals(first.remainingLeading, changed.remainingLeading)
+                        assertEquals(changed.leadingSpace + 56, changed.remainingLeading)
+                        val full = width - 18 - (if (width < 250) 16 else 20)
+                        assertTrue(changed.leadingSpace >= 0)
+                        assertTrue(changed.leadingSpace + changed.blockWidth <= full - (if (power) 48 else 0) - 4)
+                        assertEquals(full, changed.remainingLeading + changed.remainingWidth)
+                        assertTrue(changed.intervalHeight >= 48)
+                    }
             }
     }
-    @Test fun wideAreaLeavesRoomToCenterWithoutMovingPower() {
-        val layout = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, 120f, 1f)
-        assertEquals(96, layout.leadingSpace)
-        assertEquals(108, layout.blockWidth)
-        assertEquals(48, layout.intervalHeight)
-        assertTrue(layout.blockWidth < 360 - 18 - 20 - 48 - 4)
-    }
-    @Test fun normalCaptionUsesSpaceLeftOfIntervalWithoutClipping() {
+    @Test fun normalCaptionUsesFullLowerRowBeyondPowerColumn() {
         val layout = TimerBlockLayoutPolicy.resolve(320, true, true, 48f, 120f, 1f)
-        assertEquals(124, layout.remainingWidth)
-        assertTrue(layout.remainingLeading < layout.leadingSpace + 56)
-        assertEquals(layout.leadingSpace + layout.blockWidth / 2f,
-            layout.remainingLeading + layout.remainingWidth / 2f, 1f)
+        assertEquals(119, layout.remainingLeading)
+        assertEquals(63, layout.leadingSpace)
+        assertEquals(163, layout.remainingWidth)
+        assertTrue(layout.remainingWidth >= 124)
+        assertEquals(48, layout.intervalHeight)
     }
-    @Test fun narrowAndLargeFontWrapTextWithoutShrinkingTargets() {
-        for (width in listOf(180, 230, 320)) for (scale in listOf(1f, 1.5f, 2f)) {
-            val layout = TimerBlockLayoutPolicy.resolve(width, true, true, 48f * scale, 120f * scale, scale)
-            assertTrue(layout.textWidth > 0)
-            assertTrue(layout.blockWidth <= width - 18 - (if (width < 250) 16 else 20) - 48 - 4)
-            assertTrue(layout.intervalHeight >= 48)
-            assertEquals(56 + layout.textWidth, layout.blockWidth)
+    @Test fun absentPowerDoesNotRepositionNormalTextColumn() {
+        val withPower = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, 120f, 1f)
+        val withoutPower = TimerBlockLayoutPolicy.resolve(360, true, false, 48f, 120f, 1f)
+        assertEquals(withPower.leadingSpace, withoutPower.leadingSpace)
+        assertEquals(withPower.remainingLeading, withoutPower.remainingLeading)
+        assertEquals(withPower.remainingWidth, withoutPower.remainingWidth)
+    }
+    @Test fun compactAndRegularCardsRetainSafeLowerRowCapacity() {
+        for (compact in listOf(false, true)) for (width in listOf(180, 230, 320, 360)) {
+            val layout = TimerBlockLayoutPolicy.resolve(width, compact, true, 96f, 500f, 2f)
+            val capacity = width - (if (compact) 18 else 24) - (if (width < 250) 16 else 20)
+            assertEquals(capacity, layout.remainingLeading + layout.remainingWidth)
+            assertEquals(layout.leadingSpace + 56, layout.remainingLeading)
+            assertTrue(layout.remainingWidth > 0)
         }
+    }
+    @Test fun narrowIntervalWrapsVerticallyWithoutShrinkingTimerTarget() {
+        val normal = TimerBlockLayoutPolicy.resolve(180, true, true, 48f, 120f, 1f)
+        val large = TimerBlockLayoutPolicy.resolve(180, true, true, 96f, 240f, 2f)
+        assertEquals(normal.leadingSpace, large.leadingSpace)
+        assertEquals(normal.remainingLeading, large.remainingLeading)
+        assertTrue(large.textWidth < 96)
+        assertTrue(large.intervalHeight > normal.intervalHeight)
+        assertTrue(normal.intervalHeight >= 48)
+        assertEquals(56 + large.textWidth, large.blockWidth)
     }
 }

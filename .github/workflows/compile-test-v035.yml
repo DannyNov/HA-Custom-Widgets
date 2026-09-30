@@ -19,24 +19,25 @@ jobs:
           git merge-base --is-ancestor 41c35c0f736a06bebd5d167b495923d13e751640 HEAD
           git merge-base --is-ancestor 484fda6ba2cc7b1620f187309fff6246ec4a9d28 HEAD
           git merge-base --is-ancestor 184d71d8003000f933330330628e41f3ddf20b47 HEAD
+          git merge-base --is-ancestor 900756d2960ada770ec580a0e6ec3c7d8d27ffb4 HEAD
           git merge-base --is-ancestor ce38f2a889410b50be130644bb4fe99edb93e24d HEAD
           python3 - <<'PY'
           import re, subprocess
           from pathlib import Path
           current = Path("app/build.gradle.kts").read_text()
-          assert 'versionName = "0.6.3-rc7"' in current
-          assert 'versionCode = 65' in current
+          assert 'versionName = "0.6.3-rc8"' in current
+          assert 'versionCode = 66' in current
           base = subprocess.check_output(["git", "show", "v0.6.2:app/build.gradle.kts"], text=True)
-          assert current == base.replace("versionCode = 49", "versionCode = 65").replace('versionName = "0.6.2"', 'versionName = "0.6.3-rc7"')
+          assert current == base.replace("versionCode = 49", "versionCode = 66").replace('versionName = "0.6.2"', 'versionName = "0.6.3-rc8"')
           history = subprocess.check_output(["git", "log", "--all", "-p", "--", "app/build.gradle.kts"], text=True)
           codes = [int(x) for x in re.findall(r"^[+ -]\s*versionCode\s*=\s*(\d+)", history, re.M)]
-          assert codes and max(codes) == 65
+          assert codes and max(codes) == 66
           refs = subprocess.check_output(["git", "for-each-ref", "--format=%(refname)", "refs/tags"], text=True).splitlines()
           for ref in refs:
               old = subprocess.check_output(["git", "show", f"{ref}:app/build.gradle.kts"], text=True)
               code = re.search(r"versionCode\s*=\s*(\d+)", old)
-              assert code and int(code[1]) < 65, (ref, code)
-          print("RC_LINEAGE_PASS: v0.6.2 ancestor; versionCode=65; signing, SDK and dependencies unchanged")
+              assert code and int(code[1]) < 66, (ref, code)
+          print("RC_LINEAGE_PASS: v0.6.2 ancestor; versionCode=66; signing, SDK and dependencies unchanged")
           PY
       - name: Verify RC4 scope and unchanged click routing
         run: python3 .github/scripts/verify-rc4-scope.py
@@ -44,8 +45,10 @@ jobs:
         run: python3 .github/scripts/verify-rc5-scope.py
       - name: Verify historical RC6 anchor-only scope
         run: python3 .github/scripts/verify-rc6-scope.py
-      - name: Verify RC7 independent caption scope
+      - name: Verify historical RC7 scope
         run: python3 .github/scripts/verify-rc7-scope.py
+      - name: Verify RC8 fixed text anchor scope
+        run: python3 .github/scripts/verify-rc8-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -276,7 +279,7 @@ jobs:
       actions: read
       contents: write
     concurrency:
-      group: publish-v0.6.3-rc7
+      group: publish-v0.6.3-rc8
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
@@ -289,10 +292,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag=v0.6.3-rc7
+          tag=v0.6.3-rc8
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
-          grep -F 'versionName = "0.6.3-rc7"' app/build.gradle.kts
-          grep -F 'versionCode = 65' app/build.gradle.kts
+          grep -F 'versionName = "0.6.3-rc8"' app/build.gradle.kts
+          grep -F 'versionCode = 66' app/build.gradle.kts
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'RC already exists; refusing to replace it.' >&2
             exit 1
@@ -311,22 +314,22 @@ jobs:
           done
           test -n "$signed_run"
           test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/brightness-v063" --jq '.object.sha')" = "$SOURCE_SHA"
-          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.3-rc7-release --dir rc-assets
+          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.3-rc8-release --dir rc-assets
           asset_dir=rc-assets/apk/release
-          apk="$asset_dir/HAWidgets-v0.6.3-rc7.apk"
+          apk="$asset_dir/HAWidgets-v0.6.3-rc8.apk"
           test -s "$apk"
           grep -Fx 'applicationId=com.danila.hacustomwidgets' "$asset_dir/build-info.txt"
-          grep -Fx 'versionName=0.6.3-rc7' "$asset_dir/build-info.txt"
-          grep -Fx 'versionCode=65' "$asset_dir/build-info.txt"
+          grep -Fx 'versionName=0.6.3-rc8' "$asset_dir/build-info.txt"
+          grep -Fx 'versionCode=66' "$asset_dir/build-info.txt"
           grep -Fx 'debuggable=false' "$asset_dir/build-info.txt"
           grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' "$asset_dir/signature.txt"
           apk_sha=$(sha256sum "$apk" | cut -d ' ' -f 1)
           test "$apk_sha" = "$(cut -d ' ' -f 1 "$asset_dir/apk-sha256.txt")"
-          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.3-rc7.apk > "$asset_dir/apk-sha256.txt"
+          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.3-rc8.apk > "$asset_dir/apk-sha256.txt"
           printf 'sourceCommit=%s\ntestRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$TEST_RUN_ID" "$signed_run" >> "$asset_dir/build-info.txt"
-          cp rc-assets/bundle/release/app-release.aab "$asset_dir/HAWidgets-v0.6.3-rc7.aab"
-          cp RELEASE_NOTES_v0.6.3-rc7.md rc-notes.md
+          cp rc-assets/bundle/release/app-release.aab "$asset_dir/HAWidgets-v0.6.3-rc8.aab"
+          cp RELEASE_NOTES_v0.6.3-rc8.md rc-notes.md
           printf '\nSource: `%s`\n\n[Full CI](https://github.com/%s/actions/runs/%s) Р вЂ™Р’В· [Signed build](https://github.com/%s/actions/runs/%s)\n\nAPK SHA-256: `%s`\n' "$SOURCE_SHA" "$GH_REPO" "$TEST_RUN_ID" "$GH_REPO" "$signed_run" "$apk_sha" >> rc-notes.md
-          gh release create "$tag" "$apk" "$asset_dir/HAWidgets-v0.6.3-rc7.aab" "$asset_dir/apk-sha256.txt" "$asset_dir/build-info.txt" "$asset_dir/signature.txt" \
-            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.3-rc7' --notes-file rc-notes.md --prerelease --latest=false
+          gh release create "$tag" "$apk" "$asset_dir/HAWidgets-v0.6.3-rc8.aab" "$asset_dir/apk-sha256.txt" "$asset_dir/build-info.txt" "$asset_dir/signature.txt" \
+            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.3-rc8' --notes-file rc-notes.md --prerelease --latest=false
           gh release view "$tag" --json url,isDraft,isPrerelease,tagName,targetCommitish

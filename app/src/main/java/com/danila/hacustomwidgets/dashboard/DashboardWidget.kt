@@ -446,14 +446,8 @@ internal fun DashboardDeviceCard(
                     }?.let { remaining ->
                         if (timerPresentation?.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining")
                     }
-                    // Reserve the longest supported preset/status in both states: ticks never move the block.
-                    val remainingWidth = (1..120).flatMap { minutes ->
-                        val remaining = HaTimerPresentationPolicy.formatRemaining(minutes * 60_000L)
-                        listOf(tr("Remaining $remaining", "Осталось $remaining"),
-                            tr("Paused · $remaining", "Пауза · $remaining"))
-                    }.maxOf { timerPaint.measureText(it) / timerDensity }
                     val timerLayout = TimerBlockLayoutPolicy.resolve(widthDp, compact,
-                        !primary.brightnessCapable, intervalWidth, remainingWidth,
+                        !primary.brightnessCapable, intervalWidth, 0f,
                         timerContext.resources.configuration.fontScale)
                     // Word wrapping can need more lines than total width / column width predicts.
                     // Measure Android's actual line layout so narrow large-font intervals cannot clip.
@@ -517,14 +511,6 @@ internal fun DashboardDeviceCard(
                             }
                         }
                         }
-                        remainingLabel?.let {
-                            Row {
-                                Spacer(GlanceModifier.width(timerLayout.remainingLeading.dp))
-                                Text(it, modifier = GlanceModifier.width(timerLayout.remainingWidth.dp),
-                                    style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
-                                        textAlign = TextAlign.Center))
-                            }
-                        }
                         }
                         if (!primary.brightnessCapable)
                         Box(
@@ -552,6 +538,14 @@ internal fun DashboardDeviceCard(
                             }
                         }
                     }
+                        remainingLabel?.let {
+                            Row {
+                                Spacer(GlanceModifier.width(timerLayout.remainingLeading.dp))
+                                Text(it, modifier = GlanceModifier.width(timerLayout.remainingWidth.dp),
+                                    style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
+                                        textAlign = TextAlign.Start))
+                            }
+                        }
                 }
             }
             if (card.visibleControls.size > 1 && card.visibleControls.any { it.brightnessCapable }) {
