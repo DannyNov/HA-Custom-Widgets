@@ -155,8 +155,8 @@ class TimerCardHostTest {
                         assertTrue(r.top >= bounds(root, label).bottom)
                         assertTrue(r.right <= powerRect.left && r.bottom <= root.height)
                         for (line in 0 until text.layout.lineCount) assertEquals(0, text.layout.getEllipsisCount(line))
-                        assertTrue(text.layout.height <= text.height)
-                        assertTrue(label.layout.height <= label.height)
+                        assertTrue("Remaining clipped: $language/$width/$scale layout=${text.layout.height} view=${text.height}", text.layout.height <= text.height)
+                        assertTrue("Interval clipped: $language/$width/$scale layout=${label.layout.height} view=${label.height}", label.layout.height <= label.height)
                     }
                 }
             }

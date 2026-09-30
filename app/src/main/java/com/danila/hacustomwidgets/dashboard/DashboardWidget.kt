@@ -455,6 +455,19 @@ internal fun DashboardDeviceCard(
                     val timerLayout = TimerBlockLayoutPolicy.resolve(widthDp, compact,
                         !primary.brightnessCapable, intervalWidth, remainingWidth,
                         timerContext.resources.configuration.fontScale)
+                    // Word wrapping can need more lines than total width / column width predicts.
+                    // Measure Android's actual line layout so narrow large-font intervals cannot clip.
+                    val intervalPaint = android.text.TextPaint().apply {
+                        textSize = 11 * timerContext.resources.displayMetrics.scaledDensity
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    }
+                    val intervalHeight = maxOf(timerLayout.intervalHeight, listOf(30, 60, 90, 120).maxOf {
+                        val label = tr("$it min", "$it мин")
+                        val pixels = (timerLayout.textWidth * timerDensity).toInt().coerceAtLeast(1)
+                        val layout = android.text.StaticLayout.Builder.obtain(label, 0, label.length, intervalPaint, pixels)
+                            .setIncludePad(true).build()
+                        kotlin.math.ceil(layout.height / timerDensity).toInt() + 2
+                    })
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                         Box(modifier = GlanceModifier.defaultWeight().padding(end = 4.dp),
                             contentAlignment = Alignment.TopCenter) {
@@ -465,7 +478,7 @@ internal fun DashboardDeviceCard(
                                 ))),
                             verticalAlignment = Alignment.Top,
                         ) {
-                            Box(modifier = GlanceModifier.width(48.dp).height(timerLayout.intervalHeight.dp),
+                            Box(modifier = GlanceModifier.width(48.dp).height(intervalHeight.dp),
                                 contentAlignment = Alignment.Center) {
                                 Box(
                                 modifier = GlanceModifier
@@ -491,7 +504,7 @@ internal fun DashboardDeviceCard(
                             }
                             Spacer(GlanceModifier.width(8.dp))
                             Column(modifier = GlanceModifier.width(timerLayout.textWidth.dp)) {
-                                Box(modifier = GlanceModifier.fillMaxWidth().height(timerLayout.intervalHeight.dp),
+                                Box(modifier = GlanceModifier.fillMaxWidth().height(intervalHeight.dp),
                                     contentAlignment = Alignment.CenterStart) {
                                     Text(
                                         selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—",

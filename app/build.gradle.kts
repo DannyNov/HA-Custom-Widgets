@@ -23,7 +23,7 @@ android {
         applicationId = "com.danila.hacustomwidgets"
         minSdk = 31
         targetSdk = 36
-        versionCode = 61
+        versionCode = 62
         versionName = "0.6.3-rc5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

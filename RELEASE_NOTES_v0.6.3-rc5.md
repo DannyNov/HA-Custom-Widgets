@@ -1,6 +1,6 @@
 Timer control is centered in the flexible area before the unchanged trailing 48dp Power column. The interval is to the right of Timer at its vertical center. Remaining time sits directly below the interval, sharing its left text edge. Width is reserved across all 30/60/90/120 presets and remaining strings; narrow cards and large fonts wrap in the same text column without shrinking touch targets.
 
-RC4 colors and Timer/Power callbacks are unchanged. Brightness, Slider, capsule, Recents, backend, stable item IDs and other cards retain accepted behavior. VersionCode 61 exceeds the audited maximum 60 across 309 CI runs and 135 refs.
+RC4 colors and Timer/Power callbacks are unchanged. Brightness, Slider, capsule, Recents, backend, stable item IDs and other cards retain accepted behavior. VersionCode 62 exceeds the audited maximum 61 across 312 CI runs and 136 refs, including unpublished candidate 61. Android line layout measures interval height for narrow large-font wrapping.
 
 This is a Pre-release requiring physical Honor validation. PR #5 stays draft and unmerged. RC1–RC4 are retained. No Final or Telegram publication.
 
