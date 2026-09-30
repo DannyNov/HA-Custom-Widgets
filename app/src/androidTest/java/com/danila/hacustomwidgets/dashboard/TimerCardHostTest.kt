@@ -69,10 +69,13 @@ class TimerCardHostTest {
                 for (scale in listOf(1f, 1.5f, 2f)) for (width in listOf(180, 230, 320)) {
                     val themed = context.createConfigurationContext(Configuration(context.resources.configuration).apply { fontScale = scale })
                     var fixed: Rect? = null
+                    var fixedTimerX: Int? = null
                     for (minutes in listOf(30, 60, 90, 120)) {
                         val root = render(themed, width, card(minutes))
                         instrumentation.runOnMainSync {
                             val timerRect = bounds(root, timer(root)); val powerRect = bounds(root, power(root))
+                            fixedTimerX?.let { assertEquals("Presets keep Timer anchor", it, timerRect.left) }
+                            fixedTimerX = timerRect.left
                             val label = descendants(root).filterIsInstance<TextView>().single {
                                 it.text.toString().trim() == tr("$minutes min", "$minutes мин") }
                             val labelRect = bounds(root, label)
@@ -84,8 +87,23 @@ class TimerCardHostTest {
                             assertEquals("Shared left text edge", labelRect.left, remainingRect.left)
                             assertTrue("Remaining belongs below interval", remainingRect.top >= labelRect.bottom)
                             assertTrue("Remaining cannot overlap Power", remainingRect.right <= powerRect.left)
-                            if (width >= 320 && scale == 1f)
-                                assertTrue("Timer moved away from card left", timerRect.left > 20 * themed.resources.displayMetrics.density)
+                            if (width >= 320 && scale == 1f) {
+                                val density = themed.resources.displayMetrics.density
+                                assertTrue("Timer primary zone is central", timerRect.centerX() > width * density * 0.30f)
+                                val paint = android.graphics.Paint().apply {
+                                    textSize = 11 * themed.resources.displayMetrics.scaledDensity
+                                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                }
+                                val intervalWidth = listOf(30,60,90,120).maxOf { paint.measureText(tr("$it min", "$it мин")) / density }
+                                paint.textSize = 10 * themed.resources.displayMetrics.scaledDensity
+                                paint.typeface = android.graphics.Typeface.DEFAULT
+                                val remainingWidth = listOf(tr("Remaining 2h 0m", "Осталось 2 ч 0 мин"), tr("Paused · 1h 30m", "Пауза · 1 ч 30 мин"))
+                                    .maxOf { paint.measureText(it) / density }
+                                val oldAvailable = width - 18 - 20 - 48 - 4
+                                val oldBlock = 56 + minOf(kotlin.math.ceil(maxOf(intervalWidth, remainingWidth) + 4).toInt(), oldAvailable - 56)
+                                val rc5GlyphLeft = (9 + (width - 18 - 48 - 4 - oldBlock) / 2f + 10) * density
+                                assertTrue("Timer moved materially right of RC5", timerRect.left >= rc5GlyphLeft + 20 * density)
+                            }
                             assertTrue("Duration cannot overlap Power", labelRect.right <= powerRect.left)
                             assertTrue(timerRect.left >= 0 && powerRect.right <= root.width)
                             val density = themed.resources.displayMetrics.density

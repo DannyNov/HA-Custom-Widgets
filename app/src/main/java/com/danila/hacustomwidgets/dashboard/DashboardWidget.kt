@@ -469,8 +469,9 @@ internal fun DashboardDeviceCard(
                         kotlin.math.ceil(layout.height / timerDensity).toInt() + 2
                     })
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                        Box(modifier = GlanceModifier.defaultWeight().padding(end = 4.dp),
-                            contentAlignment = Alignment.TopCenter) {
+                        Row(modifier = GlanceModifier.defaultWeight().padding(end = 4.dp),
+                            verticalAlignment = Alignment.Top) {
+                        Spacer(GlanceModifier.width(timerLayout.leadingSpace.dp))
                         Row(
                             modifier = GlanceModifier.width(timerLayout.blockWidth.dp)
                                 .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(

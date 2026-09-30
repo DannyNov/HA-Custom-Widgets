@@ -23,8 +23,8 @@ android {
         applicationId = "com.danila.hacustomwidgets"
         minSdk = 31
         targetSdk = 36
-        versionCode = 62
-        versionName = "0.6.3-rc5"
+        versionCode = 63
+        versionName = "0.6.3-rc6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
