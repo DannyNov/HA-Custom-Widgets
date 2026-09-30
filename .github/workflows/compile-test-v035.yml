@@ -25,20 +25,22 @@ jobs:
           import re, subprocess
           from pathlib import Path
           current = Path("app/build.gradle.kts").read_text()
-          assert 'versionName = "0.6.3-rc8"' in current
-          assert 'versionCode = 66' in current
+          assert 'versionName = "0.6.3"' in current
+          assert 'versionCode = 67' in current
           base = subprocess.check_output(["git", "show", "v0.6.2:app/build.gradle.kts"], text=True)
-          assert current == base.replace("versionCode = 49", "versionCode = 66").replace('versionName = "0.6.2"', 'versionName = "0.6.3-rc8"')
+          assert current == base.replace("versionCode = 49", "versionCode = 67").replace('versionName = "0.6.2"', 'versionName = "0.6.3"')
           history = subprocess.check_output(["git", "log", "--all", "-p", "--", "app/build.gradle.kts"], text=True)
           codes = [int(x) for x in re.findall(r"^[+ -]\s*versionCode\s*=\s*(\d+)", history, re.M)]
-          assert codes and max(codes) == 66
+          assert codes and max(codes) == 67
           refs = subprocess.check_output(["git", "for-each-ref", "--format=%(refname)", "refs/tags"], text=True).splitlines()
           for ref in refs:
               old = subprocess.check_output(["git", "show", f"{ref}:app/build.gradle.kts"], text=True)
               code = re.search(r"versionCode\s*=\s*(\d+)", old)
-              assert code and int(code[1]) < 66, (ref, code)
-          print("RC_LINEAGE_PASS: v0.6.2 ancestor; versionCode=66; signing, SDK and dependencies unchanged")
+              assert code and (int(code[1]) == 67 if ref == "refs/tags/v0.6.3" else int(code[1]) < 67), (ref, code)
+          print("RC_LINEAGE_PASS: v0.6.2 ancestor; versionCode=67; signing, SDK and dependencies unchanged")
           PY
+      - name: Verify physically approved RC8 production invariant
+        run: python3 .github/scripts/verify-final-scope.py
       - name: Verify RC4 scope and unchanged click routing
         run: python3 .github/scripts/verify-rc4-scope.py
       - name: Verify RC5 scope against physically tested RC4
@@ -270,8 +272,8 @@ jobs:
           name: fixture-persistence-evidence
           path: fixture-evidence/
 
-  publish-rc:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/brightness-v063' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[publish-rc]')
+  publish-final:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[publish-final]')
     needs: [compile-test, glance-host, upgrade]
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -279,11 +281,11 @@ jobs:
       actions: read
       contents: write
     concurrency:
-      group: publish-v0.6.3-rc8
+      group: publish-v0.6.3
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
-      - name: Publish only the fully tested signed Pre-release
+      - name: Publish and independently verify the fully tested signed Final
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -292,12 +294,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag=v0.6.3-rc8
+          tag=v0.6.3
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
-          grep -F 'versionName = "0.6.3-rc8"' app/build.gradle.kts
-          grep -F 'versionCode = 66' app/build.gradle.kts
+          grep -F 'versionName = "0.6.3"' app/build.gradle.kts
+          grep -F 'versionCode = 67' app/build.gradle.kts
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo 'RC already exists; refusing to replace it.' >&2
+            echo 'Final already exists; refusing to replace it.' >&2
             exit 1
           fi
           test -z "$(git ls-remote origin "refs/tags/$tag")"
@@ -313,23 +315,58 @@ jobs:
             sleep 30
           done
           test -n "$signed_run"
-          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/brightness-v063" --jq '.object.sha')" = "$SOURCE_SHA"
-          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.3-rc8-release --dir rc-assets
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
+          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.3-release --dir rc-assets
           asset_dir=rc-assets/apk/release
-          apk="$asset_dir/HAWidgets-v0.6.3-rc8.apk"
+          apk="$asset_dir/HAWidgets-v0.6.3.apk"
           test -s "$apk"
           grep -Fx 'applicationId=com.danila.hacustomwidgets' "$asset_dir/build-info.txt"
-          grep -Fx 'versionName=0.6.3-rc8' "$asset_dir/build-info.txt"
-          grep -Fx 'versionCode=66' "$asset_dir/build-info.txt"
+          grep -Fx 'versionName=0.6.3' "$asset_dir/build-info.txt"
+          grep -Fx 'versionCode=67' "$asset_dir/build-info.txt"
           grep -Fx 'debuggable=false' "$asset_dir/build-info.txt"
           grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' "$asset_dir/signature.txt"
           apk_sha=$(sha256sum "$apk" | cut -d ' ' -f 1)
           test "$apk_sha" = "$(cut -d ' ' -f 1 "$asset_dir/apk-sha256.txt")"
-          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.3-rc8.apk > "$asset_dir/apk-sha256.txt"
+          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.3.apk > "$asset_dir/apk-sha256.txt"
           printf 'sourceCommit=%s\ntestRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$TEST_RUN_ID" "$signed_run" >> "$asset_dir/build-info.txt"
-          cp rc-assets/bundle/release/app-release.aab "$asset_dir/HAWidgets-v0.6.3-rc8.aab"
-          cp RELEASE_NOTES_v0.6.3-rc8.md rc-notes.md
+          cp rc-assets/bundle/release/app-release.aab "$asset_dir/HAWidgets-v0.6.3.aab"
+          cp RELEASE_NOTES_v0.6.3.md rc-notes.md
           printf '\nSource: `%s`\n\n[Full CI](https://github.com/%s/actions/runs/%s) Р вЂ™Р’В· [Signed build](https://github.com/%s/actions/runs/%s)\n\nAPK SHA-256: `%s`\n' "$SOURCE_SHA" "$GH_REPO" "$TEST_RUN_ID" "$GH_REPO" "$signed_run" "$apk_sha" >> rc-notes.md
-          gh release create "$tag" "$apk" "$asset_dir/HAWidgets-v0.6.3-rc8.aab" "$asset_dir/apk-sha256.txt" "$asset_dir/build-info.txt" "$asset_dir/signature.txt" \
-            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.3-rc8' --notes-file rc-notes.md --prerelease --latest=false
+          gh release create "$tag" "$apk" "$asset_dir/HAWidgets-v0.6.3.aab" "$asset_dir/apk-sha256.txt" "$asset_dir/build-info.txt" "$asset_dir/signature.txt" \
+            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.3' --notes-file rc-notes.md --latest
           gh release view "$tag" --json url,isDraft,isPrerelease,tagName,targetCommitish
+          mkdir public-assets
+          curl --fail --location --retry 0 "https://github.com/$GH_REPO/releases/download/$tag/HAWidgets-v0.6.3.apk" -o public-assets/HAWidgets-v0.6.3.apk
+          curl --fail --location --retry 0 "https://github.com/$GH_REPO/releases/download/$tag/HAWidgets-v0.6.3.aab" -o public-assets/HAWidgets-v0.6.3.aab
+          cmp "$apk" public-assets/HAWidgets-v0.6.3.apk
+          cmp "$asset_dir/HAWidgets-v0.6.3.aab" public-assets/HAWidgets-v0.6.3.aab
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose --print-certs public-assets/HAWidgets-v0.6.3.apk | tee public-assets/signature.txt
+          grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' public-assets/signature.txt
+          "$AAPT" dump badging public-assets/HAWidgets-v0.6.3.apk | tee public-assets/manifest.txt
+          grep -F "package: name='com.danila.hacustomwidgets' versionCode='67' versionName='0.6.3'" public-assets/manifest.txt
+          grep -Fx "sdkVersion:'31'" public-assets/manifest.txt
+          grep -Fx "targetSdkVersion:'36'" public-assets/manifest.txt
+          ! grep -q '^application-debuggable:' public-assets/manifest.txt
+          jarsigner -verify public-assets/HAWidgets-v0.6.3.aab | tee public-assets/aab-verification.txt
+          grep -F 'jar verified.' public-assets/aab-verification.txt
+          keytool -printcert -jarfile public-assets/HAWidgets-v0.6.3.aab > public-assets/aab-certificate.txt
+          grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' public-assets/aab-certificate.txt
+          sha256sum public-assets/HAWidgets-v0.6.3.* | tee public-assets/sha256.txt
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
+          echo 'PUBLIC_FINAL_ASSETS_PASS'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v0.6.3-public-assets-verification
+          path: public-assets
+          if-no-files-found: error
+
+  telegram-final:
+    needs: publish-final
+    # GITHUB_TOKEN release events do not start another workflow. Reuse the existing
+    # sender once, after public asset verification; no manual post or dispatch.
+    uses: ./.github/workflows/telegram-release.yml
+    with:
+      release_tag: v0.6.3
+    secrets: inherit

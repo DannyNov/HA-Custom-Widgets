@@ -55,6 +55,16 @@ Russian system locales use the Russian interface. Every other locale uses Englis
 
 Manual automation launch preserves its conditions (`skip_condition=false`). A disabled automation can still be launched manually once without enabling its automatic triggers. Green feedback confirms that Home Assistant accepted the call; it does not guarantee every physical consequence.
 
+### Multiple independent widgets
+
+You can place multiple HA Dashboard widget instances on the home screen. Each instance keeps its own visible spaces/tabs, cards, ordering and display settings — for example, separate dashboards for home, office or different groups of devices available in your Home Assistant instance. Tap the gear icon to configure that widget.
+
+The Home Assistant connection (server address and access token) is shared by all widgets.
+
+<p align="center">
+  <img src="docs/images/screenshots/multiple-dashboard-widgets.jpg" width="360" alt="Multiple independent HA Dashboard widgets">
+</p>
+
 ## Requirements
 
 - Android 12 (API 31) or later;

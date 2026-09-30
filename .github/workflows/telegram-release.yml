@@ -3,6 +3,16 @@ name: Telegram final release
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: true
+      TELEGRAM_CHAT_ID:
+        required: true
   workflow_dispatch:
     inputs:
       release_tag:
@@ -25,7 +35,7 @@ concurrency:
 jobs:
   notify:
     # Never resend on rerun, including after an ambiguous network failure.
-    if: ${{ github.run_attempt == 1 && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && !github.event.release.draft && !github.event.release.prerelease)) }}
+    if: ${{ github.run_attempt == 1 && (((github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && inputs.release_tag == 'v0.6.3')) && github.ref == 'refs/heads/main') || (github.event_name == 'release' && !github.event.release.draft && !github.event.release.prerelease)) }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish once to the channel
@@ -37,7 +47,7 @@ jobs:
           REPLACE_V061_MESSAGE_4: ${{ inputs.replace_v061_message_4 }}
         with:
           script: |
-            const manual = context.eventName === 'workflow_dispatch';
+            const manual = context.eventName === 'workflow_dispatch' || !!process.env.RELEASE_TAG;
             const tag = manual ? process.env.RELEASE_TAG : context.payload.release?.tag_name;
             if (!/^v?\d+\.\d+\.\d+(?:\.\d+)?$/.test(tag || '')) {
               if (manual) core.setFailed('Enter an existing final version tag.');
