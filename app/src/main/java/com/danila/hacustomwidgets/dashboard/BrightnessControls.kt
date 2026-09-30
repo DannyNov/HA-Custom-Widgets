@@ -36,7 +36,9 @@ class BrightnessStepAction : ActionCallback {
 }
 
 object BrightnessLayoutPolicy {
-    // 20 outer + 24 card padding + 80 name + 144 dimmer + 48 power.
+    // 20 outer + 24 card padding + 72 flexible name + 144 dimmer + 8 gap + 48 power.
+    // Power's 40dp circle is centered inside its 48dp target: visible gap = 8 + 4 = 12dp.
+    const val POWER_TARGET_GAP_DP = 8
     fun percentWidth(fontScale: Float): Float = 48f * fontScale.coerceIn(1f, 1.5f)
     fun showSteps(widthDp: Int, fontScale: Float): Boolean = widthDp >= 268 + percentWidth(fontScale) && fontScale <= 1.3f
 }
@@ -54,6 +56,7 @@ fun BrightnessControls(context: Context, control: DashboardControl, widgetId: In
         if (steps) BrightnessStep(control, -1, enabled, color)
         val intent = Intent(context, BrightnessActivity::class.java)
             .putExtra("brightness_entity", control.entityId).putExtra("brightness_widget", widgetId)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
         Box(
             modifier = GlanceModifier.width(BrightnessLayoutPolicy.percentWidth(fontScale).dp).height(48.dp).semantics {
                 contentDescription = tr("Set brightness", "Настроить яркость") + ": " + control.label + " " + (control.brightnessPercent?.let { "$it%" } ?: "—%")

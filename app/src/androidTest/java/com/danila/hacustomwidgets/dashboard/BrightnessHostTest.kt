@@ -21,6 +21,100 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class BrightnessHostTest {
+    private fun bounds(root: ViewGroup, child: View): android.graphics.Rect = android.graphics.Rect().also {
+        child.getDrawingRect(it); root.offsetDescendantRectToMyCoords(child, it)
+    }
+
+    @OptIn(ExperimentalGlanceRemoteViewsApi::class)
+    @Test fun powerGlyphUsesActiveYellowForAllPowerDomainsInBothThemes() = runBlocking {
+        for (night in listOf(android.content.res.Configuration.UI_MODE_NIGHT_NO, android.content.res.Configuration.UI_MODE_NIGHT_YES)) {
+            val themed = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply {
+                uiMode = (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+            })
+            for (domain in listOf("light", "switch")) for (state in listOf("on", "off", "unknown", "unavailable")) {
+                val control = DashboardControl("$domain.a", "Power", domain, state, domain == "light", 65)
+                val card = DashboardCard("device", "Power", null, null, DeviceCategory.LIGHTING, emptyList(), listOf(control))
+                val remote = GlanceRemoteViews().compose(themed, DpSize(320.dp, 110.dp)) {
+                    GlanceTheme { DashboardDeviceCard(card, 301, 320, true, emptyMap(), emptyMap()) }
+                }.remoteViews
+                instrumentation.runOnMainSync {
+                    val view = remote.apply(themed, null)
+                    val glyphs = images(view).filter { it.contentDescription?.toString() == com.danila.hacustomwidgets.tr(
+                        if (state == "on") "Turn off" else "Turn on", if (state == "on") "Выключить" else "Включить") }
+                    if (domain == "switch" && state in setOf("unknown", "unavailable")) {
+                        assertTrue(glyphs.isEmpty()); assertEquals(0, clicks(view)); return@runOnMainSync
+                    }
+                    val glyph = glyphs.single()
+                    val expected = themed.getColor(if (state == "on") com.danila.hacustomwidgets.R.color.widget_light_on
+                        else com.danila.hacustomwidgets.R.color.widget_primary)
+                    assertEquals(android.graphics.PorterDuffColorFilter(expected, android.graphics.PorterDuff.Mode.SRC_ATOP), glyph.colorFilter)
+                    assertEquals(if (state in setOf("unknown", "unavailable")) 0 else if (domain == "light") 4 else 1, clicks(view))
+                }
+            }
+        }
+    }
+
+    @Test fun floatingWindowIsTransparentInsetAndSurvivesRecreation() {
+        val info = context.packageManager.getActivityInfo(android.content.ComponentName(context, BrightnessActivity::class.java), 0)
+        assertTrue(info.flags and android.content.pm.ActivityInfo.FLAG_EXCLUDE_FROM_RECENTS != 0)
+        assertTrue(info.flags and android.content.pm.ActivityInfo.FLAG_NO_HISTORY != 0)
+        assertEquals("com.danila.hacustomwidgets.brightness", info.taskAffinity)
+        val intent = android.content.Intent(context, BrightnessActivity::class.java)
+            .putExtra("brightness_entity", "light.unknown").putExtra("brightness_widget", 301)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+        androidx.test.core.app.ActivityScenario.launch<BrightnessActivity>(intent).use { scenario ->
+            fun verify() = scenario.onActivity { activity ->
+                val density = activity.resources.displayMetrics.density
+                val metrics = activity.windowManager.currentWindowMetrics
+                val inset = metrics.windowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                val expected = minOf(metrics.bounds.width() - inset.left - inset.right - (48 * density).toInt(), (420 * density).toInt())
+                assertTrue(kotlin.math.abs(expected - activity.window.attributes.width) <= 1)
+                assertEquals(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, activity.window.attributes.height)
+                val background = activity.window.decorView.background as android.graphics.drawable.ColorDrawable
+                assertEquals(android.graphics.Color.TRANSPARENT, background.color)
+                assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0)
+                assertFalse(activity.isFinishing)
+            }
+            verify(); scenario.recreate(); verify()
+            instrumentation.waitForIdleSync()
+            android.os.SystemClock.sleep(250)
+            val screenshot = instrumentation.uiAutomation.takeScreenshot()
+            assertNotNull(screenshot)
+            java.io.File(context.getExternalFilesDir(null), "rc3-floating-window.png").outputStream().use {
+                screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            screenshot.recycle()
+        }
+    }
+
+    @Test fun helperHomeBackAndReopeningDoNotRetainRecentTask() {
+        val intent = android.content.Intent(context, BrightnessActivity::class.java)
+            .putExtra("brightness_entity", "light.unknown").putExtra("brightness_widget", 301)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+        for (exit in listOf("close", "back", "home")) {
+            var activity: BrightnessActivity? = null
+            val scenario = androidx.test.core.app.ActivityScenario.launch<BrightnessActivity>(intent)
+            try {
+                scenario.onActivity { activity = it; assertFalse(it.isFinishing) }
+                when (exit) {
+                    "close" -> scenario.onActivity { it.finish() }
+                    "back" -> scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                    else -> context.startActivity(android.content.Intent(android.content.Intent.ACTION_MAIN)
+                        .addCategory(android.content.Intent.CATEGORY_HOME).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+                val deadline = android.os.SystemClock.uptimeMillis() + 5000
+                while (activity?.isDestroyed != true && android.os.SystemClock.uptimeMillis() < deadline) {
+                    instrumentation.waitForIdleSync(); android.os.SystemClock.sleep(50)
+                }
+                assertTrue("Helper must finish after $exit", activity?.isDestroyed == true)
+                val manager = context.getSystemService(android.app.ActivityManager::class.java)
+                assertFalse("No helper task retained after $exit", manager.appTasks.any {
+                    it.taskInfo.baseIntent.component?.className == BrightnessActivity::class.java.name
+                })
+            } finally { scenario.close() }
+        }
+    }
+
     private fun images(view: View): List<android.widget.ImageView> = listOfNotNull(view as? android.widget.ImageView) +
         if (view is ViewGroup) (0 until view.childCount).flatMap { images(view.getChildAt(it)) } else emptyList()
 
@@ -182,6 +276,13 @@ class BrightnessHostTest {
                     view.measure(View.MeasureSpec.makeMeasureSpec(pixels, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                     view.layout(0, 0, pixels, view.measuredHeight)
                     val percentView = texts(view).single { it.text.toString() == "$percent%" }
+                    val outline = images(view).single { it.drawable is android.graphics.drawable.GradientDrawable }
+                    val power = images(view).single { it.contentDescription?.toString() == com.danila.hacustomwidgets.tr("Turn off", "Выключить") }
+                    val outlineRect = bounds(view as ViewGroup, outline)
+                    // 28dp glyph and 40dp circle share a center: circle begins 6dp before glyph.
+                    val circleLeft = bounds(view, power).left - (6 * context.resources.displayMetrics.density).toInt()
+                    assertTrue("Visible capsule/power gap must be 12dp", kotlin.math.abs(
+                        circleLeft - outlineRect.right - 12 * context.resources.displayMetrics.density) <= 2)
                     val rect = android.graphics.Rect(); percentView.getDrawingRect(rect)
                     (view as ViewGroup).offsetDescendantRectToMyCoords(percentView, rect)
                     assertTrue(rect.left >= 0 && rect.right <= pixels)

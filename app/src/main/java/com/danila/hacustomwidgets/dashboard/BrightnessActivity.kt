@@ -4,6 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -23,6 +26,15 @@ class BrightnessActivity : ComponentActivity() {
         val widgetId = intent.getIntExtra("brightness_widget", -1)
         val container = (application as HaWidgetApplication).container
         container.dashboardEvents.wakeAsync("BRIGHTNESS_DIALOG")
+        // Current window bounds support rotation/multi-window; exclude bars and cutouts.
+        val metrics = windowManager.currentWindowMetrics
+        val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
+            android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+        val density = resources.displayMetrics.density
+        val availableWidth = metrics.bounds.width() - insets.left - insets.right
+        val availableHeight = metrics.bounds.height() - insets.top - insets.bottom
+        val panelWidth = minOf(availableWidth - (48 * density).roundToInt(), (420 * density).roundToInt()).coerceAtLeast(1)
+        val panelMaxHeight = ((availableHeight / density) - 48).coerceAtLeast(48f)
         setContent {
             HaCustomWidgetsTheme {
                 val dashboard by container.dashboards.observe(widgetId).collectAsState()
@@ -37,8 +49,8 @@ class BrightnessActivity : ComponentActivity() {
                 }
                 val selected = draft ?: submittedOrConfirmed?.toFloat()
                 val enabled = control?.brightnessCapable == true && control.state in setOf("on", "off") && selected != null
-                Surface {
-                    Column(Modifier.padding(24.dp).widthIn(max = 360.dp)) {
+                Surface(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.heightIn(max = panelMaxHeight.dp).verticalScroll(rememberScrollState()).padding(24.dp)) {
                         Text(control?.friendlyName ?: entityId, style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(16.dp))
                         Text(selected?.roundToInt()?.let { "$it%" } ?: "—%", style = MaterialTheme.typography.headlineMedium)
@@ -70,6 +82,6 @@ class BrightnessActivity : ComponentActivity() {
                 }
             }
         }
-        window.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        window.setLayout(panelWidth, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 }

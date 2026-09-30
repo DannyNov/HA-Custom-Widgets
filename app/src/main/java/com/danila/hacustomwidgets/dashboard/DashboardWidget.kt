@@ -356,6 +356,7 @@ internal fun DashboardDeviceCard(
                 )
                 if (card.visibleControls.size == 1 && card.visibleControls.first().brightnessCapable) {
                     BrightnessControls(androidx.glance.LocalContext.current, card.visibleControls.first(), appWidgetId, widthDp)
+                    Spacer(GlanceModifier.width(BrightnessLayoutPolicy.POWER_TARGET_GAP_DP.dp))
                 }
                 if (unavailable && primaryControl?.brightnessCapable != true) {
                     Text(tr("⚠ Unavailable", "⚠ Недоступно"), style = TextStyle(color = semantic, fontSize = 10.sp))
@@ -507,6 +508,7 @@ internal fun DashboardDeviceCard(
                         Text(control.friendlyName, modifier = GlanceModifier.defaultWeight(), maxLines = 2,
                             style = TextStyle(color = ColorProvider(R.color.widget_primary), fontSize = if (compact) 12.sp else 14.sp))
                         BrightnessControls(androidx.glance.LocalContext.current, control, appWidgetId, widthDp)
+                        if (control.brightnessCapable) Spacer(GlanceModifier.width(BrightnessLayoutPolicy.POWER_TARGET_GAP_DP.dp))
                         if (PrimaryPowerButtonPolicy.supports(control)) {
                             PrimaryPowerButton(card.key, control, appWidgetId, operationStatuses[control.entityId])
                         } else {
@@ -607,6 +609,8 @@ private fun PrimaryPowerButton(
                 ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_power, operationStatus)),
                 contentDescription = if (control.state == "on") tr("Turn off", "Выключить") else tr("Turn on", "Включить"),
                 modifier = GlanceModifier.width(28.dp).height(28.dp),
+                colorFilter = if (operationStatus?.isActive == true) null else androidx.glance.ColorFilter.tint(
+                    ColorProvider(if (control.state == "on") R.color.widget_light_on else R.color.widget_primary)),
             )
             Text(
                 when {
