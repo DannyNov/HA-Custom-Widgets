@@ -118,6 +118,9 @@ class DashboardAtomicStateStore(context: Context) {
         .put("id", entityId)
         .put("confirmed_display", confirmedDisplayState)
         .put("confirmed_raw", confirmedRawState)
+        .put("brightness_attributes", brightness.toAttributes())
+        .put("last_confirmed_brightness", lastConfirmedBrightness)
+        .put("brightness_connection", brightnessConnectionId)
         .put("confirmed_ha_updated", confirmedHaLastUpdatedMillis)
         .put("revision", revision)
         .put("optimistic_overlay", optimisticOverlay)
@@ -155,6 +158,9 @@ class DashboardAtomicStateStore(context: Context) {
         entityId = json.getString("id"),
         confirmedDisplayState = json.optString("confirmed_display"),
         confirmedRawState = json.optString("confirmed_raw"),
+        brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(json.optJSONObject("brightness_attributes") ?: JSONObject()),
+        brightnessConnectionId = json.optNullable("brightness_connection"),
+        lastConfirmedBrightness = json.optInt("last_confirmed_brightness").takeIf { it in 1..255 },
         confirmedHaLastUpdatedMillis = json.optLong("confirmed_ha_updated")
             .takeIf { !json.isNull("confirmed_ha_updated") },
         revision = json.optLong("revision"),

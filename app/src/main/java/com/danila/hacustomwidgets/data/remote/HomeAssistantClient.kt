@@ -51,6 +51,9 @@ class HomeAssistantClient(
         .pingInterval(60, TimeUnit.SECONDS)
         .build(),
 ) {
+    // An obsolete brightness target must not be replayed by transport recovery.
+    private val brightnessHttp = http.newBuilder().retryOnConnectionFailure(false).build()
+
     suspend fun testConnection(connection: HomeAssistantConnection) = withContext(Dispatchers.IO) {
         execute(connection, "/api/").use { response ->
             if (!response.isSuccessful) throw apiError(response.code)
@@ -142,7 +145,8 @@ class HomeAssistantClient(
             serviceData.forEach { (key, value) -> put(key, value) }
         }.toString()
             .toRequestBody(JSON_MEDIA_TYPE)
-        http.newCall(
+        val serviceHttp = if (domain == "light" && service == "turn_on" && serviceData.containsKey("brightness_pct")) brightnessHttp else http
+        serviceHttp.newCall(
             Request.Builder()
                 .url(connection.baseUrl + "/api/services/$domain/$service")
                 .header("Authorization", "Bearer ${connection.token}")
@@ -192,9 +196,9 @@ class HomeAssistantClient(
                         "event" -> {
                             val subscriptionId = message.optInt("id")
                             val event = message.optJSONObject("event") ?: return@runCatching
-                            val newState = event.optJSONObject("data")?.optJSONObject("new_state")
+                            val newState = stateChangedEntity(event)
                             if (newState != null) {
-                                listener.onEntities(webSocket, subscriptionId, listOf(newState.toEntity()), false)
+                                listener.onEntities(webSocket, subscriptionId, listOf(newState), false)
                             } else {
                                 val parser = compressedParsers.getOrPut(subscriptionId) {
                                     if (compressedParsers.size >= MAX_RETAINED_SUBSCRIPTION_PARSERS) {
@@ -386,6 +390,14 @@ class HomeAssistantClient(
             .build(),
     ).execute()
 
+    internal fun stateChangedEntity(event: JSONObject): HaEntity? {
+        val data = event.optJSONObject("data") ?: return null
+        data.optJSONObject("new_state")?.let { return it.toEntity() }
+        if (event.optString("event_type") != "state_changed") return null
+        val id = data.optString("entity_id").takeIf { it.isNotBlank() } ?: return null
+        return HaEntity(id, "unavailable", id, null, event.optNullableString("time_fired"))
+    }
+
     private fun JSONObject.toEntity(): HaEntity {
         val id = getString("entity_id")
         val attributes = optJSONObject("attributes") ?: JSONObject()
@@ -401,6 +413,7 @@ class HomeAssistantClient(
             timerDuration = attributes.optNullableString("duration"),
             timerRemaining = attributes.optNullableString("remaining"),
             timerFinishesAt = attributes.optNullableString("finishes_at"),
+            brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
         )
     }
 
@@ -497,6 +510,7 @@ internal class CompressedEntitySubscriptionParser {
                     timerDuration = attributes.optNullableString("duration"),
                     timerRemaining = attributes.optNullableString("remaining"),
                     timerFinishesAt = attributes.optNullableString("finishes_at"),
+                    brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
                 )
             }
         }
@@ -537,6 +551,7 @@ internal class CompressedEntitySubscriptionParser {
             timerDuration = attributes.optNullableString("duration"),
             timerRemaining = attributes.optNullableString("remaining"),
             timerFinishesAt = attributes.optNullableString("finishes_at"),
+            brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(attributes),
         )
     }
 
@@ -548,6 +563,7 @@ internal class CompressedEntitySubscriptionParser {
         current?.timerDuration?.let { put("duration", it) }
         current?.timerRemaining?.let { put("remaining", it) }
         current?.timerFinishesAt?.let { put("finishes_at", it) }
+        current?.brightness?.toAttributes()?.let { old -> old.keys().forEach { put(it, old.get(it)) } }
         updates?.keys()?.let { keys -> while (keys.hasNext()) keys.next().let { put(it, updates.get(it)) } }
     }
 

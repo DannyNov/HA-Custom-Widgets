@@ -1,0 +1,156 @@
+{
+  "date": "2026-09-30",
+  "baseCommit": "41c35c0f736a06bebd5d167b495923d13e751640",
+  "runs": 291,
+  "priorAudit": "V063_VERSION_AUDIT.json",
+  "priorAuditMaximum": 50,
+  "newCommits": [
+    {
+      "sha": "41c35c0f736a06bebd5d167b495923d13e751640",
+      "code": 51
+    },
+    {
+      "sha": "47467beaf9ff92a33930abb44114e434ade113b2",
+      "code": 52
+    },
+    {
+      "sha": "889687824ead55ae53dffaf0980ffc09665fe529",
+      "code": 53
+    },
+    {
+      "sha": "8c22cd6bafa221661d99ce9037303c19ddd1c283",
+      "code": 54
+    }
+  ],
+  "branches": [
+    {
+      "name": "feature/brightness-v063",
+      "sha": "41c35c0f736a06bebd5d167b495923d13e751640"
+    },
+    {
+      "name": "feature/remove-entity-widget",
+      "sha": "fba3bf311da4f0cba14d16a4406520d484559107"
+    },
+    {
+      "name": "fix/catalog-refresh-0.6.1.1",
+      "sha": "ae5cc97dd20ebd6b3599b8a686103ab059e50cae"
+    },
+    {
+      "name": "main",
+      "sha": "718136bb62386ffbfff3bcdd18de4d403ad14d70"
+    },
+    {
+      "name": "release/v0.6.1",
+      "sha": "8de943565dee235213ae5abb3e87f7bbd08179f2"
+    },
+    {
+      "name": "stable-v0.2.1",
+      "sha": "a9e1f0b95632566fe715653de7dc241765d63333"
+    },
+    {
+      "name": "stable-v0.3.1",
+      "sha": "91754c9d070ccb23dbfd7336ddef12b60268a020"
+    },
+    {
+      "name": "stable-v0.3.2",
+      "sha": "60b6a71640848d8aaa8063245079ca68be7ab323"
+    },
+    {
+      "name": "stable-v0.3.3",
+      "sha": "705cc9d5eff58c0e6137c0b690aa8f7089d908d4"
+    },
+    {
+      "name": "stable-v0.3.4",
+      "sha": "e570eaebeac7537f37fb4773eb2aaf11f0dda226"
+    },
+    {
+      "name": "test/v0.6.1-rc1",
+      "sha": "9cdc49c34b62a8e9e832e6df33d0cd87ca6b31b2"
+    },
+    {
+      "name": "test/v0.6.1-rc2",
+      "sha": "8b1e9ab06c15f1711f33f13abd80c38b91dcca24"
+    },
+    {
+      "name": "test/v0.6.1-rc3",
+      "sha": "d906f159b47e5ac3a7d2acad97e9780482954a55"
+    },
+    {
+      "name": "test/v0.6.1-rc4",
+      "sha": "f2d78c2890ef95b50e0249a3b4a5ff30ab26ea52"
+    },
+    {
+      "name": "test/v0.6.1-rc5-diag",
+      "sha": "5b3b9f8de54c088391db77557bf4df89a4956f56"
+    },
+    {
+      "name": "test/v0.6.1-rc5",
+      "sha": "957f4d149c5c0483b60024f488cd03901bb776c2"
+    },
+    {
+      "name": "test/v0.6.1-rc6",
+      "sha": "7cd3cc5ca5238cd330c7dedf91f107f33bc3e737"
+    },
+    {
+      "name": "test/v0.6.1-rc7",
+      "sha": "ba8847701e14ccd43dccdd15847c892330dcc6a4"
+    },
+    {
+      "name": "v0.3.2-signature-report",
+      "sha": "1f236b95395edd20c81b6747e29f615c81a144b5"
+    },
+    {
+      "name": "v0.3.2-stabilization",
+      "sha": "ba42fca92284a747bcbc711f920a892172f6727f"
+    }
+  ],
+  "tags": [
+    {
+      "ref": "refs/tags/v0.6.0.3",
+      "sha": "f8c7a9c8a9a11d823873a274ae9f2eb340314499",
+      "type": "commit"
+    },
+    {
+      "ref": "refs/tags/v0.6.1",
+      "sha": "af315c33410b8833f3339ee13682081ff8819f2a",
+      "type": "tag"
+    },
+    {
+      "ref": "refs/tags/v0.6.1-rc6",
+      "sha": "7cd3cc5ca5238cd330c7dedf91f107f33bc3e737",
+      "type": "commit"
+    },
+    {
+      "ref": "refs/tags/v0.6.1-rc7",
+      "sha": "ba8847701e14ccd43dccdd15847c892330dcc6a4",
+      "type": "commit"
+    },
+    {
+      "ref": "refs/tags/v0.6.1.1",
+      "sha": "df0fff631634657403b5436d8a7440de91f79cba",
+      "type": "commit"
+    },
+    {
+      "ref": "refs/tags/v0.6.1.1-rc1",
+      "sha": "7fe94a6bee9c0994161a046b73f978b37074043c",
+      "type": "commit"
+    },
+    {
+      "ref": "refs/tags/v0.6.2",
+      "sha": "718136bb62386ffbfff3bcdd18de4d403ad14d70",
+      "type": "commit"
+    },
+    {
+      "ref": "refs/tags/v0.6.2-rc1",
+      "sha": "7f133dd7aafb60c937c5c7e3067596806a9a6502",
+      "type": "commit"
+    },
+    {
+      "ref": "refs/tags/v0.6.3-rc1",
+      "sha": "41c35c0f736a06bebd5d167b495923d13e751640",
+      "type": "commit"
+    }
+  ],
+  "maximum": 54,
+  "selectedRcCode": 55
+}

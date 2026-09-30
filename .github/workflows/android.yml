@@ -54,7 +54,7 @@ jobs:
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
           badging="$($AAPT dump badging "$apk")"
-          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='49' versionName='0.6.2'"
+          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='67' versionName='0.6.3'"
           printf '%s\n' "$badging" | grep -Fx "sdkVersion:'31'"
           printf '%s\n' "$badging" | grep -Fx "targetSdkVersion:'36'"
           if printf '%s\n' "$badging" | grep -q '^application-debuggable:'; then
@@ -63,8 +63,8 @@ jobs:
           fi
           {
             printf 'applicationId=com.danila.hacustomwidgets\n'
-            printf 'versionName=0.6.2\n'
-            printf 'versionCode=49\n'
+            printf 'versionName=0.6.3\n'
+            printf 'versionCode=67\n'
             printf 'debuggable=false\n'
           } | tee app/build/outputs/apk/release/build-info.txt
           sha256sum "$apk" | tee app/build/outputs/apk/release/apk-sha256.txt
@@ -80,12 +80,12 @@ jobs:
           grep -F 'jar verified.' app/build/outputs/apk/release/aab-signature.txt
           keytool -printcert -jarfile app/build/outputs/bundle/release/app-release.aab > app/build/outputs/apk/release/aab-certificate.txt
           grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' app/build/outputs/apk/release/aab-certificate.txt
-          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.6.2.apk
+          cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.6.3.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HA-Custom-Widgets-v0.6.2-release
+          name: HA-Custom-Widgets-v0.6.3-release
           path: |
-            app/build/outputs/apk/release/HAWidgets-v0.6.2.apk
+            app/build/outputs/apk/release/HAWidgets-v0.6.3.apk
             app/build/outputs/bundle/release/app-release.aab
             app/build/outputs/apk/release/signature.txt
             app/build/outputs/apk/release/apk-sha256.txt

@@ -70,6 +70,27 @@ class DashboardRepository(context: Context) {
 
     fun all(): List<DashboardConfig> = configuredIds().mapNotNull { it.toIntOrNull()?.let(::getConfig) }
 
+    @Volatile var brightnessOverlay: (String) -> Int? = { null }
+
+    private fun brightnessConnectionId(): String? = timerConnection.load()?.let {
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest((it.baseUrl + "\u0000" + it.token).toByteArray())
+            .joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    fun brightnessTruth(entityId: String): VersionedEntityState? {
+        if (!entityId.startsWith("light.")) return null
+        val connection = brightnessConnectionId()
+        return widgetsContainingEntity(entityId).mapNotNull { atomicStore.read(it).entities[entityId] }
+            .filter { it.brightnessConnectionId == connection }
+            .maxByOrNull { it.confirmedHaLastUpdatedMillis ?: Long.MIN_VALUE }
+    }
+
+    @Synchronized
+    fun brightnessChanged(entityId: String) {
+        widgetsContainingEntity(entityId).forEach { touchAndRequestRender(it, "BRIGHTNESS") }
+    }
+
     fun entityIds(appWidgetId: Int): List<String> = structure(appWidgetId)?.entityIds.orEmpty()
 
     @Synchronized
@@ -203,6 +224,7 @@ class DashboardRepository(context: Context) {
         entities: List<HaEntity>,
         source: DashboardStateSource = DashboardStateSource.MANUAL_REFRESH,
     ): Long {
+        val brightnessConnection = brightnessConnectionId()
         var accepted = 0
         val after = commitAndRequestRender(appWidgetId, source.name) { before ->
             val stateMap = before.entities.toMutableMap()
@@ -232,7 +254,7 @@ class DashboardRepository(context: Context) {
                 if (!decision.accept) return@forEach
                 val overlayRetired = reset != null && reset.confirmedHa == null
                 if (reset != null) timerResets.reconcile(reset, entity)
-                if (DashboardRefreshPolicy.samePayload(existing, entity) && !decision.confirmsOperation && !overlayRetired) {
+                if (existing?.brightnessConnectionId == brightnessConnection && DashboardRefreshPolicy.samePayload(existing, entity) && !decision.confirmsOperation && !overlayRetired) {
                     // Persist newer ordering metadata without requesting a visual revision.
                     if (existing != null && incomingMillis != null && incomingMillis != existing.confirmedHaLastUpdatedMillis) {
                         stateMap[entity.entityId] = existing.copy(confirmedHaLastUpdatedMillis = incomingMillis)
@@ -252,6 +274,10 @@ class DashboardRepository(context: Context) {
                     timerDuration = entity.timerDuration,
                     timerRemaining = entity.timerRemaining,
                     timerFinishesAt = entity.timerFinishesAt,
+                    brightness = entity.brightness,
+                    lastConfirmedBrightness = entity.brightness.value?.takeIf { it > 0 } ?: existing?.takeIf { it.brightnessConnectionId == brightnessConnection }?.lastConfirmedBrightness
+                        ?: brightnessTruth(entity.entityId)?.lastConfirmedBrightness,
+                    brightnessConnectionId = brightnessConnection,
                 )
                 stateMap[entity.entityId] = updated
                 if (decision.confirmsOperation && operation != null) {
@@ -505,6 +531,7 @@ class DashboardRepository(context: Context) {
         val structure = structure(appWidgetId) ?: return null
         val spaces = structure.spaces
         val atomic = atomicStore.read(appWidgetId, structure.entityIds)
+        val brightnessConnection = brightnessConnectionId()
         val cards = structure.cards.map { card ->
             card.copy(
                 autoOffTimer = config.autoOffTimersByDevice[card.key]?.takeIf { it.enabled },
@@ -517,7 +544,8 @@ class DashboardRepository(context: Context) {
                 },
                 controls = card.controls.map { control ->
                     atomic.entities[control.entityId]?.let {
-                        control.copy(state = it.rawState)
+                        control.copy(state = it.rawState, brightnessCapable = control.domain == "light" && it.brightness.capable && it.brightnessConnectionId == brightnessConnection,
+                            brightnessPercent = brightnessOverlay(control.entityId) ?: it.brightness.displayPercent(it.confirmedRawState, it.lastConfirmedBrightness))
                     } ?: control
                 },
                 timerState = card.timerState?.let { timer ->
@@ -746,6 +774,7 @@ class DashboardRepository(context: Context) {
                     label = MetricLabels.compactMetricName(title, entity.friendlyName),
                     domain = entity.domain,
                     state = entity.state,
+                    friendlyName = entity.friendlyName,
                 )
             }
         }.filterNot { it.entityId == config.autoOffTimersByDevice[key]?.timerEntityId }
@@ -975,6 +1004,7 @@ class DashboardRepository(context: Context) {
                         card.controls.forEach { control ->
                             controls.put(
                                 JSONObject().put("id", control.entityId).put("label", control.label)
+                                    .put("friendly_name", control.friendlyName)
                                     .put("domain", control.domain).put("state", control.state),
                             )
                         }
@@ -1027,6 +1057,7 @@ class DashboardRepository(context: Context) {
                             DashboardControl(
                                 control.getString("id"), control.optString("label"),
                                 control.optString("domain"), control.optString("state"),
+                                friendlyName = control.optString("friendly_name", control.optString("label")),
                             ),
                         )
                     }

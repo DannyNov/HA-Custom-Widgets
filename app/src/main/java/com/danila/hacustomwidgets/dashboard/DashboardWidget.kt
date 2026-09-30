@@ -345,18 +345,22 @@ internal fun DashboardDeviceCard(
         ) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    card.title,
+                    primaryControl?.takeIf { card.visibleControls.size == 1 && it.brightnessCapable }?.friendlyName ?: card.title,
                     modifier = GlanceModifier.defaultWeight(),
-                    maxLines = 1,
+                    maxLines = if (card.visibleControls.any { it.brightnessCapable }) 2 else 1,
                     style = TextStyle(
                         color = ColorProvider(R.color.widget_primary),
                         fontSize = if (compact) 12.sp else 14.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
-                if (unavailable) {
+                if (card.visibleControls.size == 1 && card.visibleControls.first().brightnessCapable) {
+                    BrightnessControls(androidx.glance.LocalContext.current, card.visibleControls.first(), appWidgetId, widthDp)
+                    Spacer(GlanceModifier.width(BrightnessLayoutPolicy.POWER_TARGET_GAP_DP.dp))
+                }
+                if (unavailable && primaryControl?.brightnessCapable != true) {
                     Text(tr("⚠ Unavailable", "⚠ Недоступно"), style = TextStyle(color = semantic, fontSize = 10.sp))
-                } else if (unknown && !card.key.startsWith("scenario:")) {
+                } else if (unknown && primaryControl?.brightnessCapable != true && !card.key.startsWith("scenario:")) {
                     Text("?", style = TextStyle(color = semantic, fontSize = 12.sp))
                 } else if (card.key.startsWith("scenario:")) {
                     val control = card.controls.firstOrNull()
@@ -382,7 +386,7 @@ internal fun DashboardDeviceCard(
                             ),
                         )
                     }
-                } else if (card.visibleControls.size == 1 && card.autoOffTimer == null) {
+                } else if (card.visibleControls.size == 1 && (card.autoOffTimer == null || card.visibleControls.first().brightnessCapable)) {
                     val control = card.visibleControls.first()
                     if (PrimaryPowerButtonPolicy.supports(control)) {
                         PrimaryPowerButton(
@@ -426,9 +430,91 @@ internal fun DashboardDeviceCard(
                 }
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
-                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    val timerContext = androidx.glance.LocalContext.current
+                    val timerDensity = timerContext.resources.displayMetrics.density
+                    val timerPaint = android.graphics.Paint().apply {
+                        textSize = 11 * timerContext.resources.displayMetrics.scaledDensity
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    }
+                    val intervalWidth = listOf(30, 60, 90, 120).maxOf {
+                        timerPaint.measureText(tr("$it min", "$it мин")) / timerDensity
+                    }
+                    timerPaint.textSize = 10 * timerContext.resources.displayMetrics.scaledDensity
+                    timerPaint.typeface = android.graphics.Typeface.DEFAULT
+                    val remainingLabel = displayedRemaining?.takeIf {
+                        timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
+                    }?.let { remaining ->
+                        if (timerPresentation?.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining")
+                    }
+                    val timerLayout = TimerBlockLayoutPolicy.resolve(widthDp, compact,
+                        !primary.brightnessCapable, intervalWidth, 0f,
+                        timerContext.resources.configuration.fontScale)
+                    // Word wrapping can need more lines than total width / column width predicts.
+                    // Measure Android's actual line layout so narrow large-font intervals cannot clip.
+                    val intervalPaint = android.text.TextPaint().apply {
+                        textSize = 11 * timerContext.resources.displayMetrics.scaledDensity
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    }
+                    val intervalHeight = maxOf(timerLayout.intervalHeight, listOf(30, 60, 90, 120).maxOf {
+                        val label = tr("$it min", "$it мин")
+                        val pixels = (timerLayout.textWidth * timerDensity).toInt().coerceAtLeast(1)
+                        val layout = android.text.StaticLayout.Builder.obtain(label, 0, label.length, intervalPaint, pixels)
+                            .setIncludePad(true).build()
+                        kotlin.math.ceil(layout.height / timerDensity).toInt() + 2
+                    })
+                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        Column(modifier = GlanceModifier.defaultWeight().padding(end = 4.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                        Spacer(GlanceModifier.width(timerLayout.leadingSpace.dp))
+                        Row(
+                            modifier = GlanceModifier.width(timerLayout.blockWidth.dp)
+                                .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
+                                    DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
+                                ))),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Box(modifier = GlanceModifier.width(48.dp).height(intervalHeight.dp),
+                                contentAlignment = Alignment.Center) {
+                                Box(
+                                modifier = GlanceModifier
+                                    .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                                    .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                                    .background(ImageProvider(
+                                        if (timerPresentation?.status == HaTimerStatus.ACTIVE) R.drawable.circle_timer_active
+                                        else R.drawable.circle_accent
+                                    )),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Image(
+                                    ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_timer,
+                                        operationStatuses[timerConfig.timerEntityId])),
+                                    contentDescription = tr("Timer", "Таймер"),
+                                    modifier = GlanceModifier.width(28.dp).height(28.dp),
+                                    colorFilter = if (TimerGlyphPolicy.activeYellow(
+                                        timerPresentation?.status, operationStatuses[timerConfig.timerEntityId],
+                                        primary.state,
+                                    )) androidx.glance.ColorFilter.tint(ColorProvider(R.color.widget_light_on)) else null,
+                                )
+                            }
+                            }
+                            Spacer(GlanceModifier.width(8.dp))
+                            Column(modifier = GlanceModifier.width(timerLayout.textWidth.dp)) {
+                                Box(modifier = GlanceModifier.fillMaxWidth().height(intervalHeight.dp),
+                                    contentAlignment = Alignment.CenterStart) {
+                                    Text(
+                                        selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—",
+                                        modifier = GlanceModifier.fillMaxWidth(),
+                                        style = TextStyle(color = ColorProvider(R.color.widget_accent),
+                                            fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                                    )
+                                }
+                            }
+                        }
+                        }
+                        }
+                        if (!primary.brightnessCapable)
                         Box(
-                            modifier = GlanceModifier.defaultWeight(),
+                            modifier = GlanceModifier.width(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (PrimaryPowerButtonPolicy.supports(primary)) {
@@ -451,53 +537,37 @@ internal fun DashboardDeviceCard(
                                 )
                             }
                         }
-                        Row(
-                            modifier = GlanceModifier.defaultWeight().padding(horizontal = 4.dp, vertical = 4.dp)
-                                .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
-                                    DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
-                                ))),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = GlanceModifier
-                                    .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
-                                    .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
-                                    .background(ImageProvider(
-                                        if (timerPresentation?.status == HaTimerStatus.ACTIVE) R.drawable.circle_timer_active
-                                        else R.drawable.circle_accent
-                                    )),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Image(
-                                    ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_timer,
-                                        operationStatuses[timerConfig.timerEntityId])),
-                                    contentDescription = tr("Timer", "Таймер"),
-                                    modifier = GlanceModifier.width(28.dp).height(28.dp),
-                                )
+                    }
+                        remainingLabel?.let {
+                            Row {
+                                Spacer(GlanceModifier.width(timerLayout.remainingLeading.dp))
+                                Text(it, modifier = GlanceModifier.width(timerLayout.remainingWidth.dp),
+                                    style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
+                                        textAlign = TextAlign.Start))
                             }
-                            Text(
-                                " ${selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—"}",
-                                style = TextStyle(
-                                    color = ColorProvider(R.color.widget_accent),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                            )
                         }
-                    }
-                    displayedRemaining?.takeIf {
-                        timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
-                    }?.let { remaining ->
-                        Text(
-                            if (timerPresentation?.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining"),
-                            modifier = GlanceModifier.fillMaxWidth(),
-                            style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
-                                textAlign = TextAlign.End),
-                        )
-                    }
                 }
             }
-            if (card.visibleControls.size > 1 && !unavailable) {
+            if (card.visibleControls.size > 1 && card.visibleControls.any { it.brightnessCapable }) {
+                card.visibleControls.forEach { control ->
+                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(control.friendlyName, modifier = GlanceModifier.defaultWeight(), maxLines = 2,
+                            style = TextStyle(color = ColorProvider(R.color.widget_primary), fontSize = if (compact) 12.sp else 14.sp))
+                        BrightnessControls(androidx.glance.LocalContext.current, control, appWidgetId, widthDp)
+                        if (control.brightnessCapable) Spacer(GlanceModifier.width(BrightnessLayoutPolicy.POWER_TARGET_GAP_DP.dp))
+                        if (PrimaryPowerButtonPolicy.supports(control)) {
+                            PrimaryPowerButton(card.key, control, appWidgetId, operationStatuses[control.entityId])
+                        } else {
+                            Text(controlLabel(control, operationStatuses[control.entityId]),
+                                modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
+                                    actionRunCallback<DashboardControlAction>(actionParametersOf(
+                                        DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
+                                        DashboardEntityKey to control.entityId, DashboardDomainKey to control.domain,
+                                    ))), style = TextStyle(color = semantic, fontSize = 11.sp))
+                        }
+                    }
+                }
+            } else if (card.visibleControls.size > 1 && !unavailable) {
                 Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                 val controlColumns = if (widthDp >= 320) 3 else 2
                 val controlWidth = ((widthDp - 36) / controlColumns).coerceAtLeast(76)
@@ -562,7 +632,7 @@ private fun PrimaryPowerButton(
         modifier = GlanceModifier
             .width(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp)
             .height(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp)
-            .clickable(
+            .let { modifier -> if (control.state in setOf("unknown", "unavailable")) modifier else modifier.clickable(
                 actionRunCallback<DashboardControlAction>(
                     actionParametersOf(
                         DashboardWidgetIdKey to appWidgetId,
@@ -571,7 +641,7 @@ private fun PrimaryPowerButton(
                         DashboardDomainKey to control.domain,
                     ),
                 ),
-            ),
+            ) },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -585,6 +655,8 @@ private fun PrimaryPowerButton(
                 ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_power, operationStatus)),
                 contentDescription = if (control.state == "on") tr("Turn off", "Выключить") else tr("Turn on", "Включить"),
                 modifier = GlanceModifier.width(28.dp).height(28.dp),
+                colorFilter = if (operationStatus?.isActive == true) null else androidx.glance.ColorFilter.tint(
+                    ColorProvider(if (control.state == "on") R.color.widget_light_on else R.color.widget_primary)),
             )
             Text(
                 when {

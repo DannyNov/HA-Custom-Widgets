@@ -8,6 +8,7 @@ object DashboardRefreshPolicy {
 
     fun samePayload(existing: VersionedEntityState?, incoming: HaEntity): Boolean = existing != null &&
         existing.confirmedRawState == incoming.state &&
+        existing.brightness == incoming.brightness &&
         existing.confirmedDisplayState == incoming.displayState &&
         existing.timerDuration == incoming.timerDuration &&
         existing.timerRemaining == incoming.timerRemaining &&
