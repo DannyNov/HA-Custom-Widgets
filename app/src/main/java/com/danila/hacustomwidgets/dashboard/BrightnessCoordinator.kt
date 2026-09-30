@@ -6,6 +6,9 @@ import com.danila.hacustomwidgets.data.security.SecureConnectionStore
 import com.danila.hacustomwidgets.tr
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -42,6 +45,18 @@ class BrightnessCoordinator internal constructor(
     private val networkGates = ConcurrentHashMap<Key, Mutex>()
     private val running = mutableSetOf<Key>()
     private var generation = 0L
+    private val revision = MutableStateFlow(0L)
+    val revisions = revision.asStateFlow()
+
+    private fun publish(entityId: String) {
+        revision.update { it + 1 }
+        changed(entityId)
+    }
+
+    /** Read the operation and HA truth directly, never a delayed Dashboard projection. */
+    fun displayPercent(entityId: String): Int? = overlay(entityId) ?: truth(entityId)?.let {
+        it.brightness.displayPercent(it.confirmedRawState, it.lastConfirmedBrightness)
+    }
 
     fun overlay(entityId: String): Int? {
         if (latest.keys.none { it.entity == entityId }) return null
@@ -51,13 +66,13 @@ class BrightnessCoordinator internal constructor(
     fun invalidate() {
         val ids = latest.keys.map { it.entity }
         latest.clear()
-        ids.forEach(changed)
+        ids.forEach(::publish)
     }
 
     suspend fun power(entityId: String, action: suspend () -> Unit) {
         val key = connection()?.let { Key(it, entityId) } ?: return
         latest.remove(key)
-        changed(entityId)
+        publish(entityId)
         networkGates.getOrPut(key) { Mutex() }.withLock { action() }
     }
 
@@ -73,18 +88,20 @@ class BrightnessCoordinator internal constructor(
                     ?: return@withLock
                 val target = absolute?.coerceIn(1, 100) ?: LightBrightness.step(base, step ?: return@withLock)
                 latest[key] = Pending(target, ++generation)
-                changed(entityId)
+                publish(entityId)
                 if (running.add(key)) scope.launch { drain(key) }
             }
         }
 
     private suspend fun drain(key: Key) {
         var discard = false
+        var attempted: Pending? = null
         try {
             while (true) {
                 delay(coalesceMs)
                 if (connection() != key.connection) { discard = true; break }
                 val sent = latest[key] ?: break
+                attempted = sent
                 val observed = truth(key.entity)
                 if (observed == null || !observed.brightness.capable || observed.confirmedRawState !in setOf("on", "off")) { discard = true; break }
                 val baseline = observed.confirmedHaLastUpdatedMillis
@@ -114,20 +131,20 @@ class BrightnessCoordinator internal constructor(
                 if (latest[key] != sent) continue
                 if (!confirmed) throw IllegalStateException("brightness confirmation timeout")
                 mutex.withLock { if (latest[key] == sent) latest.remove(key) }
-                changed(key.entity)
+                publish(key.entity)
                 if (!latest.containsKey(key)) break
             }
         } catch (cancelled: CancellationException) {
             discard = true
             throw cancelled
         } catch (_: Exception) {
-            discard = true
-            failure(key.entity)
+            // A failure of an older HTTP call must not revoke a newer submitted target.
+            if (attempted?.let { latest.remove(key, it) } == true) failure(key.entity)
         } finally {
             withContext(NonCancellable) { mutex.withLock {
                 if (discard) latest.remove(key)
                 if (latest.containsKey(key)) scope.launch { drain(key) } else running.remove(key)
-                changed(key.entity)
+                publish(key.entity)
             } }
         }
     }

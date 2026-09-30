@@ -7,6 +7,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.ImageProvider
+import androidx.glance.ColorFilter
+import androidx.glance.background
 import androidx.glance.action.*
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
@@ -46,7 +49,8 @@ fun BrightnessControls(context: Context, control: DashboardControl, widgetId: In
     val color = ColorProvider(if (enabled && control.state == "on") R.color.widget_light_on else R.color.widget_secondary)
     val fontScale = context.resources.configuration.fontScale
     val steps = BrightnessLayoutPolicy.showSteps(widthDp, fontScale)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = GlanceModifier.background(ImageProvider(R.drawable.brightness_capsule),
+        colorFilter = ColorFilter.tint(color)), verticalAlignment = Alignment.CenterVertically) {
         if (steps) BrightnessStep(control, -1, enabled, color)
         val intent = Intent(context, BrightnessActivity::class.java)
             .putExtra("brightness_entity", control.entityId).putExtra("brightness_widget", widgetId)

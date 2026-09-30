@@ -14,6 +14,7 @@ import com.danila.hacustomwidgets.HaWidgetApplication
 import com.danila.hacustomwidgets.tr
 import com.danila.hacustomwidgets.ui.HaCustomWidgetsTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 class BrightnessActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,12 +27,15 @@ class BrightnessActivity : ComponentActivity() {
             HaCustomWidgetsTheme {
                 val dashboard by container.dashboards.observe(widgetId).collectAsState()
                 val control = dashboard?.cards?.flatMap { it.controls }?.firstOrNull { it.entityId == entityId }
-                var selected by remember { mutableStateOf<Float?>(null) }
-                var dragging by remember { mutableStateOf(false) }
+                var draft by remember { mutableStateOf<Float?>(null) }
+                var gesture by remember { mutableStateOf(0L) }
+                val scope = rememberCoroutineScope()
+                val operationRevision by container.brightness.revisions.collectAsState()
                 val selection = remember { BrightnessSelection() }
-                LaunchedEffect(control?.brightnessPercent, dragging) {
-                    if (!dragging) selected = control?.brightnessPercent?.toFloat()
+                val submittedOrConfirmed = operationRevision.let {
+                    container.brightness.displayPercent(entityId)
                 }
+                val selected = draft ?: submittedOrConfirmed?.toFloat()
                 val enabled = control?.brightnessCapable == true && control.state in setOf("on", "off") && selected != null
                 Surface {
                     Column(Modifier.padding(24.dp).widthIn(max = 360.dp)) {
@@ -41,10 +45,16 @@ class BrightnessActivity : ComponentActivity() {
                         if (selected != null) {
                             Slider(
                                 value = selected!!,
-                                onValueChange = { dragging = true; selected = it; selection.change(it) },
+                                onValueChange = { gesture++; draft = it; selection.change(it) },
                                 onValueChangeFinished = {
-                                    selection.finish(enabled)?.let { container.brightness.submit(entityId, absolute = it) }
-                                    dragging = false
+                                    val finishedGesture = gesture
+                                    val target = selection.finish(enabled)
+                                    scope.launch {
+                                        // Keep the draft until the shared coordinator accepts/rejects
+                                        // submission, including mutex contention. A newer drag owns itself.
+                                        target?.let { container.brightness.submit(entityId, absolute = it).join() }
+                                        if (gesture == finishedGesture) draft = null
+                                    }
                                 },
                                 valueRange = 1f..100f, steps = 98, enabled = enabled,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics {

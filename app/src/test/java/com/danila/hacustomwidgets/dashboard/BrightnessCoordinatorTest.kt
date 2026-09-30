@@ -8,6 +8,58 @@ import org.junit.Test
 import kotlin.math.roundToInt
 
 class BrightnessCoordinatorTest {
+    @Test fun slider88To39OwnsValueUntilMatchingConfirmation() = runBlocking {
+        val f = Fixture(this); f.confirm(88)
+        val gate = CompletableDeferred<Unit>(); f.blocked = gate
+        val selection = BrightnessSelection()
+        assertEquals(88, f.engine.displayPercent("light.a"))
+        selection.change(70f); selection.change(39f)
+        assertTrue(f.calls.isEmpty())
+        f.engine.submit("light.a", absolute = selection.finish(true)!!).join()
+        assertNull(selection.finish(true))
+        assertEquals(88, LightBrightness.percent(f.state.brightness.value))
+        assertEquals(39, f.engine.displayPercent("light.a"))
+        withTimeout(1000) { while (f.calls.isEmpty()) delay(1) }
+        f.confirm(88) // stale value, even with a later timestamp
+        assertEquals(39, f.engine.displayPercent("light.a"))
+        gate.complete(Unit); f.settle()
+        assertEquals(listOf(39), f.calls)
+        assertEquals(39, f.engine.displayPercent("light.a"))
+        assertNull(f.engine.overlay("light.a"))
+    }
+
+    @Test fun sliderErrorAndTimeoutReleaseOwnershipToConfirmed88() = runBlocking {
+        for (networkError in listOf(true, false)) {
+            val f = Fixture(this); f.confirm(88); f.fail = networkError; f.echo = false
+            f.engine.submit("light.a", absolute = 39).join()
+            assertEquals(39, f.engine.displayPercent("light.a"))
+            f.settle()
+            assertEquals(88, f.engine.displayPercent("light.a"))
+            assertEquals(1, f.errors)
+        }
+    }
+
+    @Test fun newerSliderTargetSurvivesOldConfirmationAndOldFailure() = runBlocking {
+        for (oldFails in listOf(false, true)) {
+            val f = Fixture(this); f.confirm(88)
+            val gate = CompletableDeferred<Unit>(); f.blocked = gate; f.fail = oldFails
+            f.engine.submit("light.a", absolute = 39).join()
+            withTimeout(1000) { while (f.calls.isEmpty()) delay(1) }
+            f.engine.submit("light.a", absolute = 65).join()
+            f.confirm(39)
+            assertEquals(65, f.engine.displayPercent("light.a"))
+            gate.complete(Unit)
+            // Let the old call complete, but retain enough coalescing time to inspect ownership.
+            delay(1)
+            assertEquals(65, f.engine.displayPercent("light.a"))
+            f.fail = false; f.blocked = null
+            f.settle()
+            assertEquals(listOf(39, 65), f.calls)
+            assertEquals(65, f.engine.displayPercent("light.a"))
+            assertEquals(0, f.errors)
+        }
+    }
+
     private class Fixture(val scope: CoroutineScope) {
         var connection: HomeAssistantConnection? = HomeAssistantConnection("https://test.invalid", "test")
         var state = VersionedEntityState("light.a", "on", "on", 1, 1,

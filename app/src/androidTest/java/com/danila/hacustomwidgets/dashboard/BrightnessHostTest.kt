@@ -21,6 +21,48 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class BrightnessHostTest {
+    private fun images(view: View): List<android.widget.ImageView> = listOfNotNull(view as? android.widget.ImageView) +
+        if (view is ViewGroup) (0 until view.childCount).flatMap { images(view.getChildAt(it)) } else emptyList()
+
+    @OptIn(ExperimentalGlanceRemoteViewsApi::class)
+    @Test fun capsuleHasTransparentCenterMatchingOutlineAndNoExtraClickTarget() = runBlocking {
+        for (state in listOf("on", "off", "unknown", "unavailable")) {
+            for (width in listOf(180, 320)) {
+                for (percent in listOf(5, 65, 100)) {
+                    val control = DashboardControl("light.a", "Lamp", "light", state, true, percent)
+                    val remote = GlanceRemoteViews().compose(context, DpSize(width.dp, 110.dp)) {
+                        GlanceTheme { BrightnessControls(context, control, 301, width) }
+                    }.remoteViews
+                    instrumentation.runOnMainSync {
+                        val view = remote.apply(context, null)
+                        val density = context.resources.displayMetrics.density
+                        val pixels = (width * density).toInt()
+                        view.measure(View.MeasureSpec.makeMeasureSpec(pixels, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                        view.layout(0, 0, pixels, view.measuredHeight)
+                        val outline = images(view).single { it.drawable is android.graphics.drawable.GradientDrawable }
+                        val expectedWidth = if (width == 320) 144 else 48
+                        assertEquals((expectedWidth * density).toInt(), outline.width)
+                        assertEquals((48 * density).toInt(), outline.height)
+                        val bitmap = android.graphics.Bitmap.createBitmap(outline.width, outline.height,
+                            android.graphics.Bitmap.Config.ARGB_8888)
+                        outline.draw(android.graphics.Canvas(bitmap))
+                        assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(outline.width / 2, outline.height / 2)))
+                        assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(0, 0)))
+                        val edge = (0 until (3 * density).toInt()).map { bitmap.getPixel(outline.width / 2, it) }
+                            .maxBy { android.graphics.Color.alpha(it) }
+                        val textColor = texts(view).single { it.text.toString() == "$percent%" }.currentTextColor
+                        assertEquals(textColor, edge)
+                        assertEquals(context.getColor(if (state == "on") com.danila.hacustomwidgets.R.color.widget_light_on
+                            else com.danila.hacustomwidgets.R.color.widget_secondary), edge)
+                        assertEquals(if (state in setOf("on", "off")) (if (width == 320) 3 else 1) else 0, clicks(view))
+                        bitmap.recycle()
+                    }
+                }
+            }
+        }
+    }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private fun isolated(): Context = object : ContextWrapper(context) {
