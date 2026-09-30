@@ -27,6 +27,11 @@
     {
       "sha": "41c35c0f736a06bebd5d167b495923d13e751640",
       "code": 51
+    },
+    {
+      "sha": "598ff5c4d44acdd600f93663d36b3de0e43b7fbb",
+      "code": 56,
+      "result": "Not published: host caught retained regular helper task and ambiguous capsule selector. Added autoRemoveFromRecents, selected capsule by 48dp height."
     }
   ],
   "branches": [
@@ -215,6 +220,6 @@
       "draft": false
     }
   ],
-  "maximum": 55,
-  "selectedRcCode": 56
+  "maximum": 56,
+  "selectedRcCode": 57
 }

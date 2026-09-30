@@ -58,6 +58,7 @@ class BrightnessHostTest {
         val info = context.packageManager.getActivityInfo(android.content.ComponentName(context, BrightnessActivity::class.java), 0)
         assertTrue(info.flags and android.content.pm.ActivityInfo.FLAG_EXCLUDE_FROM_RECENTS != 0)
         assertTrue(info.flags and android.content.pm.ActivityInfo.FLAG_NO_HISTORY != 0)
+        assertTrue(info.flags and android.content.pm.ActivityInfo.FLAG_AUTO_REMOVE_FROM_RECENTS != 0)
         assertEquals("com.danila.hacustomwidgets.brightness", info.taskAffinity)
         val intent = android.content.Intent(context, BrightnessActivity::class.java)
             .putExtra("brightness_entity", "light.unknown").putExtra("brightness_widget", 301)
@@ -276,7 +277,8 @@ class BrightnessHostTest {
                     view.measure(View.MeasureSpec.makeMeasureSpec(pixels, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                     view.layout(0, 0, pixels, view.measuredHeight)
                     val percentView = texts(view).single { it.text.toString() == "$percent%" }
-                    val outline = images(view).single { it.drawable is android.graphics.drawable.GradientDrawable }
+                    val outline = images(view).single { it.drawable is android.graphics.drawable.GradientDrawable &&
+                        kotlin.math.abs(it.height - 48 * context.resources.displayMetrics.density) <= 1 }
                     val power = images(view).single { it.contentDescription?.toString() == com.danila.hacustomwidgets.tr("Turn off", "Выключить") }
                     val outlineRect = bounds(view as ViewGroup, outline)
                     // 28dp glyph and 40dp circle share a center: circle begins 6dp before glyph.

@@ -16,7 +16,8 @@
         <activity android:name=".dashboard.BrightnessActivity" android:exported="false"
             android:theme="@style/Theme.HaCustomWidgets.Brightness"
             android:taskAffinity="com.danila.hacustomwidgets.brightness"
-            android:excludeFromRecents="true" android:noHistory="true" />
+            android:excludeFromRecents="true" android:noHistory="true"
+            android:autoRemoveFromRecents="true" />
         <receiver android:name=".dashboard.DashboardTimerAlarmReceiver" android:exported="false" />
 
         <activity
