@@ -431,9 +431,48 @@ internal fun DashboardDeviceCard(
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = GlanceModifier.defaultWeight().padding(end = 4.dp, top = 4.dp, bottom = 4.dp)
+                                .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
+                                    DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
+                                ))),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = GlanceModifier
+                                    .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                                    .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
+                                    .background(ImageProvider(
+                                        if (timerPresentation?.status == HaTimerStatus.ACTIVE) R.drawable.circle_timer_active
+                                        else R.drawable.circle_accent
+                                    )),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Image(
+                                    ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_timer,
+                                        operationStatuses[timerConfig.timerEntityId])),
+                                    contentDescription = tr("Timer", "Таймер"),
+                                    modifier = GlanceModifier.width(28.dp).height(28.dp),
+                                    colorFilter = if (TimerGlyphPolicy.activeYellow(
+                                        timerPresentation?.status, operationStatuses[timerConfig.timerEntityId],
+                                        primary.state,
+                                    )) androidx.glance.ColorFilter.tint(ColorProvider(R.color.widget_light_on)) else null,
+                                )
+                            }
+                            Text(
+                                " ${selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—"}",
+                                modifier = GlanceModifier.defaultWeight(),
+                                maxLines = 2,
+                                style = TextStyle(
+                                    color = ColorProvider(R.color.widget_accent),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                        }
                         if (!primary.brightnessCapable)
                         Box(
-                            modifier = GlanceModifier.defaultWeight(),
+                            modifier = GlanceModifier.width(PrimaryPowerButtonPolicy.TOUCH_SIZE_DP.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (PrimaryPowerButtonPolicy.supports(primary)) {
@@ -455,39 +494,6 @@ internal fun DashboardDeviceCard(
                                     style = TextStyle(color = semantic, fontSize = 11.sp, fontWeight = FontWeight.Bold),
                                 )
                             }
-                        }
-                        Row(
-                            modifier = GlanceModifier.defaultWeight().padding(horizontal = 4.dp, vertical = 4.dp)
-                                .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
-                                    DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
-                                ))),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = GlanceModifier
-                                    .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
-                                    .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
-                                    .background(ImageProvider(
-                                        if (timerPresentation?.status == HaTimerStatus.ACTIVE) R.drawable.circle_timer_active
-                                        else R.drawable.circle_accent
-                                    )),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Image(
-                                    ImageProvider(PendingGlyphPolicy.icon(R.drawable.ic_timer,
-                                        operationStatuses[timerConfig.timerEntityId])),
-                                    contentDescription = tr("Timer", "Таймер"),
-                                    modifier = GlanceModifier.width(28.dp).height(28.dp),
-                                )
-                            }
-                            Text(
-                                " ${selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—"}",
-                                style = TextStyle(
-                                    color = ColorProvider(R.color.widget_accent),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                            )
                         }
                     }
                     displayedRemaining?.takeIf {
