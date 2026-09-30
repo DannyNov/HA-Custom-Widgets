@@ -430,15 +430,44 @@ internal fun DashboardDeviceCard(
                 }
                 if (primary != null) {
                     Spacer(GlanceModifier.height(if (compact) 3.dp else 5.dp))
-                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    val timerContext = androidx.glance.LocalContext.current
+                    val timerDensity = timerContext.resources.displayMetrics.density
+                    val timerPaint = android.graphics.Paint().apply {
+                        textSize = 11 * timerContext.resources.displayMetrics.scaledDensity
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    }
+                    val intervalWidth = listOf(30, 60, 90, 120).maxOf {
+                        timerPaint.measureText(tr("$it min", "$it мин")) / timerDensity
+                    }
+                    timerPaint.textSize = 10 * timerContext.resources.displayMetrics.scaledDensity
+                    timerPaint.typeface = android.graphics.Typeface.DEFAULT
+                    val remainingLabel = displayedRemaining?.takeIf {
+                        timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
+                    }?.let { remaining ->
+                        if (timerPresentation?.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining")
+                    }
+                    // Reserve the longest supported preset/status in both states: ticks never move the block.
+                    val remainingWidth = (1..120).flatMap { minutes ->
+                        val remaining = HaTimerPresentationPolicy.formatRemaining(minutes * 60_000L)
+                        listOf(tr("Remaining $remaining", "Осталось $remaining"),
+                            tr("Paused · $remaining", "Пауза · $remaining"))
+                    }.maxOf { timerPaint.measureText(it) / timerDensity }
+                    val timerLayout = TimerBlockLayoutPolicy.resolve(widthDp, compact,
+                        !primary.brightnessCapable, intervalWidth, remainingWidth,
+                        timerContext.resources.configuration.fontScale)
+                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        Box(modifier = GlanceModifier.defaultWeight().padding(end = 4.dp),
+                            contentAlignment = Alignment.TopCenter) {
                         Row(
-                            modifier = GlanceModifier.defaultWeight().padding(end = 4.dp, top = 4.dp, bottom = 4.dp)
+                            modifier = GlanceModifier.width(timerLayout.blockWidth.dp)
                                 .clickable(actionRunCallback<DashboardTimerAction>(actionParametersOf(
                                     DashboardWidgetIdKey to appWidgetId, DashboardDeviceKey to card.key,
                                 ))),
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalAlignment = Alignment.Top,
                         ) {
-                            Box(
+                            Box(modifier = GlanceModifier.width(48.dp).height(timerLayout.intervalHeight.dp),
+                                contentAlignment = Alignment.Center) {
+                                Box(
                                 modifier = GlanceModifier
                                     .width(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
                                     .height(PrimaryPowerButtonPolicy.VISIBLE_SIZE_DP.dp)
@@ -459,16 +488,25 @@ internal fun DashboardDeviceCard(
                                     )) androidx.glance.ColorFilter.tint(ColorProvider(R.color.widget_light_on)) else null,
                                 )
                             }
-                            Text(
-                                " ${selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—"}",
-                                modifier = GlanceModifier.defaultWeight(),
-                                maxLines = 2,
-                                style = TextStyle(
-                                    color = ColorProvider(R.color.widget_accent),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                            )
+                            }
+                            Spacer(GlanceModifier.width(8.dp))
+                            Column(modifier = GlanceModifier.width(timerLayout.textWidth.dp)) {
+                                Box(modifier = GlanceModifier.fillMaxWidth().height(timerLayout.intervalHeight.dp),
+                                    contentAlignment = Alignment.CenterStart) {
+                                    Text(
+                                        selectedMinutes?.let { tr("$it min", "$it мин") } ?: "—",
+                                        modifier = GlanceModifier.fillMaxWidth(),
+                                        style = TextStyle(color = ColorProvider(R.color.widget_accent),
+                                            fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                                    )
+                                }
+                                remainingLabel?.let {
+                                    Text(it, modifier = GlanceModifier.fillMaxWidth(),
+                                        style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
+                                            textAlign = TextAlign.Start))
+                                }
+                            }
+                        }
                         }
                         if (!primary.brightnessCapable)
                         Box(
@@ -495,16 +533,6 @@ internal fun DashboardDeviceCard(
                                 )
                             }
                         }
-                    }
-                    displayedRemaining?.takeIf {
-                        timerPresentation?.status in setOf(HaTimerStatus.ACTIVE, HaTimerStatus.PAUSED)
-                    }?.let { remaining ->
-                        Text(
-                            if (timerPresentation?.status == HaTimerStatus.PAUSED) tr("Paused · $remaining", "Пауза · $remaining") else tr("Remaining $remaining", "Осталось $remaining"),
-                            modifier = GlanceModifier.fillMaxWidth(),
-                            style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
-                                textAlign = TextAlign.End),
-                        )
                     }
                 }
             }

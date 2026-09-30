@@ -34,12 +34,12 @@ class TimerCardHostTest {
     private fun bounds(root: ViewGroup, view: View) = Rect().also {
         view.getDrawingRect(it); root.offsetDescendantRectToMyCoords(view, it)
     }
-    private fun card(minutes: Int = 30, state: String = "active", controlState: String = "on") = DashboardCard(
+    private fun card(minutes: Int = 30, state: String = "active", controlState: String = "on", remaining: String = "00:20:00") = DashboardCard(
         "device:dryer", "Очень длинное название сушилки Long English dryer name", null, null,
         DeviceCategory.SWITCHES, emptyList(), listOf(DashboardControl("switch.dryer", "Dryer", "switch", controlState)),
         AutoOffTimerConfig(true, "timer.dryer", controlEntityId = "switch.dryer"),
         DashboardMetric("timer.dryer", "Timer", "timer", state, state, null,
-            timerDuration = "%02d:%02d:00".format(minutes / 60, minutes % 60), timerRemaining = "00:20:00"),
+            timerDuration = "%02d:%02d:00".format(minutes / 60, minutes % 60), timerRemaining = remaining),
     )
     private suspend fun render(themed: Context, width: Int, card: DashboardCard,
         operations: Map<String, DashboardOperationStatus> = emptyMap()): ViewGroup {
@@ -77,13 +77,27 @@ class TimerCardHostTest {
                                 it.text.toString().trim() == tr("$minutes min", "$minutes мин") }
                             val labelRect = bounds(root, label)
                             assertTrue(timerRect.right <= labelRect.left)
+                            assertTrue("Interval stays at Timer center", kotlin.math.abs(timerRect.centerY() - labelRect.centerY()) <= 2)
+                            val remaining = descendants(root).filterIsInstance<TextView>().single {
+                                it.text.toString().startsWith(tr("Remaining ", "Осталось ")) }
+                            val remainingRect = bounds(root, remaining)
+                            assertEquals("Shared left text edge", labelRect.left, remainingRect.left)
+                            assertTrue("Remaining belongs below interval", remainingRect.top >= labelRect.bottom)
+                            assertTrue("Remaining cannot overlap Power", remainingRect.right <= powerRect.left)
+                            if (width >= 320 && scale == 1f)
+                                assertTrue("Timer moved away from card left", timerRect.left > 20 * themed.resources.displayMetrics.density)
                             assertTrue("Duration cannot overlap Power", labelRect.right <= powerRect.left)
                             assertTrue(timerRect.left >= 0 && powerRect.right <= root.width)
                             val density = themed.resources.displayMetrics.density
                             // Compact card padding 9dp plus 10dp target-to-glyph inset.
                             assertTrue(kotlin.math.abs(root.width - powerRect.right - 19 * density) <= 2)
                             fixed?.let { assertEquals(it.left, powerRect.left); assertEquals(it.right, powerRect.right) }; fixed = powerRect
-                            assertEquals(0, label.layout.getEllipsisCount(0))
+                            for (line in 0 until label.layout.lineCount) assertEquals(0, label.layout.getEllipsisCount(line))
+                            for (line in 0 until remaining.layout.lineCount) assertEquals(0, remaining.layout.getEllipsisCount(line))
+                            val timerTarget = generateSequence(timer(root) as View?) { it.parent as? View }
+                                .first { it.hasOnClickListeners() }
+                            assertTrue(timerTarget.width >= 48 * density - 1)
+                            assertTrue(timerTarget.height >= 48 * density - 1)
                             assertEquals(2, descendants(root).count { it.hasOnClickListeners() })
                             assertEquals(themed.getColor(R.color.widget_accent), label.currentTextColor)
                         }
@@ -115,6 +129,38 @@ class TimerCardHostTest {
                 }
             }
         }
+    }
+
+    @Test fun remainingTicksAndPausedLongTextKeepTheSameBlockAndPower() = runBlocking {
+        val original = Locale.getDefault()
+        try {
+            for (language in listOf("ru", "en")) for (width in listOf(180, 320)) for (scale in listOf(1f, 2f)) {
+                Locale.setDefault(Locale(language))
+                val themed = context.createConfigurationContext(Configuration(context.resources.configuration).apply { fontScale = scale })
+                var fixedTimer: Rect? = null
+                var fixedPower: Rect? = null
+                for (state in listOf("active", "paused")) for (remaining in listOf("00:01:00", "01:59:00")) {
+                    val root = render(themed, width, card(120, state = state, remaining = remaining))
+                    instrumentation.runOnMainSync {
+                        val timerRect = bounds(root, timer(root)); val powerRect = bounds(root, power(root))
+                        fixedTimer?.let { assertEquals(it, timerRect) }; fixedTimer = timerRect
+                        fixedPower?.let { assertEquals(it, powerRect) }; fixedPower = powerRect
+                        val label = descendants(root).filterIsInstance<TextView>().single {
+                            it.text.toString() == tr("120 min", "120 мин") }
+                        val text = descendants(root).filterIsInstance<TextView>().single {
+                            it.text.toString().startsWith(tr("Remaining ", "Осталось ")) ||
+                                it.text.toString().startsWith(tr("Paused · ", "Пауза · ")) }
+                        val r = bounds(root, text)
+                        assertEquals(bounds(root, label).left, r.left)
+                        assertTrue(r.top >= bounds(root, label).bottom)
+                        assertTrue(r.right <= powerRect.left && r.bottom <= root.height)
+                        for (line in 0 until text.layout.lineCount) assertEquals(0, text.layout.getEllipsisCount(line))
+                        assertTrue(text.layout.height <= text.height)
+                        assertTrue(label.layout.height <= label.height)
+                    }
+                }
+            }
+        } finally { Locale.setDefault(original) }
     }
 
     @Test fun unavailableAndUnknownControlsPreserveClickAndTintSemantics() = runBlocking {
