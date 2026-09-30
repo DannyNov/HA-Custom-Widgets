@@ -26,15 +26,19 @@ class BrightnessHostTest {
 
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
     @Test fun capsuleHasTransparentCenterMatchingOutlineAndNoExtraClickTarget() = runBlocking {
+        for (night in listOf(android.content.res.Configuration.UI_MODE_NIGHT_NO, android.content.res.Configuration.UI_MODE_NIGHT_YES)) {
+        val themed = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply {
+            uiMode = (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+        })
         for (state in listOf("on", "off", "unknown", "unavailable")) {
             for (width in listOf(180, 320)) {
                 for (percent in listOf(5, 65, 100)) {
                     val control = DashboardControl("light.a", "Lamp", "light", state, true, percent)
-                    val remote = GlanceRemoteViews().compose(context, DpSize(width.dp, 110.dp)) {
-                        GlanceTheme { BrightnessControls(context, control, 301, width) }
+                    val remote = GlanceRemoteViews().compose(themed, DpSize(width.dp, 110.dp)) {
+                        GlanceTheme { BrightnessControls(themed, control, 301, width) }
                     }.remoteViews
                     instrumentation.runOnMainSync {
-                        val view = remote.apply(context, null)
+                        val view = remote.apply(themed, null)
                         val density = context.resources.displayMetrics.density
                         val pixels = (width * density).toInt()
                         view.measure(View.MeasureSpec.makeMeasureSpec(pixels, View.MeasureSpec.EXACTLY),
@@ -52,14 +56,22 @@ class BrightnessHostTest {
                         val edge = (0 until (3 * density).toInt()).map { bitmap.getPixel(outline.width / 2, it) }
                             .maxBy { android.graphics.Color.alpha(it) }
                         val textColor = texts(view).single { it.text.toString() == "$percent%" }.currentTextColor
-                        assertEquals(textColor, edge)
-                        assertEquals(context.getColor(if (state == "on") com.danila.hacustomwidgets.R.color.widget_light_on
-                            else com.danila.hacustomwidgets.R.color.widget_secondary), edge)
+                        // Compare the actual applied tint exactly. Thin strokes are antialiased;
+                        // unpremultiplying a partially covered pixel can round RGB by one unit.
+                        val tint = (outline.colorFilter as android.graphics.PorterDuffColorFilter).color
+                        assertEquals(textColor, tint)
+                        assertEquals(themed.getColor(if (state == "on") com.danila.hacustomwidgets.R.color.widget_light_on
+                            else com.danila.hacustomwidgets.R.color.widget_secondary), tint)
+                        assertTrue(android.graphics.Color.alpha(edge) >= 200)
+                        for (shift in listOf(0, 8, 16)) {
+                            assertTrue(kotlin.math.abs(((edge ushr shift) and 255) - ((tint ushr shift) and 255)) <= 2)
+                        }
                         assertEquals(if (state in setOf("on", "off")) (if (width == 320) 3 else 1) else 0, clicks(view))
                         bitmap.recycle()
                     }
                 }
             }
+        }
         }
     }
 
