@@ -126,6 +126,11 @@ jobs:
             ref: c26bb1af90872db9a6bfb49ede693294d6a2fd51
             fixture: true
             legacy: false
+          - source: v0.6.3-api36
+            ref: c26bb1af90872db9a6bfb49ede693294d6a2fd51
+            fixture: true
+            legacy: false
+            api: 36
           - source: v0.6.2
             ref: 718136bb62386ffbfff3bcdd18de4d403ad14d70
             fixture: true
@@ -173,7 +178,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 31
+          api-level: ${{ matrix.api || 31 }}
           arch: x86_64
           disable-animations: true
           script: |
@@ -190,7 +195,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v0.6.1-upgrade-${{ matrix.source }}-api-31
+          name: v0.6.1-upgrade-${{ matrix.source }}-api-${{ matrix.api || 31 }}
           path: |
             seed-result.txt
             pre-upgrade-result.txt

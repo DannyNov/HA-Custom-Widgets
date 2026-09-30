@@ -60,7 +60,14 @@ class DashboardFavoritesHostTest {
         repo.setSelectedTab(811, MAIN_TAB_ID)
         assertEquals(listOf("device"), repo.getConfig(811)!!.favoriteDeviceKeys)
         assertEquals(MAIN_TAB_ID, repo.get(811)!!.selectedTabId)
+        assertEquals(listOf("device"), dashboardSections(repo.get(811)!!).flatMap { it.cards }.map { it.key })
         assertFalse(repo.getConfig(813)!!.showFavorites)
+        repeat(6) {
+            val state = repo.get(813)!!
+            val ids = state.tabs.map { it.id }
+            repo.setSelectedTab(813, ids[(ids.indexOf(state.selectedTabId) + 1) % ids.size])
+            assertNotEquals(MAIN_TAB_ID, repo.get(813)!!.selectedTabId)
+        }
     }
 
     @Test fun fallbackFollowsSavedOrderAndNoTabsShowsExplicitEmptyState() {
@@ -72,5 +79,11 @@ class DashboardFavoritesHostTest {
         assertEquals(listOf("device"), repo.getConfig(821)!!.favoriteDeviceKeys)
         repo.saveConfiguration(repo.getConfig(821)!!.copy(showFavorites = true), catalog)
         assertEquals(MAIN_TAB_ID, repo.get(821)!!.selectedTabId)
+        val orderedCatalog = catalog.copy(areas = listOf(HaArea("room", "Room"), HaArea("office", "Office")))
+        repo.saveConfiguration(config(822).copy(visibleSpaceIds = listOf("area:room", "area:office"),
+            spaceOrderIds = listOf("area:office", "area:room")), orderedCatalog)
+        repo.saveConfiguration(repo.getConfig(822)!!.copy(showFavorites = false), orderedCatalog)
+        assertEquals("area:office", repo.get(822)!!.selectedTabId)
+        assertEquals(listOf("area:office", "area:room", SCENARIOS_TAB_ID), repo.get(822)!!.tabs.map { it.id })
     }
 }
