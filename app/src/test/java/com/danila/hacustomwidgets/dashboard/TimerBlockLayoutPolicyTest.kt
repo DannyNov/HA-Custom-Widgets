@@ -13,6 +13,12 @@ class TimerBlockLayoutPolicyTest {
         for (remaining in listOf(0f, 40f, 120f, 200f, 600f)) {
             val changed = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, remaining, 1f)
             assertEquals(layout.leadingSpace, changed.leadingSpace)
+            assertEquals(layout.textWidth, changed.textWidth)
+            assertEquals(layout.blockWidth, changed.blockWidth)
+            assertEquals(layout.leadingSpace + layout.blockWidth / 2f,
+                changed.remainingLeading + changed.remainingWidth / 2f, 1f)
+            assertTrue(changed.remainingLeading >= 0)
+            assertTrue(changed.remainingLeading + changed.remainingWidth <= available)
             assertTrue(changed.leadingSpace + changed.blockWidth <= available)
         }
     }
@@ -33,9 +39,16 @@ class TimerBlockLayoutPolicyTest {
     @Test fun wideAreaLeavesRoomToCenterWithoutMovingPower() {
         val layout = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, 120f, 1f)
         assertEquals(96, layout.leadingSpace)
-        assertEquals(174, layout.blockWidth)
+        assertEquals(108, layout.blockWidth)
         assertEquals(48, layout.intervalHeight)
         assertTrue(layout.blockWidth < 360 - 18 - 20 - 48 - 4)
+    }
+    @Test fun normalCaptionUsesSpaceLeftOfIntervalWithoutClipping() {
+        val layout = TimerBlockLayoutPolicy.resolve(320, true, true, 48f, 120f, 1f)
+        assertEquals(124, layout.remainingWidth)
+        assertTrue(layout.remainingLeading < layout.leadingSpace + 56)
+        assertEquals(layout.leadingSpace + layout.blockWidth / 2f,
+            layout.remainingLeading + layout.remainingWidth / 2f, 1f)
     }
     @Test fun narrowAndLargeFontWrapTextWithoutShrinkingTargets() {
         for (width in listOf(180, 230, 320)) for (scale in listOf(1f, 1.5f, 2f)) {

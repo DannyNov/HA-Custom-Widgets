@@ -469,8 +469,8 @@ internal fun DashboardDeviceCard(
                         kotlin.math.ceil(layout.height / timerDensity).toInt() + 2
                     })
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                        Row(modifier = GlanceModifier.defaultWeight().padding(end = 4.dp),
-                            verticalAlignment = Alignment.Top) {
+                        Column(modifier = GlanceModifier.defaultWeight().padding(end = 4.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
                         Spacer(GlanceModifier.width(timerLayout.leadingSpace.dp))
                         Row(
                             modifier = GlanceModifier.width(timerLayout.blockWidth.dp)
@@ -514,11 +514,15 @@ internal fun DashboardDeviceCard(
                                             fontSize = 11.sp, fontWeight = FontWeight.Bold),
                                     )
                                 }
-                                remainingLabel?.let {
-                                    Text(it, modifier = GlanceModifier.fillMaxWidth(),
-                                        style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
-                                            textAlign = TextAlign.Start))
-                                }
+                            }
+                        }
+                        }
+                        remainingLabel?.let {
+                            Row {
+                                Spacer(GlanceModifier.width(timerLayout.remainingLeading.dp))
+                                Text(it, modifier = GlanceModifier.width(timerLayout.remainingWidth.dp),
+                                    style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
+                                        textAlign = TextAlign.Center))
                             }
                         }
                         }

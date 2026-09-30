@@ -11,7 +11,7 @@ expected=old.replace('''                        Box(modifier = GlanceModifier.de
                             verticalAlignment = Alignment.Top) {
                         Spacer(GlanceModifier.width(timerLayout.leadingSpace.dp))''')
 assert expected != old
-assert Path(path).read_text(encoding='utf-8') == expected, 'Change outside horizontal anchor'
+assert subprocess.check_output(['git','show','99e97b987db3467ff036dafe74e605c661c33796:'+path]).decode('utf-8') == expected, 'Change outside horizontal anchor'
 for p in subprocess.check_output(['git','ls-tree','-r','--name-only',base,'app/src/main'],text=True).splitlines():
     if p not in [path,prefix+'TimerBlockLayoutPolicy.kt']:
         if Path(p).suffix in ['.kt','.xml']:

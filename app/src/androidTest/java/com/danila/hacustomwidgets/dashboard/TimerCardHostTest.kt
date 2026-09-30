@@ -69,6 +69,8 @@ class TimerCardHostTest {
                 for (scale in listOf(1f, 1.5f, 2f)) for (width in listOf(180, 230, 320)) {
                     val themed = context.createConfigurationContext(Configuration(context.resources.configuration).apply { fontScale = scale })
                     var fixed: Rect? = null
+                    var fixedTimer: Rect? = null
+                    var fixedInterval: Rect? = null
                     var fixedTimerX: Int? = null
                     for (minutes in listOf(30, 60, 90, 120)) {
                         val root = render(themed, width, card(minutes))
@@ -84,7 +86,12 @@ class TimerCardHostTest {
                             val remaining = descendants(root).filterIsInstance<TextView>().single {
                                 it.text.toString().startsWith(tr("Remaining ", "Осталось ")) }
                             val remainingRect = bounds(root, remaining)
-                            assertEquals("Shared left text edge", labelRect.left, remainingRect.left)
+                            // RC7 intentionally cancels the shared interval/caption left anchor.
+                            assertTrue("Caption can extend left of interval", remainingRect.left < labelRect.left)
+                            assertTrue("Caption centered under Timer+interval", kotlin.math.abs(
+                                remainingRect.centerX() - (timerRect.left - 10 * themed.resources.displayMetrics.density + labelRect.right) / 2f) <= 2)
+                            fixedTimer?.let { assertEquals(it, timerRect) }; fixedTimer = timerRect
+                            fixedInterval?.let { assertEquals(it.left, labelRect.left); assertEquals(it.right, labelRect.right) }; fixedInterval = labelRect
                             assertTrue("Remaining belongs below interval", remainingRect.top >= labelRect.bottom)
                             assertTrue("Remaining cannot overlap Power", remainingRect.right <= powerRect.left)
                             if (width >= 320 && scale == 1f) {
@@ -152,12 +159,12 @@ class TimerCardHostTest {
     @Test fun remainingTicksAndPausedLongTextKeepTheSameBlockAndPower() = runBlocking {
         val original = Locale.getDefault()
         try {
-            for (language in listOf("ru", "en")) for (width in listOf(180, 320)) for (scale in listOf(1f, 2f)) {
+            for (language in listOf("ru", "en")) for (width in listOf(180, 320, 360)) for (scale in listOf(1f, 2f)) {
                 Locale.setDefault(Locale(language))
                 val themed = context.createConfigurationContext(Configuration(context.resources.configuration).apply { fontScale = scale })
                 var fixedTimer: Rect? = null
                 var fixedPower: Rect? = null
-                for (state in listOf("active", "paused")) for (remaining in listOf("00:01:00", "01:59:00")) {
+                for (state in listOf("active", "paused")) for (remaining in listOf("00:01:00", "01:30:00", "01:59:00")) {
                     val root = render(themed, width, card(120, state = state, remaining = remaining))
                     instrumentation.runOnMainSync {
                         val timerRect = bounds(root, timer(root)); val powerRect = bounds(root, power(root))
@@ -169,9 +176,13 @@ class TimerCardHostTest {
                             it.text.toString().startsWith(tr("Remaining ", "Осталось ")) ||
                                 it.text.toString().startsWith(tr("Paused · ", "Пауза · ")) }
                         val r = bounds(root, text)
-                        assertEquals(bounds(root, label).left, r.left)
+                        assertTrue("Caption independent of interval", r.left < bounds(root, label).left)
                         assertTrue(r.top >= bounds(root, label).bottom)
                         assertTrue(r.right <= powerRect.left && r.bottom <= root.height)
+                        if (width >= 320 && scale == 1f) {
+                            assertEquals("Normal caption fits one line", 1, text.layout.lineCount)
+                            assertEquals(text.text.length, text.layout.getLineEnd(0))
+                        }
                         for (line in 0 until text.layout.lineCount) assertEquals(0, text.layout.getEllipsisCount(line))
                         assertTrue("Remaining clipped: $language/$width/$scale layout=${text.layout.height} view=${text.height}", text.layout.height <= text.height)
                         assertTrue("Interval clipped: $language/$width/$scale layout=${label.layout.height} view=${label.height}", label.layout.height <= label.height)
