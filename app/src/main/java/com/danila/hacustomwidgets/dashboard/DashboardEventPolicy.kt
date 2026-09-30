@@ -87,8 +87,8 @@ data class DashboardNavigationMutation(
 )
 
 object DashboardNavigationPolicy {
-    fun plan(currentTabId: String, requestedTabId: String, visibleSpaceIds: List<String>): DashboardNavigationMutation {
-        val target = DashboardStatePolicy.resolveSelectedTab(requestedTabId, visibleSpaceIds)
+    fun plan(currentTabId: String, requestedTabId: String, visibleSpaceIds: List<String>, showFavorites: Boolean = true): DashboardNavigationMutation {
+        val target = DashboardStatePolicy.resolveSelectedTab(requestedTabId, visibleSpaceIds, showFavorites)
         val changed = target != currentTabId
         return DashboardNavigationMutation(
             targetTabId = target,

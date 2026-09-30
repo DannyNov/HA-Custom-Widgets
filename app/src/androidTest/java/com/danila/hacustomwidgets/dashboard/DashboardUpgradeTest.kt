@@ -87,6 +87,7 @@ class DashboardUpgradeTest {
                     if (legacyId != -1) assertNotNull("Seeded legacy widget must exist before upgrade", manager.getAppWidgetInfo(legacyId))
                     return
                 }
+                assertEquals(true, repo.getConfig(dashboardId)!!.javaClass.getMethod("getShowFavorites").invoke(repo.getConfig(dashboardId)))
                 if (legacyId != -1) {
                     assertNull(manager.getAppWidgetInfo(legacyId))
                     assertFalse(context.getSharedPreferences("dashboard_sync_freshness", 0).contains("widget_${legacyId}_last_confirmed_sync"))
