@@ -102,7 +102,7 @@ class TimerCardHostTest {
                                 val oldAvailable = width - 18 - 20 - 48 - 4
                                 val oldBlock = 56 + minOf(kotlin.math.ceil(maxOf(intervalWidth, remainingWidth) + 4).toInt(), oldAvailable - 56)
                                 val rc5GlyphLeft = (9 + (width - 18 - 48 - 4 - oldBlock) / 2f + 10) * density
-                                assertTrue("Timer moved materially right of RC5", timerRect.left >= rc5GlyphLeft + 20 * density)
+                                assertTrue("Timer moved materially right of RC5: $language/$width/$scale new=${timerRect.left} old=$rc5GlyphLeft density=$density", timerRect.left >= rc5GlyphLeft + 20 * density)
                             }
                             assertTrue("Duration cannot overlap Power", labelRect.right <= powerRect.left)
                             assertTrue(timerRect.left >= 0 && powerRect.right <= root.width)

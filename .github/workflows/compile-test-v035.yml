@@ -25,18 +25,18 @@ jobs:
           from pathlib import Path
           current = Path("app/build.gradle.kts").read_text()
           assert 'versionName = "0.6.3-rc6"' in current
-          assert 'versionCode = 63' in current
+          assert 'versionCode = 64' in current
           base = subprocess.check_output(["git", "show", "v0.6.2:app/build.gradle.kts"], text=True)
-          assert current == base.replace("versionCode = 49", "versionCode = 63").replace('versionName = "0.6.2"', 'versionName = "0.6.3-rc6"')
+          assert current == base.replace("versionCode = 49", "versionCode = 64").replace('versionName = "0.6.2"', 'versionName = "0.6.3-rc6"')
           history = subprocess.check_output(["git", "log", "--all", "-p", "--", "app/build.gradle.kts"], text=True)
           codes = [int(x) for x in re.findall(r"^[+ -]\s*versionCode\s*=\s*(\d+)", history, re.M)]
-          assert codes and max(codes) == 63
+          assert codes and max(codes) == 64
           refs = subprocess.check_output(["git", "for-each-ref", "--format=%(refname)", "refs/tags"], text=True).splitlines()
           for ref in refs:
               old = subprocess.check_output(["git", "show", f"{ref}:app/build.gradle.kts"], text=True)
               code = re.search(r"versionCode\s*=\s*(\d+)", old)
-              assert code and int(code[1]) < 63, (ref, code)
-          print("RC_LINEAGE_PASS: v0.6.2 ancestor; versionCode=63; signing, SDK and dependencies unchanged")
+              assert code and int(code[1]) < 64, (ref, code)
+          print("RC_LINEAGE_PASS: v0.6.2 ancestor; versionCode=64; signing, SDK and dependencies unchanged")
           PY
       - name: Verify RC4 scope and unchanged click routing
         run: python3 .github/scripts/verify-rc4-scope.py
@@ -290,7 +290,7 @@ jobs:
           tag=v0.6.3-rc6
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
           grep -F 'versionName = "0.6.3-rc6"' app/build.gradle.kts
-          grep -F 'versionCode = 63' app/build.gradle.kts
+          grep -F 'versionCode = 64' app/build.gradle.kts
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'RC already exists; refusing to replace it.' >&2
             exit 1
@@ -315,7 +315,7 @@ jobs:
           test -s "$apk"
           grep -Fx 'applicationId=com.danila.hacustomwidgets' "$asset_dir/build-info.txt"
           grep -Fx 'versionName=0.6.3-rc6' "$asset_dir/build-info.txt"
-          grep -Fx 'versionCode=63' "$asset_dir/build-info.txt"
+          grep -Fx 'versionCode=64' "$asset_dir/build-info.txt"
           grep -Fx 'debuggable=false' "$asset_dir/build-info.txt"
           grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' "$asset_dir/signature.txt"
           apk_sha=$(sha256sum "$apk" | cut -d ' ' -f 1)

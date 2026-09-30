@@ -9,7 +9,7 @@ class TimerBlockLayoutPolicyTest {
         val rc5Start = (available - 180) / 2
         val layout = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, 120f, 1f)
         assertTrue(layout.leadingSpace >= rc5Start + 32)
-        assertEquals(available / 2f, layout.leadingSpace + (56 + 52) / 2f, 1f)
+        assertEquals(available / 2f, layout.leadingSpace + (48 + 30) / 2f, 1f)
         for (remaining in listOf(0f, 40f, 120f, 200f, 600f)) {
             val changed = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, remaining, 1f)
             assertEquals(layout.leadingSpace, changed.leadingSpace)
@@ -32,7 +32,8 @@ class TimerBlockLayoutPolicyTest {
     }
     @Test fun wideAreaLeavesRoomToCenterWithoutMovingPower() {
         val layout = TimerBlockLayoutPolicy.resolve(360, true, true, 48f, 120f, 1f)
-        assertEquals(180, layout.blockWidth)
+        assertEquals(96, layout.leadingSpace)
+        assertEquals(174, layout.blockWidth)
         assertEquals(48, layout.intervalHeight)
         assertTrue(layout.blockWidth < 360 - 18 - 20 - 48 - 4)
     }
