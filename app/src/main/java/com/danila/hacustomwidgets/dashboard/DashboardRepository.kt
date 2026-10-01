@@ -51,6 +51,11 @@ class DashboardRepository(context: Context) {
             .putStringSet(KEY_IDS, configuredIds() + config.appWidgetId.toString())
             .apply()
         updateFromCatalog(config.appWidgetId, catalog)
+        if (!config.showFavorites && configPrefs.getString(key(config.appWidgetId, "selected_tab"), MAIN_TAB_ID) == MAIN_TAB_ID) {
+            get(config.appWidgetId)?.let { state ->
+                configPrefs.edit().putString(key(config.appWidgetId, "selected_tab"), state.selectedTabId).apply()
+            }
+        }
     }
 
     fun getConfig(appWidgetId: Int): DashboardConfig? = configPrefs
@@ -473,6 +478,7 @@ class DashboardRepository(context: Context) {
             state.selectedTabId,
             tabId,
             state.tabs.map { it.id }.filter { it != MAIN_TAB_ID },
+            state.config.showFavorites,
         )
         val target = plan.targetTabId
         if (plan.publicationCount == 0) return
@@ -569,10 +575,11 @@ class DashboardRepository(context: Context) {
         val visibleOperations = operations.filterValues {
             it.status.isActive || (it.completedAt ?: 0L) + TERMINAL_STATUS_VISIBLE_MS > now
         }
-        val visibleTabs = config.visibleSpaceIds.filter { id -> spaces.any { it.id == id } } +
+        val visibleTabs = DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })
+            .filter { id -> id in config.visibleSpaceIds && spaces.any { it.id == id } } +
             listOfNotNull(SCENARIOS_TAB_ID.takeIf { config.scenariosEnabled })
         val storedTab = configPrefs.getString(key(appWidgetId, "selected_tab"), MAIN_TAB_ID) ?: MAIN_TAB_ID
-        val selectedTab = DashboardStatePolicy.resolveSelectedTab(storedTab, visibleTabs)
+        val selectedTab = DashboardStatePolicy.resolveSelectedTab(storedTab, visibleTabs, config.showFavorites)
         // Fall back while a space is absent, retaining the user's tab for its return.
         val result = DashboardState(
             config = config,
@@ -897,6 +904,7 @@ class DashboardRepository(context: Context) {
         .put("space_order", JSONArray(spaceOrderIds))
         .put("grouping", JSONObject().also { out -> groupingBySpace.forEach { (k, v) -> out.put(k, v.name) } })
         .put("favorites", JSONArray(favoriteDeviceKeys))
+        .put("show_favorites", showFavorites)
         .put("entity_order", mapOfListsJson(entityOrderByDevice))
         .put("card_order", mapOfListsJson(cardOrderBySpace))
         .put("show_updated", showLastUpdated)
@@ -921,6 +929,7 @@ class DashboardRepository(context: Context) {
             runCatching { DashboardGrouping.valueOf(it.value) }.getOrDefault(DashboardGrouping.TYPES)
         },
         favoriteDeviceKeys = json.optJSONArray("favorites").stringList(),
+        showFavorites = json.optBoolean("show_favorites", true),
         entityOrderByDevice = json.optJSONObject("entity_order").mapOfLists(),
         cardOrderBySpace = json.optJSONObject("card_order").mapOfLists(),
         showLastUpdated = json.optBoolean("show_updated", true),

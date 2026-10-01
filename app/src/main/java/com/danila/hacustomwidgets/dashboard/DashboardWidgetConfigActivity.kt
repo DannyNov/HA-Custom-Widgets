@@ -168,6 +168,7 @@ private fun DashboardConfigurator(
     var cardOrder by remember { mutableStateOf(existing?.cardOrderBySpace.orEmpty()) }
     var showUpdated by remember { mutableStateOf(existing?.showLastUpdated ?: true) }
     var compact by remember { mutableStateOf(existing?.compactDensity ?: true) }
+    var showFavorites by remember { mutableStateOf(existing?.showFavorites ?: true) }
     var scenariosEnabled by remember { mutableStateOf(existing?.scenariosEnabled ?: true) }
     var automationVisible by remember { mutableStateOf(existing?.scenarioAutomationVisible ?: true) }
     var scriptVisible by remember { mutableStateOf(existing?.scenarioScriptVisible ?: true) }
@@ -261,6 +262,8 @@ private fun DashboardConfigurator(
                 grouping = grouping,
                 showUpdated = showUpdated,
                 compact = compact,
+                showFavorites = showFavorites,
+                onShowFavorites = { showFavorites = it },
                 onToggleSpace = { id ->
                     visibleSpaces = if (id in visibleSpaces) visibleSpaces - id else visibleSpaces + id
                 },
@@ -289,6 +292,7 @@ private fun DashboardConfigurator(
                                 autoOffTimers,
                                 typeGroupOrder, hiddenDevices, hiddenEntities,
                                 scenarioHidden, scenarioRunnable,
+                                showFavorites = showFavorites,
                             ),
                             loaded,
                         )
@@ -392,6 +396,8 @@ private fun DashboardOverview(
     grouping: Map<String, DashboardGrouping>,
     showUpdated: Boolean,
     compact: Boolean,
+    showFavorites: Boolean,
+    onShowFavorites: (Boolean) -> Unit,
     onToggleSpace: (String) -> Unit,
     onSpaceOrderChanged: (List<String>) -> Unit,
     onCycleGrouping: (String) -> Unit,
@@ -487,6 +493,7 @@ private fun DashboardOverview(
         }
         Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text(tr("Configure Main tab", "Настроить вкладку «Главное»")) }
         Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text(tr("Configure Scenarios", "Настроить Сценарии")) }
+        SettingSwitch(tr("Show Favorites tab", "Показывать вкладку «★ Избранное»"), showFavorites, onShowFavorites)
         SettingSwitch(tr("Show update time", "Показывать время обновления"), showUpdated, onShowUpdated)
         SettingSwitch(tr("Compact card density", "Компактная плотность карточек"), compact, onCompact)
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {

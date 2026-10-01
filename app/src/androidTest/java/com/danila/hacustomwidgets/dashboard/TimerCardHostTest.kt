@@ -27,6 +27,37 @@ import java.util.Locale
 @RunWith(AndroidJUnit4::class)
 @OptIn(ExperimentalGlanceRemoteViewsApi::class)
 class TimerCardHostTest {
+    @Test fun configuredInactiveStartCountdownStopExpiryHaveIdenticalCardGeometry() = runBlocking {
+        val original = Locale.getDefault()
+        try {
+            for (language in listOf("ru", "en")) for (width in listOf(180, 230, 320, 360)) for (scale in listOf(1f, 1.5f, 2f)) {
+                Locale.setDefault(Locale(language))
+                val themed = context.createConfigurationContext(Configuration(context.resources.configuration).apply { fontScale = scale })
+                val baseline = render(themed, width, card(state = "idle", controlState = "off"))
+                val height = baseline.height
+                val timerBounds = bounds(baseline, timer(baseline))
+                for (minutes in listOf(30, 60, 90, 120)) for (state in listOf("active", "paused", "idle"))
+                    for (remaining in listOf("00:30:00", "01:00:00", "01:30:00", "02:00:00", "01:59:00", "00:01:00", "00:00:00")) {
+                        val root = render(themed, width, card(minutes, state = state, remaining = remaining))
+                        instrumentation.runOnMainSync {
+                            assertEquals("Height $language/$width/$scale/$state/$minutes/$remaining", height, root.height)
+                            assertEquals(timerBounds, bounds(root, timer(root)))
+                            descendants(root).filterIsInstance<TextView>().filter {
+                                it.text.toString().startsWith(tr("Remaining ", "Осталось ")) ||
+                                    it.text.toString().startsWith(tr("Paused · ", "Пауза · ")) ||
+                                    it.text.toString() == tr("$minutes min", "$minutes мин")
+                            }.forEach { text ->
+                                assertTrue("No vertical clipping: ${text.text}", text.layout.height <= text.height)
+                                for (line in 0 until text.layout.lineCount) assertEquals(0, text.layout.getEllipsisCount(line))
+                            }
+                        }
+                    }
+                val withoutTimer = render(themed, width, card().copy(autoOffTimer = null, timerState = null))
+                assertTrue("Cards without timer retain their compact height", withoutTimer.height < height)
+            }
+        } finally { Locale.setDefault(original) }
+    }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private fun descendants(view: View): List<View> = listOf(view) +

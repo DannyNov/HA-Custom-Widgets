@@ -123,6 +123,7 @@ private fun DashboardContent(
             Text(
                 if (state.selectedTabId == MAIN_TAB_ID) tr("Add devices to the Main tab", "Добавьте устройства во вкладку «Главное»")
                 else if (state.selectedTabId == SCENARIOS_TAB_ID) tr("No available scenarios", "Нет доступных сценариев")
+                else if (state.selectedTabId == EMPTY_TAB_ID) tr("Choose visible tabs in Dashboard settings", "Выберите видимые вкладки в настройках Dashboard")
                 else tr("No available devices in this space", "В этом пространстве нет доступных устройств"),
                 style = TextStyle(color = secondary, fontSize = 13.sp),
             )
@@ -216,7 +217,7 @@ private fun DashboardTabs(
             .cornerRadius(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
+        if (state.config.showFavorites) Box(
             modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
                 actionRunCallback<DashboardNavigateAction>(
                     actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAIN_TAB_ID),
@@ -538,10 +539,12 @@ internal fun DashboardDeviceCard(
                             }
                         }
                     }
-                        remainingLabel?.let {
-                            Row {
+                        val remainingHeight = TimerRemainingLayout.heightDp(timerContext, timerLayout.remainingWidth,
+                            timerConfig.durations.maxOfOrNull { it.minutes } ?: 120)
+                        Row {
                                 Spacer(GlanceModifier.width(timerLayout.remainingLeading.dp))
-                                Text(it, modifier = GlanceModifier.width(timerLayout.remainingWidth.dp),
+                                Box(GlanceModifier.width(timerLayout.remainingWidth.dp).height(remainingHeight.dp)) {
+                                Text(remainingLabel.orEmpty(), modifier = GlanceModifier.fillMaxWidth(),
                                     style = TextStyle(color = ColorProvider(R.color.widget_secondary), fontSize = 10.sp,
                                         textAlign = TextAlign.Start))
                             }

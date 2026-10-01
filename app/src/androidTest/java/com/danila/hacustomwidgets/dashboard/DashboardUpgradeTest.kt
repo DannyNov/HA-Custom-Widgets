@@ -51,6 +51,15 @@ class DashboardUpgradeTest {
                 hiddenEntityIdsByContext = mapOf("area:room" to listOf("sensor.hidden")),
                 autoOffTimersByDevice = mapOf("upgrade" to AutoOffTimerConfig(enabled = true, timerEntityId = "timer.upgrade", controlEntityId = "switch.upgrade")))
             repo.saveConfiguration(config, catalog)
+            if (args.getString("withFavorites") == "true") {
+                // Use persisted JSON so this same fixture compiles against old versions.
+                val secondId = bind("com.danila.hacustomwidgets.dashboard.DashboardWidgetReceiver")
+                repo.saveConfiguration(config.copy(appWidgetId = secondId), catalog)
+                val prefs = context.getSharedPreferences("dashboard_widgets", 0)
+                val key = "dashboard_${dashboardId}_config"
+                val hidden = org.json.JSONObject(prefs.getString(key, null)!!).put("show_favorites", false).toString()
+                assertTrue(prefs.edit().putString(key, hidden).putInt("final-upgrade-second-id", secondId).commit())
+            }
             connection.save("https://upgrade-fixture.invalid", "upgrade-fixture-token")
             // Instrumentation can terminate the process before apply() reaches disk.
             // Finish this fixture's pending write before allowing APK replacement.
@@ -86,6 +95,17 @@ class DashboardUpgradeTest {
                 if (phase == "preUpgrade") {
                     if (legacyId != -1) assertNotNull("Seeded legacy widget must exist before upgrade", manager.getAppWidgetInfo(legacyId))
                     return
+                }
+                val prefs = context.getSharedPreferences("dashboard_widgets", 0)
+                val secondId = prefs.getInt("final-upgrade-second-id", -1)
+                assertEquals(secondId == -1, repo.getConfig(dashboardId)!!.javaClass.getMethod("getShowFavorites").invoke(repo.getConfig(dashboardId)))
+                if (secondId != -1) {
+                    assertNotNull("Second bound Dashboard survives APK upgrade", manager.getAppWidgetInfo(secondId))
+                    assertEquals(true, repo.getConfig(secondId)!!.javaClass.getMethod("getShowFavorites").invoke(repo.getConfig(secondId)))
+                    assertEquals(listOf("upgrade"), repo.getConfig(dashboardId)!!.favoriteDeviceKeys)
+                    assertEquals(listOf("upgrade"), repo.getConfig(secondId)!!.favoriteDeviceKeys)
+                    assertEquals(false, org.json.JSONObject(prefs.getString("dashboard_${dashboardId}_config", null)!!).getBoolean("show_favorites"))
+                    assertEquals(true, org.json.JSONObject(prefs.getString("dashboard_${secondId}_config", null)!!).getBoolean("show_favorites"))
                 }
                 if (legacyId != -1) {
                     assertNull(manager.getAppWidgetInfo(legacyId))

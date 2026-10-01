@@ -40,9 +40,9 @@ object DashboardStatePolicy {
         return hash and Long.MAX_VALUE
     }
 
-    fun resolveSelectedTab(stored: String?, visibleSpaceIds: List<String>): String {
-        val valid = setOf(MAIN_TAB_ID) + visibleSpaceIds
-        return stored?.takeIf { it in valid } ?: MAIN_TAB_ID
+    fun resolveSelectedTab(stored: String?, visibleSpaceIds: List<String>, showFavorites: Boolean = true): String {
+        val valid = (if (showFavorites) listOf(MAIN_TAB_ID) else emptyList()) + visibleSpaceIds
+        return stored?.takeIf { it in valid } ?: valid.firstOrNull() ?: EMPTY_TAB_ID
     }
 
     fun canBeginOperation(existing: DashboardOperation?): Boolean =
