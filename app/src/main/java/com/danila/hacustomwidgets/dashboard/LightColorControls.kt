@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -114,25 +115,31 @@ private fun LightColorPicker(initial: LightColor?, close: () -> Unit, apply: (Li
     var selected by remember { mutableStateOf(initial ?: LightColor(0.0,100.0)) }
     var touched by remember { mutableStateOf(false) }
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.8f
+    val wheelMargin = with(LocalDensity.current) { 8.dp.toPx() }
     Dialog(onDismissRequest = close) {
         Surface(shape = RoundedCornerShape(24.dp)) {
-            Column(Modifier.heightIn(max = maxHeight).verticalScroll(rememberScrollState()).padding(20.dp)) {
+            Column(Modifier.heightIn(max = maxHeight).padding(20.dp)) {
                 Text(tr("Choose color", "Выбрать цвет"), style = MaterialTheme.typography.titleMedium)
                 Box(Modifier.fillMaxWidth().height(32.dp).background(selected.preview(), RoundedCornerShape(8.dp)))
                 fun select(position: Offset, width: Int, height: Int) {
                     val x = position.x - width/2f; val y = position.y-height/2f
                     val hue = (atan2(y.toDouble(), x.toDouble())*180/PI+360)%360
-                    val saturation = (hypot(x.toDouble(), y.toDouble())/(minOf(width,height)/2f)*100).coerceIn(0.0,100.0)
+                    val margin = minOf(wheelMargin, minOf(width,height)/4f)
+                    val saturation = (hypot(x.toDouble(), y.toDouble())/(minOf(width,height)/2f-margin)*100).coerceIn(0.0,100.0)
                     selected = LightColor(hue,saturation); touched = true
                 }
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 Canvas(Modifier.fillMaxWidth().aspectRatio(1f)
                     .semantics { contentDescription = tr("Color wheel. Hue and saturation sliders are below.", "Цветовой круг. Ползунки оттенка и насыщенности ниже.") }
                     .pointerInput(Unit) { detectTapGestures { select(it,size.width,size.height) } }
                     .pointerInput(Unit) { detectDragGestures { change, _ -> change.consume(); select(change.position,size.width,size.height) } }) {
-                    for (hue in 0..359) drawArc(Color.hsv(hue.toFloat(),1f,1f), hue.toFloat(),2f,true)
-                    drawCircle(Brush.radialGradient(listOf(Color.White, Color.Transparent), center, size.minDimension/2))
+                    val margin = minOf(wheelMargin, size.minDimension/4)
+                    val wheelRadius = size.minDimension/2-margin
+                    for (hue in 0..359) drawArc(Color.hsv(hue.toFloat(),1f,1f), hue.toFloat(),2f,true,
+                        topLeft=Offset(margin,margin),size=androidx.compose.ui.geometry.Size(size.width-2*margin,size.height-2*margin))
+                    drawCircle(Brush.radialGradient(listOf(Color.White, Color.Transparent), center, wheelRadius),radius=wheelRadius)
                     val angle = selected.hue * PI/180
-                    val radius = size.minDimension/2*selected.saturation/100
+                    val radius = wheelRadius*selected.saturation/100
                     val cursor = center + Offset((cos(angle)*radius).toFloat(), (sin(angle)*radius).toFloat())
                     drawCircle(Color.Black, 7.dp.toPx(),cursor)
                     drawCircle(Color.White, 5.dp.toPx(),cursor)
@@ -143,6 +150,7 @@ private fun LightColorPicker(initial: LightColor?, close: () -> Unit, apply: (Li
                 Text(tr("Saturation", "Насыщенность"))
                 Slider(selected.saturation.toFloat(), { selected = selected.copy(saturation=it.toDouble()); touched=true },
                     valueRange=0f..100f, modifier=Modifier.semantics { contentDescription=tr("Saturation", "Насыщенность") })
+                }
                 Row {
                     TextButton(onClick=close) { Text(tr("Cancel", "Отмена")) }
                     TextButton(onClick={ apply(selected); close() },enabled=touched || initial != null) { Text(tr("Apply", "Применить")) }

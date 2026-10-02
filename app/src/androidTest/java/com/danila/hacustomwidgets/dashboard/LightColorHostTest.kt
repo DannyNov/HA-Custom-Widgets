@@ -139,15 +139,13 @@ class LightColorHostTest {
                         val progress=android.os.Bundle().apply{putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,200f)}
                         assertTrue(hue!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,progress))
                         instrumentation.waitForIdleSync()
-                        repeat(3) {
-                            visible().firstOrNull{it.actionList.any{action->action.id==android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD}}
-                                ?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-                            instrumentation.waitForIdleSync();android.os.SystemClock.sleep(100)
-                        }
-                        val apply=visible().firstOrNull{it.isClickable && it.isEnabled &&
+                        android.os.SystemClock.sleep(100);instrumentation.waitForIdleSync()
+                        val changedHue=visible().firstOrNull{it.rangeInfo!=null && it.contentDescription?.toString()==com.danila.hacustomwidgets.tr("Hue","Оттенок")}
+                        assertNotNull(changedHue);assertEquals(200f,changedHue!!.rangeInfo.current,0.1f)
+                        val apply=visible().firstOrNull{it.isClickable && it.isEnabled && it.isVisibleToUser &&
                             (it.text?.toString()==com.danila.hacustomwidgets.tr("Apply","Применить") ||
                                 nodes(it).any{child->child.text?.toString()==com.danila.hacustomwidgets.tr("Apply","Применить")})}
-                        assertNotNull("Enabled Apply button is reachable after picker scroll",apply)
+                        assertNotNull("Enabled Apply button stays visible in compact picker",apply)
                         assertTrue("Apply dispatches a click",apply!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
                         instrumentation.waitForIdleSync()
                         assertNotNull(container.brightness.colorTarget(entity.entityId))
