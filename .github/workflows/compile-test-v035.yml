@@ -1,4 +1,4 @@
-name: v0.6.4 Final compile and tests
+name: v0.7.0 RC compile and tests
 
 on:
   push:
@@ -23,7 +23,10 @@ jobs:
           approved="$RUNNER_TEMP/v064-approved"
           git worktree add --detach "$approved" 66298240b6707c3e3d40e6d60ce079e2be664efe
           (cd "$approved" && python3 .github/scripts/verify-v064-scope.py)
-          python3 .github/scripts/verify-v064-final-scope.py
+          stable="$RUNNER_TEMP/v064-stable"
+          git worktree add --detach "$stable" 273a6d60360b295523f23bd4b416a34ff4cb2d2b
+          (cd "$stable" && python3 .github/scripts/verify-v064-final-scope.py)
+          python3 .github/scripts/verify-v070-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -49,7 +52,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("TEST_RESULT " + " ".join(f"{key}={value}" for key, value in totals.items()))
-          if totals["tests"] < 454 or totals["failures"] or totals["errors"] or totals["skipped"]:
+          if totals["tests"] < 475 or totals["failures"] or totals["errors"] or totals["skipped"]:
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -86,6 +89,7 @@ jobs:
           script: |
             gradle connectedDebugAndroidTest --stacktrace || { adb logcat -d -s AppWidgetHostView AndroidRuntime; exit 1; }
             adb pull /data/local/tmp/rc3-floating-window.png rc3-floating-window.png
+            for image in brightness color_temp hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-$image.png" "v070-$image.png"; done
       - name: Verify instrumentation test count
         run: |
           python3 - <<'PY'
@@ -98,7 +102,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("HOST_TEST_RESULT", totals)
-          if totals["tests"] < 40 or any(totals[k] for k in ("failures", "errors", "skipped")):
+          if totals["tests"] < 45 or any(totals[k] for k in ("failures", "errors", "skipped")):
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -107,6 +111,7 @@ jobs:
           name: v0.6.1-glance-api-${{ matrix.api }}
           path: |
             rc3-floating-window.png
+            v070-*.png
             seed-result.txt
             pre-upgrade-result.txt
             upgrade-result.txt
@@ -119,6 +124,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - source: v0.6.4
+            ref: 273a6d60360b295523f23bd4b416a34ff4cb2d2b
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.6.4-api36
+            ref: 273a6d60360b295523f23bd4b416a34ff4cb2d2b
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.6.0.3
             ref: f8c7a9c8a9a11d823873a274ae9f2eb340314499
           - source: rc6
@@ -265,101 +281,3 @@ jobs:
           name: fixture-persistence-evidence
           path: fixture-evidence/
 
-  publish-final:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[publish-final]')
-    needs: [compile-test, glance-host, upgrade]
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    permissions:
-      actions: read
-      contents: write
-    concurrency:
-      group: publish-v0.6.4
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v5
-      - name: Publish and independently verify the fully tested signed Final
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-          TEST_RUN_ID: ${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag=v0.6.4
-          test "$GH_REPO" = DannyNov/HA-Custom-Widgets
-          grep -F 'versionName = "0.6.4"' app/build.gradle.kts
-          grep -F 'versionCode = 69' app/build.gradle.kts
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo 'Final already exists; refusing to replace it.' >&2
-            exit 1
-          fi
-          test -z "$(git ls-remote origin "refs/tags/$tag")"
-          signed_run=''
-          for attempt in $(seq 1 40); do
-            run=$(gh api "repos/$GH_REPO/actions/workflows/android.yml/runs?head_sha=$SOURCE_SHA&event=push&per_page=10" --jq '.workflow_runs | sort_by(.id) | reverse | .[0] | {id, status, conclusion, head_sha}')
-            if test "$(jq -r '.status' <<< "$run")" = completed; then
-              test "$(jq -r '.conclusion' <<< "$run")" = success
-              test "$(jq -r '.head_sha' <<< "$run")" = "$SOURCE_SHA"
-              signed_run=$(jq -r '.id' <<< "$run")
-              break
-            fi
-            sleep 30
-          done
-          test -n "$signed_run"
-          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
-          gh run download "$signed_run" --name HA-Custom-Widgets-v0.6.4-release --dir rc-assets
-          asset_dir=rc-assets/apk/release
-          apk="$asset_dir/HAWidgets-v0.6.4.apk"
-          test -s "$apk"
-          grep -Fx 'applicationId=com.danila.hacustomwidgets' "$asset_dir/build-info.txt"
-          grep -Fx 'versionName=0.6.4' "$asset_dir/build-info.txt"
-          grep -Fx 'versionCode=69' "$asset_dir/build-info.txt"
-          grep -Fx 'debuggable=false' "$asset_dir/build-info.txt"
-          grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' "$asset_dir/signature.txt"
-          apk_sha=$(sha256sum "$apk" | cut -d ' ' -f 1)
-          test "$apk_sha" = "$(cut -d ' ' -f 1 "$asset_dir/apk-sha256.txt")"
-          printf '%s  %s\n' "$apk_sha" HAWidgets-v0.6.4.apk > "$asset_dir/apk-sha256.txt"
-          printf 'sourceCommit=%s\ntestRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$TEST_RUN_ID" "$signed_run" >> "$asset_dir/build-info.txt"
-          cp rc-assets/bundle/release/app-release.aab "$asset_dir/HAWidgets-v0.6.4.aab"
-          cp RELEASE_NOTES_v0.6.4.md rc-notes.md
-          printf '\nSource: `%s`\n\n[Full CI](https://github.com/%s/actions/runs/%s) Р вЂ™Р’В· [Signed build](https://github.com/%s/actions/runs/%s)\n\nAPK SHA-256: `%s`\n' "$SOURCE_SHA" "$GH_REPO" "$TEST_RUN_ID" "$GH_REPO" "$signed_run" "$apk_sha" >> rc-notes.md
-          gh release create "$tag" "$apk" "$asset_dir/HAWidgets-v0.6.4.aab" "$asset_dir/apk-sha256.txt" "$asset_dir/build-info.txt" "$asset_dir/signature.txt" \
-            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.6.4' --notes-file rc-notes.md --latest
-          gh release view "$tag" --json url,isDraft,isPrerelease,tagName,targetCommitish
-          mkdir public-assets
-          curl --fail --location --retry 0 "https://github.com/$GH_REPO/releases/download/$tag/HAWidgets-v0.6.4.apk" -o public-assets/HAWidgets-v0.6.4.apk
-          curl --fail --location --retry 0 "https://github.com/$GH_REPO/releases/download/$tag/HAWidgets-v0.6.4.aab" -o public-assets/HAWidgets-v0.6.4.aab
-          cmp "$apk" public-assets/HAWidgets-v0.6.4.apk
-          cmp "$asset_dir/HAWidgets-v0.6.4.aab" public-assets/HAWidgets-v0.6.4.aab
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
-          "$APKSIGNER" verify --verbose --print-certs public-assets/HAWidgets-v0.6.4.apk | tee public-assets/signature.txt
-          grep -F 'certificate SHA-256 digest: 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' public-assets/signature.txt
-          "$AAPT" dump badging public-assets/HAWidgets-v0.6.4.apk | tee public-assets/manifest.txt
-          grep -F "package: name='com.danila.hacustomwidgets' versionCode='69' versionName='0.6.4'" public-assets/manifest.txt
-          grep -Fx "sdkVersion:'31'" public-assets/manifest.txt
-          grep -Fx "targetSdkVersion:'36'" public-assets/manifest.txt
-          ! grep -q '^application-debuggable:' public-assets/manifest.txt
-          jarsigner -verify public-assets/HAWidgets-v0.6.4.aab | tee public-assets/aab-verification.txt
-          grep -F 'jar verified.' public-assets/aab-verification.txt
-          keytool -printcert -jarfile public-assets/HAWidgets-v0.6.4.aab > public-assets/aab-certificate.txt
-          grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' public-assets/aab-certificate.txt
-          sha256sum public-assets/HAWidgets-v0.6.4.* | tee public-assets/sha256.txt
-          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
-          echo 'PUBLIC_FINAL_ASSETS_PASS'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: v0.6.4-public-assets-verification
-          path: public-assets
-          if-no-files-found: error
-
-  telegram-final:
-    needs: publish-final
-    # GITHUB_TOKEN-created release events do not trigger workflows. Call the
-    # existing sender once after successful independent public verification.
-    uses: ./.github/workflows/telegram-release.yml
-    with:
-      release_tag: v0.6.4
-    secrets: inherit

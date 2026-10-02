@@ -58,6 +58,8 @@ class BrightnessActivity : ComponentActivity() {
                     Column(Modifier.heightIn(max = panelMaxHeight.dp).verticalScroll(rememberScrollState()).padding(24.dp)) {
                         Text(control?.friendlyName ?: entityId, style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(16.dp))
+                        if (control?.light?.let { it.temperatureCapable || it.colorCapable } == true)
+                            Text(tr("Brightness", "Яркость"), style = MaterialTheme.typography.titleMedium)
                         Text(selected?.roundToInt()?.let { "$it%" } ?: "—%", style = MaterialTheme.typography.headlineMedium)
                         if (selected != null) {
                             Slider(
@@ -81,6 +83,7 @@ class BrightnessActivity : ComponentActivity() {
                         } else {
                             Text(tr("Waiting for confirmed brightness", "Ожидание подтверждённой яркости"))
                         }
+                        LightColorControls(entityId, container.brightness, operationRevision + (dashboard?.stateRevision ?: 0))
                         dashboard?.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         TextButton(onClick = { finish() }) { Text(tr("Close", "Закрыть")) }
                     }

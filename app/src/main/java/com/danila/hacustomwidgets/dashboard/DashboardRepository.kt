@@ -280,6 +280,12 @@ class DashboardRepository(context: Context) {
                     timerRemaining = entity.timerRemaining,
                     timerFinishesAt = entity.timerFinishesAt,
                     brightness = entity.brightness,
+                    lastConfirmedTemperature = entity.brightness.temperatureKelvin?.takeIf { entity.state == "on" && entity.brightness.colorMode == "color_temp" }
+                        ?: existing?.takeIf { it.brightnessConnectionId == brightnessConnection }?.lastConfirmedTemperature
+                        ?: brightnessTruth(entity.entityId)?.lastConfirmedTemperature,
+                    lastConfirmedColor = entity.brightness.color?.takeIf { entity.state == "on" && entity.brightness.colorMode in com.danila.hacustomwidgets.data.model.LightColor.MODES }
+                        ?: existing?.takeIf { it.brightnessConnectionId == brightnessConnection }?.lastConfirmedColor
+                        ?: brightnessTruth(entity.entityId)?.lastConfirmedColor,
                     lastConfirmedBrightness = entity.brightness.value?.takeIf { it > 0 } ?: existing?.takeIf { it.brightnessConnectionId == brightnessConnection }?.lastConfirmedBrightness
                         ?: brightnessTruth(entity.entityId)?.lastConfirmedBrightness,
                     brightnessConnectionId = brightnessConnection,
@@ -551,6 +557,7 @@ class DashboardRepository(context: Context) {
                 controls = card.controls.map { control ->
                     atomic.entities[control.entityId]?.let {
                         control.copy(state = it.rawState, brightnessCapable = control.domain == "light" && it.brightness.capable && it.brightnessConnectionId == brightnessConnection,
+                            light = it.brightness.takeIf { _ -> it.brightnessConnectionId == brightnessConnection } ?: com.danila.hacustomwidgets.data.model.LightBrightness(),
                             brightnessPercent = brightnessOverlay(control.entityId) ?: it.brightness.displayPercent(it.confirmedRawState, it.lastConfirmedBrightness))
                     } ?: control
                 },

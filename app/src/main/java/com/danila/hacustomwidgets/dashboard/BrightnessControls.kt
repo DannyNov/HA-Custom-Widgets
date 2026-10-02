@@ -51,15 +51,21 @@ fun BrightnessControls(context: Context, control: DashboardControl, widgetId: In
     val color = ColorProvider(if (enabled && control.state == "on") R.color.widget_light_on else R.color.widget_secondary)
     val fontScale = context.resources.configuration.fontScale
     val steps = BrightnessLayoutPolicy.showSteps(widthDp, fontScale)
-    Row(modifier = GlanceModifier.background(ImageProvider(R.drawable.brightness_capsule),
-        colorFilter = ColorFilter.tint(color)), verticalAlignment = Alignment.CenterVertically) {
+    val background = if (control.light.temperatureCapable || control.light.colorCapable)
+        GlanceModifier.background(ImageProvider(LightCapsuleContours.bitmap(context,
+            BrightnessLayoutPolicy.percentWidth(fontScale) + if (steps) 96 else 0,
+            control.light.temperatureCapable, control.light.colorCapable, enabled && control.state == "on")))
+        else GlanceModifier.background(ImageProvider(R.drawable.brightness_capsule), colorFilter = ColorFilter.tint(color))
+    Row(modifier = background, verticalAlignment = Alignment.CenterVertically) {
         if (steps) BrightnessStep(control, -1, enabled, color)
         val intent = Intent(context, BrightnessActivity::class.java)
             .putExtra("brightness_entity", control.entityId).putExtra("brightness_widget", widgetId)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
         Box(
             modifier = GlanceModifier.width(BrightnessLayoutPolicy.percentWidth(fontScale).dp).height(48.dp).semantics {
-                contentDescription = tr("Set brightness", "Настроить яркость") + ": " + control.label + " " + (control.brightnessPercent?.let { "$it%" } ?: "—%")
+                contentDescription = tr("Set brightness", "Настроить яркость") + ": " + control.label + " " + (control.brightnessPercent?.let { "$it%" } ?: "—%") +
+                    (if (control.light.temperatureCapable) tr(". Color temperature available", ". Доступна цветовая температура") else "") +
+                    (if (control.light.colorCapable) tr(". Color available", ". Доступен цвет") else "")
             }.let {
                 if (available) it.clickable(actionStartActivity(intent)) else it
             }, contentAlignment = Alignment.Center,

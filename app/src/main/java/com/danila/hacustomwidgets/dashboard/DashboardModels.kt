@@ -366,6 +366,7 @@ data class DashboardControl(
     val brightnessCapable: Boolean = false,
     val brightnessPercent: Int? = null,
     val friendlyName: String = label,
+    val light: com.danila.hacustomwidgets.data.model.LightBrightness = com.danila.hacustomwidgets.data.model.LightBrightness(),
 )
 
 enum class PrimaryPowerButtonTone { OFF, LIGHT_ON_GREEN, SWITCH_ON_YELLOW }
@@ -483,6 +484,8 @@ data class VersionedEntityState(
     val revision: Long,
     val brightness: com.danila.hacustomwidgets.data.model.LightBrightness = com.danila.hacustomwidgets.data.model.LightBrightness(),
     val lastConfirmedBrightness: Int? = null,
+    val lastConfirmedTemperature: Int? = null,
+    val lastConfirmedColor: com.danila.hacustomwidgets.data.model.LightColor? = null,
     val brightnessConnectionId: String? = null,
     val optimisticOverlay: String? = null,
     val optimisticOperationId: String? = null,
