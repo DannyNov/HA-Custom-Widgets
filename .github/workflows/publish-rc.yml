@@ -7,26 +7,28 @@ permissions:
   actions: read
 jobs:
   publish-rc:
-    if: github.ref == 'refs/heads/feature/v070-light-controls' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[publish-reviewed-rc4]')
+    if: github.ref == 'refs/heads/feature/v070-light-controls' && contains(github.event.head_commit.message, '[publish-reviewed-rc4]')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: write
-      actions: read
+      actions: write
     concurrency:
       group: publish-v0.7.0-rc4
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      SOURCE_SHA: ${{ github.sha }}
-      REVIEWED_SHA: 99a960eba263460ce9d68971a7e429ad7ae94e29
+      SOURCE_SHA: 248c91175b473a5b8be11d0fcdf381f23f67c884
+      CONTROLLER_SHA: ${{ github.sha }}
+      REVIEWED_SHA: 248c91175b473a5b8be11d0fcdf381f23f67c884
       TAG: v0.7.0-rc4
       EXPECTED_CODE: '87'
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: 248c91175b473a5b8be11d0fcdf381f23f67c884
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -35,26 +37,28 @@ jobs:
         run: |
           set -euo pipefail
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
+          git merge-base --is-ancestor "$SOURCE_SHA" "$CONTROLLER_SHA"
+          git diff --exit-code "$SOURCE_SHA" "$CONTROLLER_SHA" -- . ':!.github/workflows/publish-rc.yml' ':!.github/workflows/android.yml' ':!.github/workflows/compile-test-v035.yml'
+          gh api "repos/$GH_REPO/actions/runs/37048892104/jobs?per_page=100" > exact-gate-jobs.json
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic")] | length' exact-gate-jobs.json)" = 22
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic" and .conclusion != "success")] | length' exact-gate-jobs.json)" = 0
+          # A release ref provides workflow-authorized ancestry; stop only its redundant runs.
+          for id in $(gh api "repos/$GH_REPO/actions/runs?head_sha=$SOURCE_SHA&per_page=50" --jq '.workflow_runs[] | select(.head_branch == "release/v070-rc4" and .status != "completed") | .id'); do
+            gh run cancel "$id"
+          done
           git diff --exit-code "$REVIEWED_SHA" "$SOURCE_SHA" -- app/src/main app/src/test
           python3 .github/scripts/verify-v070-rc4-scope.py
           grep -F 'versionName = "0.7.0-rc4"' app/build.gradle.kts
           grep -F "versionCode = $EXPECTED_CODE" app/build.gradle.kts
-          for workflow in compile-test-v035.yml android.yml; do
-            complete=false
-            for attempt in $(seq 1 180); do
-              run=$(gh api "repos/$GH_REPO/actions/workflows/$workflow/runs?head_sha=$SOURCE_SHA&event=push&per_page=10" --jq '.workflow_runs | map(select(.head_sha == env.SOURCE_SHA and .event == "push")) | sort_by(.id) | reverse | .[0] | {id,status,conclusion,head_sha}')
-              if [ "$(jq -r .status <<< "$run")" = completed ]; then
-                test "$(jq -r .head_sha <<< "$run")" = "$SOURCE_SHA"
-                test "$(jq -r .conclusion <<< "$run")" = success
-                id=$(jq -r .id <<< "$run")
-                if [ "$workflow" = android.yml ]; then echo "SIGNED_RUN=$id" >> "$GITHUB_ENV"; else echo "CI_RUN=$id" >> "$GITHUB_ENV"; fi
-                complete=true; break
-              fi
-              sleep 10
-            done
-            test "$complete" = true
+          for id in 37048892104 37048892170; do
+            run=$(gh api "repos/$GH_REPO/actions/runs/$id")
+            test "$(jq -r .head_sha <<< "$run")" = "$SOURCE_SHA"
+            test "$(jq -r .status <<< "$run")" = completed
+            test "$(jq -r .conclusion <<< "$run")" = success
           done
-          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/v070-light-controls" --jq .object.sha)" = "$SOURCE_SHA"
+          echo 'CI_RUN=37048892104' >> "$GITHUB_ENV"
+          echo 'SIGNED_RUN=37048892170' >> "$GITHUB_ENV"
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/v070-light-controls" --jq .object.sha)" = "$CONTROLLER_SHA"
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = 273a6d60360b295523f23bd4b416a34ff4cb2d2b
           test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
           test "$(gh api "repos/$GH_REPO/pulls/7" --jq .draft)" = true
@@ -103,7 +107,7 @@ jobs:
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then echo 'RC already exists; refusing to overwrite'; exit 1; fi
           if gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then echo 'Tag already exists; refusing to move it'; exit 1; fi
-          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/v070-light-controls" --jq .object.sha)" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/v070-light-controls" --jq .object.sha)" = "$CONTROLLER_SHA"
           gh release create "$TAG" deliverables/HAWidgets-v0.7.0-rc4.apk deliverables/HAWidgets-v0.7.0-rc4.aab deliverables/sha256.txt deliverables/build-info.txt deliverables/signature.txt \
             --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.7.0-rc4' --notes-file RELEASE_NOTES_v0.7.0-rc4.md --prerelease --latest=false
           gh release view "$TAG" --json url,isDraft,isPrerelease,tagName,targetCommitish | tee deliverables/release.json
