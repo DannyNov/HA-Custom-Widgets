@@ -108,7 +108,7 @@ class LightColorHostTest {
         val saved=container.connectionStore.load()
         val id=70301
         fun nodes(node:android.view.accessibility.AccessibilityNodeInfo?):List<android.view.accessibility.AccessibilityNodeInfo> =
-            if(node==null)emptyList() else listOf(node)+(0 until node.childCount).flatMap{nodes(node.getChild(it))}
+            if(node==null || !node.refresh())emptyList() else listOf(node)+(0 until node.childCount).flatMap{nodes(node.getChild(it))}
         fun visible()=nodes(instrumentation.uiAutomation.rootInActiveWindow)
         try {
             container.connectionStore.save("https://activity-fixture.invalid","fixture")
@@ -139,8 +139,16 @@ class LightColorHostTest {
                         val progress=android.os.Bundle().apply{putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,200f)}
                         assertTrue(hue!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,progress))
                         instrumentation.waitForIdleSync()
-                        android.os.SystemClock.sleep(100);instrumentation.waitForIdleSync()
-                        val changedHue=visible().firstOrNull{it.rangeInfo!=null && it.contentDescription?.toString()==com.danila.hacustomwidgets.tr("Hue","Оттенок")}
+                        val hueDeadline=android.os.SystemClock.uptimeMillis()+2000
+                        var changedHue:android.view.accessibility.AccessibilityNodeInfo?=null
+                        do {
+                            instrumentation.waitForIdleSync();android.os.SystemClock.sleep(50)
+                            changedHue=visible().firstOrNull{it.rangeInfo!=null && it.contentDescription?.toString()==com.danila.hacustomwidgets.tr("Hue","Оттенок")}
+                        } while (changedHue?.rangeInfo?.current != 200f && android.os.SystemClock.uptimeMillis()<hueDeadline)
+                        instrumentation.uiAutomation.executeShellCommand("screencap -p /data/local/tmp/v070-after-hue-${modes.joinToString("-")}.png").use {
+                            java.io.FileInputStream(it.fileDescriptor).readBytes()
+                        }
+                        println("PICKER_HUE requested=200 actual=${changedHue?.rangeInfo?.current} range=${changedHue?.rangeInfo?.min}..${changedHue?.rangeInfo?.max}")
                         assertNotNull(changedHue);assertEquals(200f,changedHue!!.rangeInfo.current,0.1f)
                         val apply=visible().firstOrNull{it.isClickable && it.isEnabled && it.isVisibleToUser &&
                             (it.text?.toString()==com.danila.hacustomwidgets.tr("Apply","Применить") ||
