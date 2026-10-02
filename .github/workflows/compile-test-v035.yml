@@ -92,7 +92,7 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: |
-            gradle connectedDebugAndroidTest --stacktrace || { adb logcat -d -s AppWidgetHostView AndroidRuntime; exit 1; }
+            gradle connectedDebugAndroidTest --stacktrace || { adb logcat -d -s AppWidgetHostView AndroidRuntime; for image in $(adb shell 'ls /data/local/tmp/v070-*.png' | tr -d '\r'); do adb pull "$image" .; done; exit 1; }
             adb pull /data/local/tmp/rc3-floating-window.png rc3-floating-window.png
             for image in brightness color_temp hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-$image.png" "v070-$image.png"; done
             for image in hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-picker-$image.png" "v070-picker-$image.png"; done

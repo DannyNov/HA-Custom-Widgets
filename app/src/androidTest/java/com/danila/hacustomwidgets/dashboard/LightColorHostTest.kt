@@ -139,11 +139,20 @@ class LightColorHostTest {
                         val progress=android.os.Bundle().apply{putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,200f)}
                         assertTrue(hue!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,progress))
                         instrumentation.waitForIdleSync()
-                        val apply=visible().firstOrNull{it.text?.toString()==com.danila.hacustomwidgets.tr("Apply","Применить") && it.isEnabled}
-                        assertNotNull(apply);assertTrue(apply!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+                        repeat(3) {
+                            visible().firstOrNull{it.actionList.any{action->action.id==android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD}}
+                                ?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                            instrumentation.waitForIdleSync();android.os.SystemClock.sleep(100)
+                        }
+                        val apply=visible().firstOrNull{it.isClickable && it.isEnabled &&
+                            (it.text?.toString()==com.danila.hacustomwidgets.tr("Apply","Применить") ||
+                                nodes(it).any{child->child.text?.toString()==com.danila.hacustomwidgets.tr("Apply","Применить")})}
+                        assertNotNull("Enabled Apply button is reachable after picker scroll",apply)
+                        assertTrue("Apply dispatches a click",apply!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
                         instrumentation.waitForIdleSync()
                         assertNotNull(container.brightness.colorTarget(entity.entityId))
                         container.brightness.invalidate()
+                        android.os.SystemClock.sleep(100);instrumentation.waitForIdleSync()
                         val reopened=visible().firstOrNull{it.contentDescription?.toString()==com.danila.hacustomwidgets.tr("Choose lamp color","Выбрать цвет лампы")}
                         assertNotNull(reopened)
                         assertTrue(reopened!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK))
