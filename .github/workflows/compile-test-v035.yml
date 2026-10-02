@@ -6,7 +6,6 @@ on:
 
 jobs:
   compile-test:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc3]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -38,7 +37,10 @@ jobs:
           rc2="$RUNNER_TEMP/v070-rc2"
           git worktree add --detach "$rc2" 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
           (cd "$rc2" && python3 .github/scripts/verify-v070-rc2-scope.py)
-          python3 .github/scripts/verify-v070-rc3-scope.py
+          rc3="$RUNNER_TEMP/v070-rc3"
+          git worktree add --detach "$rc3" 42ef1127af68f1b8d475132e92004bb7a0588bca
+          (cd "$rc3" && python3 .github/scripts/verify-v070-rc3-scope.py)
+          python3 .github/scripts/verify-v070-rc4-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -74,7 +76,6 @@ jobs:
           if-no-files-found: error
 
   glance-host:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc3]') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -106,7 +107,7 @@ jobs:
             for image in brightness color_temp hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-$image.png" "v070-$image.png"; done
             for image in hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-picker-$image.png" "v070-picker-$image.png"; done
             for font in 1.0 1.5 2.0; do for landscape in true false; do adb pull "/data/local/tmp/v070-font-$font-$landscape.png" "v070-font-$font-$landscape.png"; done; done
-            for image in $(adb shell 'ls /data/local/tmp/v070-capsule-*.png /data/local/tmp/v070-rc2-style-*.png /data/local/tmp/v070-rc3-*.png' | tr -d '\r'); do adb pull "$image" .; done
+            for image in $(adb shell 'ls /data/local/tmp/v070-capsule-*.png /data/local/tmp/v070-rc2-style-*.png /data/local/tmp/v070-rc4-*.png' | tr -d '\r'); do adb pull "$image" .; done
       - name: Verify instrumentation test count
         run: |
           python3 - <<'PY'
@@ -136,12 +137,22 @@ jobs:
             app/build/outputs/androidTest-results/connected
 
   upgrade:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc3]') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
+          - source: v0.7.0-rc3
+            ref: 42ef1127af68f1b8d475132e92004bb7a0588bca
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.7.0-rc3-api36
+            ref: 42ef1127af68f1b8d475132e92004bb7a0588bca
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.7.0-rc2
             ref: 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
             fixture: true

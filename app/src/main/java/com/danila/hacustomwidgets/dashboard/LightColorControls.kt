@@ -107,8 +107,12 @@ fun LightColorControls(entityId: String, coordinator: BrightnessCoordinator, rev
             .combinedClickable(enabled = enabled,
                 onClick = { if (known == null) picker = true else coordinator.color(entityId, known) },
                 onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); picker = true }))
-        Text(if (known == null) tr("Tap to choose a color", "Нажмите, чтобы выбрать цвет")
-            else tr("Tap — turn on color • Hold — choose", "Нажать — включить цвет • Удерживать — выбрать"), style = MaterialTheme.typography.bodySmall)
+        if (known == null) {
+            Text(tr("Tap to choose a color", "Нажмите, чтобы выбрать цвет"), style = MaterialTheme.typography.bodySmall)
+        } else Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(tr("Tap — turn on color", "Нажать — включить цвет"), style = MaterialTheme.typography.bodySmall)
+            Text(tr("Hold — choose color", "Удерживать — выбрать цвет"), style = MaterialTheme.typography.bodySmall)
+        }
         if (picker) LightColorPicker(known, { picker = false }) { coordinator.color(entityId, it) }
     }
 }

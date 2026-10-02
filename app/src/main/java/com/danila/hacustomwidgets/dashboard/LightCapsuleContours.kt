@@ -27,10 +27,10 @@ object LightCapsuleContours {
         fun contour(colors: IntArray, alpha: Int = 190, temperaturePhase: Boolean = false) {
             paint.strokeWidth=1.2f*density
             paint.shader=if (temperaturePhase) {
-                // Android's positive Y points down: +75 degrees puts warm at the upper-left
-                // shoulder and cold at the lower-right. Normalize to the capsule's projected
+                // Android's positive Y points down: +90 degrees puts warm at the top
+                // and cold at the bottom (+15 degrees from RC3). Normalize to the capsule's projected
                 // extent so the existing palette endpoints/contrast survive the orientation.
-                val angle=Math.toRadians(75.0)
+                val angle=Math.toRadians(90.0)
                 val dx=cos(angle).toFloat(); val dy=sin(angle).toFloat()
                 val extent=(width-height).coerceAtLeast(0)/2f*dx + height/2f-inset
                 val cx=width/2f; val cy=height/2f

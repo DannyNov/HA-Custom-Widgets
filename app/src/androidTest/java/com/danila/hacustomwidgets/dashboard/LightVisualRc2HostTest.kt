@@ -59,7 +59,7 @@ class LightVisualRc2HostTest {
     @Test fun temperatureReadsAgainstHonorCardAndSeparatesFromRainbow() {
         val density=context.resources.displayMetrics.density
         fun sample(b:Bitmap, right:Boolean, inset:Int):Int {
-            val angle=Math.toRadians(75.0)
+            val angle=Math.toRadians(90.0)
             val radius=24*density-inset*density
             val x=if(right)b.width-24*density+radius*kotlin.math.cos(angle) else 24*density-radius*kotlin.math.cos(angle)
             val y=b.height/2f+(if(right)1 else -1)*radius*kotlin.math.sin(angle)
