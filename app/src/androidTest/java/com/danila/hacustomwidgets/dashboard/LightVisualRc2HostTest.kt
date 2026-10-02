@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
@@ -104,7 +106,17 @@ class LightVisualRc2HostTest {
                 instrumentation.waitForIdleSync();android.os.SystemClock.sleep(200)
                 val d=context.resources.displayMetrics.density
                 assertEquals(3,bounds.size)
-                val b=bounds.getValue("brightness");val t=bounds.getValue("temperature");val c=bounds.getValue("color")
+                val origin=IntArray(2)
+                scenario.onActivity { it.window.decorView.getLocationOnScreen(origin) }
+                val offset=androidx.compose.ui.geometry.Offset(origin[0].toFloat(),origin[1].toFloat())
+                val b=bounds.getValue("brightness").translate(offset)
+                val t=bounds.getValue("temperature").translate(offset)
+                val c=bounds.getValue("color").translate(offset)
+                val image=instrumentation.uiAutomation.takeScreenshot()!!
+                val file=java.io.File(context.getExternalFilesDir(null),"v070-rc2-style-$width-$font.png")
+                file.outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)}
+                instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /data/local/tmp/${file.name}").use{java.io.FileInputStream(it.fileDescriptor).readBytes()}
+                file.delete()
                 fun nodes(node:android.view.accessibility.AccessibilityNodeInfo?):List<android.view.accessibility.AccessibilityNodeInfo> =
                     if(node==null || !node.refresh())emptyList()else listOf(node)+(0 until node.childCount).flatMap{nodes(node.getChild(it))}
                 val tree=nodes(instrumentation.uiAutomation.rootInActiveWindow)
@@ -126,7 +138,6 @@ class LightVisualRc2HostTest {
                     assertTrue("Effective target >=48dp",rect.height>=48*d-1)
                     assertEquals(b.width,rect.width,1f)
                 }
-                val image=instrumentation.uiAutomation.takeScreenshot()!!
                 // The centerline away from thumbs is 10dp high in every real rendered component.
                 for(rect in listOf(b,t,c)) {
                     val x=(rect.left+rect.width*.3f).roundToInt()
@@ -147,10 +158,50 @@ class LightVisualRc2HostTest {
                     assertTrue(Color.red(inside)+Color.green(inside)+Color.blue(inside)>200)
                     assertTrue(Color.red(outside)+Color.green(outside)+Color.blue(outside)<130)
                 }
-                val file=java.io.File(context.getExternalFilesDir(null),"v070-rc2-style-$width-$font.png")
-                file.outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)}
-                instrumentation.uiAutomation.executeShellCommand("cp ${file.absolutePath} /data/local/tmp/${file.name}").use{java.io.FileInputStream(it.fileDescriptor).readBytes()}
-                file.delete();image.recycle()
+                image.recycle()
+            }
+        }
+    }
+
+    @Test fun circularSlidersRetainDragFinishAndAccessibleAbsoluteProgress() {
+        val intent=android.content.Intent(context,BrightnessActivity::class.java)
+            .putExtra("brightness_entity","light.drag_fixture").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        val values=java.util.concurrent.ConcurrentHashMap<String,Float>()
+        val finishes=java.util.concurrent.ConcurrentHashMap<String,Int>()
+        val bounds=java.util.concurrent.ConcurrentHashMap<String,androidx.compose.ui.geometry.Rect>()
+        ActivityScenario.launch<BrightnessActivity>(intent).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                HaCustomWidgetsTheme {
+                    Column(Modifier.width(280.dp)) {
+                        for(name in listOf("brightness","temperature")) {
+                            val range=if(name=="brightness")1f..100f else 2700f..6500f
+                            var selected by remember(name) { mutableStateOf(if(name=="brightness")50f else 4000f) }
+                            LightControlSlider(selected, { selected=it;values[name]=it }, valueRange=range,
+                                steps=if(name=="brightness")98 else 0,
+                                gradient=if(name=="temperature")Brush.horizontalGradient(LightControlStyle.temperatureColors)else null,
+                                onValueChangeFinished={finishes[name]=(finishes[name]?:0)+1},
+                                modifier=Modifier.onGloballyPositioned{bounds[name]=it.boundsInWindow()}.semantics{contentDescription=name})
+                        }
+                    }
+                }
+            } }
+            instrumentation.waitForIdleSync();android.os.SystemClock.sleep(200)
+            val origin=IntArray(2);scenario.onActivity{it.window.decorView.getLocationOnScreen(origin)}
+            for(name in listOf("brightness","temperature")) {
+                val rect=bounds.getValue(name).translate(androidx.compose.ui.geometry.Offset(origin[0].toFloat(),origin[1].toFloat()))
+                val y=((rect.top+rect.bottom)/2).roundToInt()
+                instrumentation.uiAutomation.executeShellCommand("input swipe ${(rect.left+rect.width*.5f).roundToInt()} $y ${(rect.left+rect.width*.8f).roundToInt()} $y 250").use{java.io.FileInputStream(it.fileDescriptor).readBytes()}
+                instrumentation.waitForIdleSync();android.os.SystemClock.sleep(100)
+                assertTrue("Drag changes $name",values.getValue(name)>if(name=="brightness")50 else 4000)
+                assertEquals("Single finish callback",1,finishes[name])
+                fun nodes(node:android.view.accessibility.AccessibilityNodeInfo?):List<android.view.accessibility.AccessibilityNodeInfo> =
+                    if(node==null || !node.refresh())emptyList()else listOf(node)+(0 until node.childCount).flatMap{nodes(node.getChild(it))}
+                val slider=nodes(instrumentation.uiAutomation.rootInActiveWindow).first{it.contentDescription?.toString()==name && it.rangeInfo!=null}
+                val target=if(name=="brightness")85f else 5500f
+                val args=android.os.Bundle().apply{putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,target)}
+                assertTrue(slider.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,args))
+                instrumentation.waitForIdleSync()
+                assertEquals(target,values.getValue(name),1f)
             }
         }
     }
