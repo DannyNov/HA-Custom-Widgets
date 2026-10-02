@@ -47,9 +47,13 @@ class LightColorHostTest {
                         val bitmap=android.graphics.Bitmap.createBitmap(view.measuredWidth,view.measuredHeight,android.graphics.Bitmap.Config.ARGB_8888)
                         view.draw(android.graphics.Canvas(bitmap))
                         val bytes=java.io.ByteArrayOutputStream().also{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}.toByteArray()
-                        val encoded=android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP)
-                        val name="v070-capsule-${modes.joinToString("-")}-$width-$font.png"
-                        instrumentation.uiAutomation.executeShellCommand("echo $encoded | base64 -d > /data/local/tmp/$name").use{java.io.FileInputStream(it.fileDescriptor).readBytes()}
+                                                val name="v070-capsule-${modes.joinToString("-")}-$width-$font.png"
+                        val rendered=java.io.File(context.getExternalFilesDir(null),name)
+                        rendered.writeBytes(bytes)
+                        instrumentation.uiAutomation.executeShellCommand("cp ${rendered.absolutePath} /data/local/tmp/$name").use{java.io.FileInputStream(it.fileDescriptor).readBytes()}
+                        val copied=instrumentation.uiAutomation.executeShellCommand("ls /data/local/tmp/$name").use{String(java.io.FileInputStream(it.fileDescriptor).readBytes())}
+                        assertTrue("Rendered capsule PNG exported",copied.contains(name))
+                        rendered.delete()
                         bitmap.recycle()
                     }
                 }
