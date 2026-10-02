@@ -75,13 +75,18 @@ fun LightColorControls(entityId: String, coordinator: BrightnessCoordinator, rev
                 }
             }
             val names = listOf(tr("Warm", "Тёплый"), tr("Medium", "Средний"), tr("Cool", "Холодный"))
-            Row(Modifier.fillMaxWidth()) {
-                range.presets().forEachIndexed { i, target ->
-                    TextButton(onClick = { coordinator.temperature(entityId, target) }, enabled = enabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics {
-                            contentDescription = "${names[i]}: $target K"
-                        }) { Text("${names[i]}\n$target K") }
-                }
+            val largeFont = LocalConfiguration.current.fontScale > 1.3f
+            @Composable fun preset(i: Int, target: Int, modifier: Modifier) {
+                TextButton(onClick = { coordinator.temperature(entityId, target) }, enabled = enabled,
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                    modifier = modifier.heightIn(min = 48.dp).semantics {
+                        contentDescription = "${names[i]}: $target K"
+                    }) { Text(if (largeFont) "${names[i]} · $target K" else "${names[i]}\n$target K") }
+            }
+            if (largeFont) Column(Modifier.fillMaxWidth()) {
+                range.presets().forEachIndexed { i, target -> preset(i, target, Modifier.fillMaxWidth()) }
+            } else Row(Modifier.fillMaxWidth()) {
+                range.presets().forEachIndexed { i, target -> preset(i, target, Modifier.weight(1f)) }
             }
         } else Text(tr("Waiting for the lamp's Kelvin range", "Ожидание диапазона лампы в Кельвинах"))
     }
