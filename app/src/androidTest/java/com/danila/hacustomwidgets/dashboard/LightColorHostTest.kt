@@ -190,10 +190,11 @@ class LightColorHostTest {
     @Test fun floatingActivityLargeFontsAndLandscapeRemainScrollable() {
         val container=(context.applicationContext as com.danila.hacustomwidgets.HaWidgetApplication).container
         val saved=container.connectionStore.load();val originalFont=context.resources.configuration.fontScale
+        val originalLocale=java.util.Locale.getDefault()
         val id=70302
         fun shell(command:String) {instrumentation.uiAutomation.executeShellCommand(command).use{java.io.FileInputStream(it.fileDescriptor).readBytes()}}
         fun nodes(node:android.view.accessibility.AccessibilityNodeInfo?):List<android.view.accessibility.AccessibilityNodeInfo> =
-            if(node==null)emptyList()else listOf(node)+(0 until node.childCount).flatMap{nodes(node.getChild(it))}
+            if(node==null || !node.refresh())emptyList()else listOf(node)+(0 until node.childCount).flatMap{nodes(node.getChild(it))}
         try {
             container.connectionStore.save("https://activity-font-fixture.invalid","fixture")
             val entity=HaEntity("light.host_font","on","Очень длинное имя лампы для проверки переноса / Very long lamp name for wrapping",null,"2026-10-02T00:00:00Z",brightness=light(listOf("color_temp","rgbww")))
@@ -214,7 +215,7 @@ class LightColorHostTest {
                         assertFalse(it.isFinishing)
                     }
                     var close:android.view.accessibility.AccessibilityNodeInfo?=null
-                    repeat(16) {
+                    repeat(40) {
                         if(close==null) {
                             val current=nodes(instrumentation.uiAutomation.rootInActiveWindow)
                             close=current.firstOrNull{it.isVisibleToUser && it.text?.toString()==com.danila.hacustomwidgets.tr("Close","Закрыть")}
@@ -229,6 +230,13 @@ class LightColorHostTest {
             }
         } finally {
             shell("settings put system font_scale $originalFont")
+            val restoreDeadline=android.os.SystemClock.uptimeMillis()+3000
+            while(kotlin.math.abs(context.resources.configuration.fontScale-originalFont)>0.01f && android.os.SystemClock.uptimeMillis()<restoreDeadline) {
+                instrumentation.waitForIdleSync();android.os.SystemClock.sleep(100)
+            }
+            instrumentation.waitForIdleSync();android.os.SystemClock.sleep(500)
+            assertEquals("System font restored before subsequent regressions",originalFont,context.resources.configuration.fontScale,0.01f)
+            java.util.Locale.setDefault(originalLocale)
             container.dashboards.delete(id)
             if(saved==null)container.connectionStore.clear()else container.connectionStore.save(saved.baseUrl,saved.token)
         }

@@ -797,11 +797,15 @@
     {
       "sha": "6ae9664f55442bc7c1a4cac24404c9a255e63d1d",
       "versionCode": 76
+    },
+    {
+      "sha": "8c74639a3d8153df309bd04fc846a89e5efd7b59",
+      "versionCode": 77
     }
   ],
-  "ciRuns": 360,
+  "ciRuns": 387,
   "date": "2026-10-02",
-  "newCode": 77,
+  "newCode": 78,
   "base": "273a6d60360b295523f23bd4b416a34ff4cb2d2b",
-  "maximum": 76
+  "maximum": 77
 }
