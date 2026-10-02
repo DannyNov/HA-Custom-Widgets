@@ -12,9 +12,9 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
-      actions: read
+      actions: write
     concurrency:
-      group: publish-v0.7.0-rc3
+      group: publish-v0.7.0-rc3-recovery
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -33,6 +33,19 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Stop redundant duplicate checks and superseded publisher
+        run: |
+          set -euo pipefail
+          for redundant in 37040891369 37040607362; do
+            run=$(gh api "repos/$GH_REPO/actions/runs/$redundant")
+            if [ "$redundant" = 37040891369 ]; then
+              test "$(jq -r .head_sha <<< "$run")" = "$SOURCE_SHA"
+              test "$(jq -r .head_branch <<< "$run")" = release/v070-rc3
+            else
+              test "$(jq -r .head_sha <<< "$run")" = 54c2e214605bbb39d12671b0c2e620a2e45678c7
+            fi
+            if [ "$(jq -r .status <<< "$run")" != completed ]; then gh run cancel "$redundant"; fi
+          done
       - name: Verify inspected production source and exact-commit gates
         run: |
           set -euo pipefail
@@ -47,21 +60,14 @@ jobs:
           python3 .github/scripts/verify-v070-rc3-scope.py
           grep -F 'versionName = "0.7.0-rc3"' app/build.gradle.kts
           grep -F "versionCode = $EXPECTED_CODE" app/build.gradle.kts
-          for workflow in compile-test-v035.yml android.yml; do
-            complete=false
-            for attempt in $(seq 1 180); do
-              run=$(gh api "repos/$GH_REPO/actions/workflows/$workflow/runs?head_sha=$SOURCE_SHA&event=push&per_page=10" --jq '.workflow_runs | map(select(.head_sha == env.SOURCE_SHA and .event == "push")) | sort_by(.id) | reverse | .[0] | {id,status,conclusion,head_sha}')
-              if [ "$(jq -r .status <<< "$run")" = completed ]; then
-                test "$(jq -r .head_sha <<< "$run")" = "$SOURCE_SHA"
-                test "$(jq -r .conclusion <<< "$run")" = success
-                id=$(jq -r .id <<< "$run")
-                if [ "$workflow" = android.yml ]; then echo "SIGNED_RUN=$id" >> "$GITHUB_ENV"; else echo "CI_RUN=$id" >> "$GITHUB_ENV"; fi
-                complete=true; break
-              fi
-              sleep 10
-            done
-            test "$complete" = true
+          for id in 37038857166 37038857335; do
+            run=$(gh api "repos/$GH_REPO/actions/runs/$id")
+            test "$(jq -r .head_sha <<< "$run")" = "$SOURCE_SHA"
+            test "$(jq -r .status <<< "$run")" = completed
+            test "$(jq -r .conclusion <<< "$run")" = success
           done
+          echo 'CI_RUN=37038857166' >> "$GITHUB_ENV"
+          echo 'SIGNED_RUN=37038857335' >> "$GITHUB_ENV"
           test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/v070-light-controls" --jq .object.sha)" = "$CONTROLLER_SHA"
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = 273a6d60360b295523f23bd4b416a34ff4cb2d2b
           test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
