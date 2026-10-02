@@ -78,6 +78,20 @@ jobs:
           grep -F 'jar verified.' deliverables/aab-signature.txt
           keytool -printcert -jarfile deliverables/HAWidgets-v0.7.0-rc1.aab > deliverables/aab-certificate.txt
           grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' deliverables/aab-certificate.txt
+          curl --fail --location 'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar' -o bundletool.jar
+          echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  bundletool.jar' | sha256sum -c -
+          java -jar bundletool.jar dump manifest --bundle=deliverables/HAWidgets-v0.7.0-rc1.aab --module=base > deliverables/aab-manifest.xml
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root=ET.parse('deliverables/aab-manifest.xml').getroot()
+          ns='{http://schemas.android.com/apk/res/android}'
+          assert root.get('package')=='com.danila.hacustomwidgets'
+          assert root.get(ns+'versionCode')==os.environ['EXPECTED_CODE']
+          assert root.get(ns+'versionName')=='0.7.0-rc1'
+          sdk=root.find('uses-sdk')
+          assert sdk.get(ns+'minSdkVersion')=='31' and sdk.get(ns+'targetSdkVersion')=='36'
+          assert root.find('application').get(ns+'debuggable','false')=='false'
+          PY
           cp rc-assets/apk/release/build-info.txt deliverables/build-info.txt
           printf 'sourceSHA=%s\nciRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$CI_RUN" "$SIGNED_RUN" >> deliverables/build-info.txt
           (cd deliverables && sha256sum HAWidgets-v0.7.0-rc1.apk HAWidgets-v0.7.0-rc1.aab > sha256.txt)

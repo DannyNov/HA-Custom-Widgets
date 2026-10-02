@@ -22,6 +22,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -72,7 +77,14 @@ fun LightColorControls(entityId: String, coordinator: BrightnessCoordinator, rev
                             }
                         }, valueRange = range.minimum.toFloat()..range.maximum.toFloat(), enabled = enabled,
                         colors = SliderDefaults.colors(activeTrackColor = Color.Transparent, inactiveTrackColor = Color.Transparent),
-                        modifier = Modifier.fillMaxWidth().semantics { contentDescription = tr("Lamp color temperature in Kelvin", "Цветовая температура лампы в Кельвинах") })
+                        modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
+                            contentDescription = tr("Lamp color temperature in Kelvin", "Цветовая температура лампы в Кельвинах")
+                            progressBarRangeInfo = ProgressBarRangeInfo((temperature ?: range.clamp(4000)).coerceIn(range.minimum,range.maximum).toFloat(),range.minimum.toFloat()..range.maximum.toFloat())
+                            if (!enabled) disabled()
+                            setProgress { target ->
+                                if (enabled && target.isFinite()) { coordinator.temperature(entityId,range.clamp(target.roundToInt())); true } else false
+                            }
+                        })
                 }
             }
             val names = listOf(tr("Warm", "Тёплый"), tr("Medium", "Средний"), tr("Cool", "Холодный"))
@@ -146,10 +158,18 @@ private fun LightColorPicker(initial: LightColor?, close: () -> Unit, apply: (Li
                 }
                 Text(tr("Hue", "Оттенок"))
                 Slider(selected.hue.toFloat(), { selected = selected.copy(hue=it.toDouble()); touched=true },
-                    valueRange=0f..360f, modifier=Modifier.semantics { contentDescription=tr("Hue", "Оттенок") })
+                    valueRange=0f..360f, modifier=Modifier.clearAndSetSemantics {
+                        contentDescription=tr("Hue", "Оттенок")
+                        progressBarRangeInfo=ProgressBarRangeInfo(selected.hue.toFloat(),0f..360f)
+                        setProgress { target -> if (target.isFinite()) {selected=selected.copy(hue=target.coerceIn(0f,360f).toDouble());touched=true;true}else false }
+                    })
                 Text(tr("Saturation", "Насыщенность"))
                 Slider(selected.saturation.toFloat(), { selected = selected.copy(saturation=it.toDouble()); touched=true },
-                    valueRange=0f..100f, modifier=Modifier.semantics { contentDescription=tr("Saturation", "Насыщенность") })
+                    valueRange=0f..100f, modifier=Modifier.clearAndSetSemantics {
+                        contentDescription=tr("Saturation", "Насыщенность")
+                        progressBarRangeInfo=ProgressBarRangeInfo(selected.saturation.toFloat(),0f..100f)
+                        setProgress { target -> if (target.isFinite()) {selected=selected.copy(saturation=target.coerceIn(0f,100f).toDouble());touched=true;true}else false }
+                    })
                 }
                 Row {
                     TextButton(onClick=close) { Text(tr("Cancel", "Отмена")) }
