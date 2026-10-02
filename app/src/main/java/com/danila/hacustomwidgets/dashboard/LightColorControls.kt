@@ -103,12 +103,12 @@ fun LightColorControls(entityId: String, coordinator: BrightnessCoordinator, rev
         LightControlColorTrack(known?.let { Brush.horizontalGradient(listOf(it.preview(), it.preview())) }
                 ?: Brush.horizontalGradient(rainbow), Modifier.fillMaxWidth()
             .semantics { contentDescription = if (known == null) tr("Choose lamp color", "Выбрать цвет лампы")
-                else tr("Restore lamp color. Hold to choose another color.", "Вернуть цвет лампы. Удерживайте для выбора другого цвета.") }
+                else tr("Turn on lamp color. Hold to choose another color.", "Включить цвет лампы. Удерживайте для выбора другого цвета.") }
             .combinedClickable(enabled = enabled,
                 onClick = { if (known == null) picker = true else coordinator.color(entityId, known) },
                 onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); picker = true }))
         Text(if (known == null) tr("Tap to choose a color", "Нажмите, чтобы выбрать цвет")
-            else tr("Tap to restore • Hold to choose", "Нажать — вернуть • Удерживать — выбрать"), style = MaterialTheme.typography.bodySmall)
+            else tr("Tap — turn on color • Hold — choose", "Нажать — включить цвет • Удерживать — выбрать"), style = MaterialTheme.typography.bodySmall)
         if (picker) LightColorPicker(known, { picker = false }) { coordinator.color(entityId, it) }
     }
 }

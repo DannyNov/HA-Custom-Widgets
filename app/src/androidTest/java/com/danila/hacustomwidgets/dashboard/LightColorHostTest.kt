@@ -128,7 +128,7 @@ class LightColorHostTest {
                     val text=visible().mapNotNull{it.text?.toString()}.joinToString(" ")
                     assertEquals("color_temp" in modes,text.contains(com.danila.hacustomwidgets.tr("Color temperature","Цветовая температура")))
                     if(modes.any{it in LightColor.MODES}) {
-                        val bar=visible().firstOrNull{it.contentDescription?.toString()?.contains(com.danila.hacustomwidgets.tr("Restore lamp color","Вернуть цвет лампы"))==true}
+                        val bar=visible().firstOrNull{it.contentDescription?.toString()?.contains(com.danila.hacustomwidgets.tr("Turn on lamp color","Включить цвет лампы"))==true}
                             ?: visible().firstOrNull{it.contentDescription?.toString()==com.danila.hacustomwidgets.tr("Choose lamp color","Выбрать цвет лампы")}
                         assertNotNull(bar)
                         assertTrue(bar!!.performAction(if(modes==listOf("hs"))android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK else android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK))

@@ -58,7 +58,13 @@ class LightVisualRc2HostTest {
 
     @Test fun temperatureReadsAgainstHonorCardAndSeparatesFromRainbow() {
         val density=context.resources.displayMetrics.density
-        fun sample(b:Bitmap, right:Boolean, inset:Int):Int = b.getPixel(if(right)b.width-(inset*density).roundToInt()-1 else (inset*density).roundToInt(),b.height/2)
+        fun sample(b:Bitmap, right:Boolean, inset:Int):Int {
+            val angle=Math.toRadians(75.0)
+            val radius=24*density-inset*density
+            val x=if(right)b.width-24*density+radius*kotlin.math.cos(angle) else 24*density-radius*kotlin.math.cos(angle)
+            val y=b.height/2f+(if(right)1 else -1)*radius*kotlin.math.sin(angle)
+            return b.getPixel(x.roundToInt().coerceIn(0,b.width-1),y.roundToInt().coerceIn(0,b.height-1))
+        }
         fun distance(a:Int,b:Int)=kotlin.math.abs(Color.red(a)-Color.red(b))+kotlin.math.abs(Color.green(a)-Color.green(b))+kotlin.math.abs(Color.blue(a)-Color.blue(b))
         fun overCard(c:Int):Int {
             val a=Color.alpha(c)/255f

@@ -34,7 +34,10 @@ jobs:
           rc1="$RUNNER_TEMP/v070-rc1"
           git worktree add --detach "$rc1" afece5e292314a145d4822d7702b992f0f05be1f
           (cd "$rc1" && python3 .github/scripts/verify-v070-scope.py)
-          python3 .github/scripts/verify-v070-rc2-scope.py
+          rc2="$RUNNER_TEMP/v070-rc2"
+          git worktree add --detach "$rc2" 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
+          (cd "$rc2" && python3 .github/scripts/verify-v070-rc2-scope.py)
+          python3 .github/scripts/verify-v070-rc3-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -101,7 +104,7 @@ jobs:
             for image in brightness color_temp hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-$image.png" "v070-$image.png"; done
             for image in hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-picker-$image.png" "v070-picker-$image.png"; done
             for font in 1.0 1.5 2.0; do for landscape in true false; do adb pull "/data/local/tmp/v070-font-$font-$landscape.png" "v070-font-$font-$landscape.png"; done; done
-            for image in $(adb shell 'ls /data/local/tmp/v070-capsule-*.png /data/local/tmp/v070-rc2-style-*.png' | tr -d '\r'); do adb pull "$image" .; done
+            for image in $(adb shell 'ls /data/local/tmp/v070-capsule-*.png /data/local/tmp/v070-rc2-style-*.png /data/local/tmp/v070-rc3-*.png' | tr -d '\r'); do adb pull "$image" .; done
       - name: Verify instrumentation test count
         run: |
           python3 - <<'PY'
@@ -114,7 +117,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("HOST_TEST_RESULT", totals)
-          if totals["tests"] < 46 or any(totals[k] for k in ("failures", "errors", "skipped")):
+          if totals["tests"] < 52 or any(totals[k] for k in ("failures", "errors", "skipped")):
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -136,6 +139,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - source: v0.7.0-rc2
+            ref: 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.7.0-rc2-api36
+            ref: 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.7.0-rc1
             ref: afece5e292314a145d4822d7702b992f0f05be1f
             fixture: true
