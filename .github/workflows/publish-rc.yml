@@ -20,9 +20,9 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       SOURCE_SHA: ${{ github.sha }}
-      REVIEWED_SHA: a8ae2b4680e6f5d191a96812547a4300f718cda9
+      REVIEWED_SHA: 27c83c075df59d0db58ad2a212103ffb863a6143
       TAG: v0.7.0-rc1
-      EXPECTED_CODE: '72'
+      EXPECTED_CODE: '79'
     steps:
       - uses: actions/checkout@v5
         with:
