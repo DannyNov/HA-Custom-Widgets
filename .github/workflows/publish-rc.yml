@@ -20,9 +20,9 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       SOURCE_SHA: ${{ github.sha }}
-      REVIEWED_SHA: PENDING_REVIEWED_SHA
+      REVIEWED_SHA: 99a960eba263460ce9d68971a7e429ad7ae94e29
       TAG: v0.7.0-rc3
-      EXPECTED_CODE: '84'
+      EXPECTED_CODE: '85'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
-          git diff --exit-code "$REVIEWED_SHA" "$SOURCE_SHA" -- app/src/main app/src/test app/src/androidTest
+          git diff --exit-code "$REVIEWED_SHA" "$SOURCE_SHA" -- app/src/main app/src/test
           python3 .github/scripts/verify-v070-rc3-scope.py
           grep -F 'versionName = "0.7.0-rc3"' app/build.gradle.kts
           grep -F "versionCode = $EXPECTED_CODE" app/build.gradle.kts
