@@ -35,7 +35,7 @@ import com.danila.hacustomwidgets.tr
 import kotlin.math.*
 import kotlinx.coroutines.launch
 
-private val whiteScale = listOf(Color(0xffffd29a), Color(0xfffffaf1), Color(0xffdcecff))
+private val whiteScale = LightControlStyle.temperatureColors
 private val rainbow = (0..6).map { Color.hsv((it * 60f).coerceAtMost(359.99f), 1f, 1f) }
 private fun LightColor.preview() = Color.hsv(hue.toFloat().coerceAtMost(359.99f), saturation.toFloat()/100f, 1f)
 
@@ -52,40 +52,32 @@ fun LightColorControls(entityId: String, coordinator: BrightnessCoordinator, rev
     var gesture by remember { mutableStateOf(0L) }
     if (light.temperatureCapable) {
         Spacer(Modifier.height(16.dp))
-        Text(tr("Color temperature", "Цветовая температура"), style = MaterialTheme.typography.titleMedium)
         val range = light.kelvinRange
         val temperature = draftTemperature?.roundToInt() ?: coordinator.temperatureTarget(entityId)
             ?: light.temperatureKelvin?.takeIf { light.colorMode == "color_temp" }
             ?: state.lastConfirmedTemperature
-        Text(temperature?.let { "$it K" } ?: "— K", style = MaterialTheme.typography.headlineSmall)
+        LightControlHeader(tr("Color temperature", "Цветовая температура"), temperature?.let { "$it K" } ?: "— K")
         if (range != null) {
             if (range.minimum < range.maximum) {
-                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Canvas(Modifier.fillMaxWidth().height(48.dp)) {
-                        drawRoundRect(Brush.horizontalGradient(whiteScale), topLeft = Offset(0f, size.height/2-4.dp.toPx()),
-                            size = androidx.compose.ui.geometry.Size(size.width, 8.dp.toPx()),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()))
-                    }
-                    Slider(value = (temperature ?: range.clamp(4000)).coerceIn(range.minimum, range.maximum).toFloat(),
-                        onValueChange = { gesture++; draftTemperature = it },
-                        onValueChangeFinished = {
-                            val finished = gesture
-                            val target = draftTemperature?.roundToInt()
-                            scope.launch {
-                                target?.let { coordinator.temperature(entityId, it).join() }
-                                if (gesture == finished) draftTemperature = null
-                            }
-                        }, valueRange = range.minimum.toFloat()..range.maximum.toFloat(), enabled = enabled,
-                        colors = SliderDefaults.colors(activeTrackColor = Color.Transparent, inactiveTrackColor = Color.Transparent),
-                        modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
-                            contentDescription = tr("Lamp color temperature in Kelvin", "Цветовая температура лампы в Кельвинах")
-                            progressBarRangeInfo = ProgressBarRangeInfo((temperature ?: range.clamp(4000)).coerceIn(range.minimum,range.maximum).toFloat(),range.minimum.toFloat()..range.maximum.toFloat())
-                            if (!enabled) disabled()
-                            setProgress { target ->
-                                if (enabled && target.isFinite()) { coordinator.temperature(entityId,range.clamp(target.roundToInt())); true } else false
-                            }
-                        })
-                }
+                LightControlSlider(value = (temperature ?: range.clamp(4000)).coerceIn(range.minimum, range.maximum).toFloat(),
+                    onValueChange = { gesture++; draftTemperature = it },
+                    onValueChangeFinished = {
+                        val finished = gesture
+                        val target = draftTemperature?.roundToInt()
+                        scope.launch {
+                            target?.let { coordinator.temperature(entityId, it).join() }
+                            if (gesture == finished) draftTemperature = null
+                        }
+                    }, valueRange = range.minimum.toFloat()..range.maximum.toFloat(), enabled = enabled,
+                    gradient = Brush.horizontalGradient(whiteScale),
+                    modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
+                        contentDescription = tr("Lamp color temperature in Kelvin", "Цветовая температура лампы в Кельвинах")
+                        progressBarRangeInfo = ProgressBarRangeInfo((temperature ?: range.clamp(4000)).coerceIn(range.minimum,range.maximum).toFloat(),range.minimum.toFloat()..range.maximum.toFloat())
+                        if (!enabled) disabled()
+                        setProgress { target ->
+                            if (enabled && target.isFinite()) { coordinator.temperature(entityId,range.clamp(target.roundToInt())); true } else false
+                        }
+                    })
             }
             val names = listOf(tr("Warm", "Тёплый"), tr("Medium", "Средний"), tr("Cool", "Холодный"))
             val largeFont = LocalConfiguration.current.fontScale > 1.3f
@@ -94,7 +86,7 @@ fun LightColorControls(entityId: String, coordinator: BrightnessCoordinator, rev
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
                     modifier = modifier.heightIn(min = 48.dp).semantics {
                         contentDescription = "${names[i]}: $target K"
-                    }) { Text(if (largeFont) "${names[i]} · $target K" else "${names[i]}\n$target K") }
+                    }) { Text(if (largeFont) "${names[i]} · $target K" else "${names[i]}\n$target K", textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
             }
             if (largeFont) Column(Modifier.fillMaxWidth()) {
                 range.presets().forEachIndexed { i, target -> preset(i, target, Modifier.fillMaxWidth()) }
@@ -108,9 +100,8 @@ fun LightColorControls(entityId: String, coordinator: BrightnessCoordinator, rev
         Text(tr("Color", "Цвет"), style = MaterialTheme.typography.titleMedium)
         val known = coordinator.colorTarget(entityId) ?: light.color?.takeIf { light.colorMode in LightColor.MODES }
             ?: state.lastConfirmedColor
-        Box(Modifier.fillMaxWidth().height(48.dp)
-            .background(known?.let { Brush.horizontalGradient(listOf(it.preview(), it.preview())) }
-                ?: Brush.horizontalGradient(rainbow), RoundedCornerShape(12.dp))
+        LightControlColorTrack(known?.let { Brush.horizontalGradient(listOf(it.preview(), it.preview())) }
+                ?: Brush.horizontalGradient(rainbow), Modifier.fillMaxWidth()
             .semantics { contentDescription = if (known == null) tr("Choose lamp color", "Выбрать цвет лампы")
                 else tr("Restore lamp color. Hold to choose another color.", "Вернуть цвет лампы. Удерживайте для выбора другого цвета.") }
             .combinedClickable(enabled = enabled,
@@ -157,14 +148,14 @@ private fun LightColorPicker(initial: LightColor?, close: () -> Unit, apply: (Li
                     drawCircle(Color.White, 5.dp.toPx(),cursor)
                 }
                 Text(tr("Hue", "Оттенок"))
-                Slider(selected.hue.toFloat(), { selected = selected.copy(hue=it.toDouble()); touched=true },
+                LightControlSlider(selected.hue.toFloat(), { selected = selected.copy(hue=it.toDouble()); touched=true },
                     valueRange=0f..360f, modifier=Modifier.clearAndSetSemantics {
                         contentDescription=tr("Hue", "Оттенок")
                         progressBarRangeInfo=ProgressBarRangeInfo(selected.hue.toFloat(),0f..360f)
                         setProgress { target -> if (target.isFinite()) {selected=selected.copy(hue=target.coerceIn(0f,360f).toDouble());touched=true;true}else false }
                     })
                 Text(tr("Saturation", "Насыщенность"))
-                Slider(selected.saturation.toFloat(), { selected = selected.copy(saturation=it.toDouble()); touched=true },
+                LightControlSlider(selected.saturation.toFloat(), { selected = selected.copy(saturation=it.toDouble()); touched=true },
                     valueRange=0f..100f, modifier=Modifier.clearAndSetSemantics {
                         contentDescription=tr("Saturation", "Насыщенность")
                         progressBarRangeInfo=ProgressBarRangeInfo(selected.saturation.toFloat(),0f..100f)

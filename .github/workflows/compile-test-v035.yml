@@ -31,7 +31,10 @@ jobs:
           stable="$RUNNER_TEMP/v064-stable"
           git worktree add --detach "$stable" 273a6d60360b295523f23bd4b416a34ff4cb2d2b
           (cd "$stable" && python3 .github/scripts/verify-v064-final-scope.py)
-          python3 .github/scripts/verify-v070-scope.py
+          rc1="$RUNNER_TEMP/v070-rc1"
+          git worktree add --detach "$rc1" afece5e292314a145d4822d7702b992f0f05be1f
+          (cd "$rc1" && python3 .github/scripts/verify-v070-scope.py)
+          python3 .github/scripts/verify-v070-rc2-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -97,7 +100,7 @@ jobs:
             for image in brightness color_temp hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-$image.png" "v070-$image.png"; done
             for image in hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-picker-$image.png" "v070-picker-$image.png"; done
             for font in 1.0 1.5 2.0; do for landscape in true false; do adb pull "/data/local/tmp/v070-font-$font-$landscape.png" "v070-font-$font-$landscape.png"; done; done
-            for image in $(adb shell 'ls /data/local/tmp/v070-capsule-*.png' | tr -d '\r'); do adb pull "$image" .; done
+            for image in $(adb shell 'ls /data/local/tmp/v070-capsule-*.png /data/local/tmp/v070-rc2-style-*.png' | tr -d '\r'); do adb pull "$image" .; done
       - name: Verify instrumentation test count
         run: |
           python3 - <<'PY'
@@ -132,6 +135,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - source: v0.7.0-rc1
+            ref: afece5e292314a145d4822d7702b992f0f05be1f
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.7.0-rc1-api36
+            ref: afece5e292314a145d4822d7702b992f0f05be1f
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.6.4
             ref: 273a6d60360b295523f23bd4b416a34ff4cb2d2b
             fixture: true
