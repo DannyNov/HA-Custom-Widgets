@@ -163,6 +163,11 @@ class LightColorHostTest {
                         assertNotNull(reopened)
                         assertTrue(reopened!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK))
                         instrumentation.waitForIdleSync()
+                        val pickerDeadline=android.os.SystemClock.uptimeMillis()+2000
+                        while (!visible().any{it.text?.toString()==com.danila.hacustomwidgets.tr("Choose color","Выбрать цвет")} && android.os.SystemClock.uptimeMillis()<pickerDeadline) {
+                            instrumentation.waitForIdleSync();android.os.SystemClock.sleep(50)
+                        }
+                        assertTrue("Picker is open before Back",visible().any{it.text?.toString()==com.danila.hacustomwidgets.tr("Choose color","Выбрать цвет")})
                         instrumentation.uiAutomation.executeShellCommand("input keyevent 4").close()
                         instrumentation.waitForIdleSync();android.os.SystemClock.sleep(200)
                         scenario.onActivity{assertFalse(it.isFinishing)}
