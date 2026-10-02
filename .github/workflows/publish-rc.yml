@@ -22,7 +22,7 @@ jobs:
       SOURCE_SHA: ${{ github.sha }}
       REVIEWED_SHA: 99a960eba263460ce9d68971a7e429ad7ae94e29
       TAG: v0.7.0-rc4
-      EXPECTED_CODE: '86'
+      EXPECTED_CODE: '87'
     steps:
       - uses: actions/checkout@v5
         with:

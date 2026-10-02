@@ -59,7 +59,10 @@ class LightVisualRc2HostTest {
     @Test fun temperatureReadsAgainstHonorCardAndSeparatesFromRainbow() {
         val density=context.resources.displayMetrics.density
         fun sample(b:Bitmap, right:Boolean, inset:Int):Int {
-            val angle=Math.toRadians(90.0)
+            // Sample the upper/lower shoulder at 70 degrees: at 90 degrees the
+            // 1.2dp stroke splits coverage across two rows on mdpi. Keep the
+            // original contrast thresholds and test actual covered contour pixels.
+            val angle=Math.toRadians(70.0)
             val radius=24*density-inset*density
             val x=if(right)b.width-24*density+radius*kotlin.math.cos(angle) else 24*density-radius*kotlin.math.cos(angle)
             val y=b.height/2f+(if(right)1 else -1)*radius*kotlin.math.sin(angle)
@@ -79,9 +82,7 @@ class LightVisualRc2HostTest {
             assertTrue("Temperature endpoints distinct on #2c3236",distance(warm,cold)>55)
             assertTrue(Color.red(warm)>Color.blue(warm)+15)
             assertTrue(Color.blue(cold)>Color.red(cold)+10)
-            fun edge(b:Bitmap, bottom:Boolean, inset:Int):Int = if (width == 48f) sample(b,bottom,inset)
-                else b.getPixel(b.width/2,
-                    (if(bottom)b.height-1-(inset*density).roundToInt() else (inset*density).roundToInt()).coerceIn(0,b.height-1))
+            fun edge(b:Bitmap, bottom:Boolean, inset:Int):Int = sample(b,bottom,inset)
             for(right in listOf(false,true)) {
                 // Compare corresponding long-edge midpoints after the phase shift; the
                 // unchanged rainbow can share amber hues near the new warm shoulder.
