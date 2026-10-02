@@ -95,6 +95,7 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: |
+            adb shell cmd uimode night yes
             gradle connectedDebugAndroidTest --stacktrace || { adb logcat -d -s AppWidgetHostView AndroidRuntime; for image in $(adb shell 'ls /data/local/tmp/v070-*.png' | tr -d '\r'); do adb pull "$image" .; done; exit 1; }
             adb pull /data/local/tmp/rc3-floating-window.png rc3-floating-window.png
             for image in brightness color_temp hs color_temp-rgbww; do adb pull "/data/local/tmp/v070-$image.png" "v070-$image.png"; done
@@ -243,6 +244,7 @@ jobs:
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell run-as com.danila.hacustomwidgets ls files/upgrade-marker | grep -F 'files/upgrade-marker'
             if [ "${{ matrix.fixture }}" = "true" ]; then adb shell am instrument -w -e class com.danila.hacustomwidgets.dashboard.DashboardUpgradeTest -e upgradePhase verify com.danila.hacustomwidgets.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-result.txt; grep -F 'OK (1 test)' upgrade-result.txt; fi
+            adb shell cmd uimode night yes
             gradle connectedDebugAndroidTest --stacktrace
       - uses: actions/upload-artifact@v4
         if: always()

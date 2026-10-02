@@ -4,6 +4,7 @@ import android.graphics.*
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -88,7 +89,7 @@ class LightVisualRc2HostTest {
                 scenario.onActivity { activity -> activity.setContent {
                     HaCustomWidgetsTheme {
                         val original=LocalDensity.current
-                        CompositionLocalProvider(LocalDensity provides Density(original.density,font)) {
+                        CompositionLocalProvider(LocalDensity provides Density(original.density,font), LocalContentColor provides ComposeColor.White) {
                             Column(Modifier.width(width.dp).background(ComposeColor(0xff10171c))) {
                                 LightControlHeader("Яркость", "65%")
                                 LightControlSlider(65f, {}, valueRange=1f..100f,steps=98,
