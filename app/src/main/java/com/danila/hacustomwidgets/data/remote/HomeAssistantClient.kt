@@ -145,7 +145,8 @@ class HomeAssistantClient(
             serviceData.forEach { (key, value) -> put(key, value) }
         }.toString()
             .toRequestBody(JSON_MEDIA_TYPE)
-        val serviceHttp = if (domain == "light" && service == "turn_on" && serviceData.containsKey("brightness_pct")) brightnessHttp else http
+        val serviceHttp = if (domain == "light" && service == "turn_on" &&
+            serviceData.keys.any { it in setOf("brightness_pct", "color_temp_kelvin", "hs_color") }) brightnessHttp else http
         serviceHttp.newCall(
             Request.Builder()
                 .url(connection.baseUrl + "/api/services/$domain/$service")

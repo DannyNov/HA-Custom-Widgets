@@ -1,0 +1,19 @@
+# v0.7.0 RC light controls
+
+Base: v0.6.4 / 273a6d60360b295523f23bd4b416a34ff4cb2d2b. Only RC publication is authorized. Never merge main, publish Final, dispatch Telegram or force-push.
+
+Capabilities use supported_color_modes. Active color_mode only selects the authoritative current value. Existing legacy brightness precedence is preserved. All REST, state_changed and compact subscribe_entities decoders use the extended light state; compact deltas retain native XY/RGB/RGBW/RGBWW attributes and individual Kelvin bounds. Attribute removals/null clear actual values. Attribute-only changes participate in Dashboard payload equality.
+
+Canonical color is HS chromaticity, independent of brightness. light.turn_on sends hs_color as a JSON array without brightness. Home Assistant's service layer officially translates HS into supported RGB, XY, RGBW or RGBWW before invoking the integration. This uses HA's own conversion semantics rather than a client approximation. RGBW/RGBWW state-to-HS conversion is the documented HA approximation including white channels. Kelvin transport uses color_temp_kelvin exclusively.
+
+Temperature requires a valid real min/max Kelvin range. Presets are 2700/4000/6500 clamped to that range, with the actual reachable Kelvin value shown beside each label. Narrow ranges can intentionally share a preset value. A fixed range presents presets without a draggable slider. Missing/invalid range displays a waiting status. Slider commits only on gesture finish.
+
+Color bar tap restores current/last-confirmed color. Without one, tap opens the picker and sends nothing. Long press opens the wheel with platform haptic feedback. Wheel and accessible hue/saturation sliders update local preview; explicit Apply submits once. With no initial color, Apply stays disabled until a deliberate selection. Cancel/Back never submits.
+
+Temperature and color share one latest-mode-target queue in BrightnessCoordinator; brightness retains its physically verified queue. Both queues and Power use the same connection/entity network mutex, limiting service calls to one in flight. A newer temperature/color target supersedes the previous mode target. Brightness targets do not erase color/temperature state. Power cancels pending mode and brightness targets before obtaining the network gate. Confirmation requires matching mode/value and a newer HA timestamp; one bounded reconciliation read follows a timeout. Errors retire only the attempted generation. Reconnect invalidates all ephemeral commands; transport retry is disabled for adjustment services. No command is persisted or replayed.
+
+Current HA state remains authoritative. Last-confirmed Kelvin and HS history are added to the existing atomic Dashboard record, scoped by its existing connection fingerprint (server plus credential) and entity. History only advances for ON state in the matching mode. All Dashboards read the same newest entity truth and receive adjustment revision updates.
+
+Capsule geometry and click targets are retained. Brightness-only uses the existing drawable. Additional 1.2dp inner contours are rendered into small, bounded cached bitmap backgrounds with 3dp inset/gap; color/temperature capability selects them even when the active mode changes. Floating Activity theme/manifest/width/height/scroll and task behavior are retained. The compact picker scrolls within a bounded dialog and includes non-color labels and accessible sliders.
+
+Physical Honor checklist: brightness-only unchanged; temperature contour/presets/drag/OFF→temperature; color contour/hold wheel/select/restore/OFF→color; two contours remain across mode switches; external HA changes; Power while adjusting; same lamp in multiple Dashboards; narrow/resize/scroll/large font; timers/Favorites/brightness +/-/slider/Power/realtime regressions.

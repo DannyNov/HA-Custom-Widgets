@@ -7,3 +7,5 @@ local.properties
 deliverables/
 signing/
 *.jks
+.kotlin/
+.android-local/

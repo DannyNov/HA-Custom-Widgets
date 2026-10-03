@@ -1,0 +1,143 @@
+name: Publish verified v0.7.0 RC only
+on:
+  push:
+    branches: [feature/v070-light-controls]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish-rc:
+    if: github.ref == 'refs/heads/feature/v070-light-controls' && contains(github.event.head_commit.message, '[publish-reviewed-rc4]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      actions: write
+    concurrency:
+      group: publish-v0.7.0-rc4
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: 248c91175b473a5b8be11d0fcdf381f23f67c884
+      CONTROLLER_SHA: ${{ github.sha }}
+      REVIEWED_SHA: 248c91175b473a5b8be11d0fcdf381f23f67c884
+      TAG: v0.7.0-rc4
+      EXPECTED_CODE: '87'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: 248c91175b473a5b8be11d0fcdf381f23f67c884
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Verify inspected production source and exact-commit gates
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = DannyNov/HA-Custom-Widgets
+          git merge-base --is-ancestor "$SOURCE_SHA" "$CONTROLLER_SHA"
+          git diff --exit-code "$SOURCE_SHA" "$CONTROLLER_SHA" -- . ':!.github/workflows/publish-rc.yml' ':!.github/workflows/android.yml' ':!.github/workflows/compile-test-v035.yml'
+          gh api "repos/$GH_REPO/actions/runs/37048892104/jobs?per_page=100" > exact-gate-jobs.json
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic")] | length' exact-gate-jobs.json)" = 22
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic" and .conclusion != "success")] | length' exact-gate-jobs.json)" = 0
+          # A release ref provides workflow-authorized ancestry; stop only its redundant runs.
+          for id in $(gh api "repos/$GH_REPO/actions/runs?head_sha=$SOURCE_SHA&per_page=50" --jq '.workflow_runs[] | select(.head_branch == "release/v070-rc4" and .status != "completed") | .id'); do
+            gh run cancel "$id"
+          done
+          git diff --exit-code "$REVIEWED_SHA" "$SOURCE_SHA" -- app/src/main app/src/test
+          python3 .github/scripts/verify-v070-rc4-scope.py
+          grep -F 'versionName = "0.7.0-rc4"' app/build.gradle.kts
+          grep -F "versionCode = $EXPECTED_CODE" app/build.gradle.kts
+          for id in 37048892104 37048892170; do
+            run=$(gh api "repos/$GH_REPO/actions/runs/$id")
+            test "$(jq -r .head_sha <<< "$run")" = "$SOURCE_SHA"
+            test "$(jq -r .status <<< "$run")" = completed
+            test "$(jq -r .conclusion <<< "$run")" = success
+          done
+          echo 'CI_RUN=37048892104' >> "$GITHUB_ENV"
+          echo 'SIGNED_RUN=37048892170' >> "$GITHUB_ENV"
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/v070-light-controls" --jq .object.sha)" = "$CONTROLLER_SHA"
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = 273a6d60360b295523f23bd4b416a34ff4cb2d2b
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
+          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .draft)" = true
+          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .merged)" = false
+      - name: Independently inspect signed APK and AAB before publication
+        run: |
+          set -euo pipefail
+          gh run download "$SIGNED_RUN" --name HA-Custom-Widgets-v0.7.0-rc4-release --dir rc-assets
+          mkdir deliverables
+          cp rc-assets/apk/release/HAWidgets-v0.7.0-rc4.apk deliverables/
+          cp rc-assets/bundle/release/app-release.aab deliverables/HAWidgets-v0.7.0-rc4.aab
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          apk=deliverables/HAWidgets-v0.7.0-rc4.apk
+          "$APKSIGNER" verify --verbose --print-certs "$apk" | tee deliverables/signature.txt
+          cert=$(sed -n 's/^.*certificate SHA-256 digest: //p' deliverables/signature.txt | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$cert" = 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a
+          "$AAPT" dump badging "$apk" | tee deliverables/manifest.txt
+          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.7.0-rc4'" deliverables/manifest.txt
+          grep -Fx "sdkVersion:'31'" deliverables/manifest.txt
+          grep -Fx "targetSdkVersion:'36'" deliverables/manifest.txt
+          ! grep -q '^application-debuggable:' deliverables/manifest.txt
+          jarsigner -verify deliverables/HAWidgets-v0.7.0-rc4.aab | tee deliverables/aab-signature.txt
+          grep -F 'jar verified.' deliverables/aab-signature.txt
+          keytool -printcert -jarfile deliverables/HAWidgets-v0.7.0-rc4.aab > deliverables/aab-certificate.txt
+          grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' deliverables/aab-certificate.txt
+          curl --fail --location 'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar' -o bundletool.jar
+          echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  bundletool.jar' | sha256sum -c -
+          java -jar bundletool.jar dump manifest --bundle=deliverables/HAWidgets-v0.7.0-rc4.aab --module=base > deliverables/aab-manifest.xml
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root=ET.parse('deliverables/aab-manifest.xml').getroot()
+          ns='{http://schemas.android.com/apk/res/android}'
+          assert root.get('package')=='com.danila.hacustomwidgets'
+          assert root.get(ns+'versionCode')==os.environ['EXPECTED_CODE']
+          assert root.get(ns+'versionName')=='0.7.0-rc4'
+          sdk=root.find('uses-sdk')
+          assert sdk.get(ns+'minSdkVersion')=='31' and sdk.get(ns+'targetSdkVersion')=='36'
+          assert root.find('application').get(ns+'debuggable','false')=='false'
+          PY
+          cp rc-assets/apk/release/build-info.txt deliverables/build-info.txt
+          printf 'sourceSHA=%s\nciRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$CI_RUN" "$SIGNED_RUN" >> deliverables/build-info.txt
+          (cd deliverables && sha256sum HAWidgets-v0.7.0-rc4.apk HAWidgets-v0.7.0-rc4.aab > sha256.txt)
+      - name: Publish public Pre-release and verify public downloads
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then echo 'RC already exists; refusing to overwrite'; exit 1; fi
+          if gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then echo 'Tag already exists; refusing to move it'; exit 1; fi
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/v070-light-controls" --jq .object.sha)" = "$CONTROLLER_SHA"
+          gh release create "$TAG" deliverables/HAWidgets-v0.7.0-rc4.apk deliverables/HAWidgets-v0.7.0-rc4.aab deliverables/sha256.txt deliverables/build-info.txt deliverables/signature.txt \
+            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.7.0-rc4' --notes-file RELEASE_NOTES_v0.7.0-rc4.md --prerelease --latest=false
+          gh release view "$TAG" --json url,isDraft,isPrerelease,tagName,targetCommitish | tee deliverables/release.json
+          test "$(jq -r .isPrerelease deliverables/release.json)" = true
+          test "$(jq -r .isDraft deliverables/release.json)" = false
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .object.sha)" = "$SOURCE_SHA"
+          mkdir public-assets
+          for extension in apk aab; do
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "https://github.com/$GH_REPO/releases/download/$TAG/HAWidgets-v0.7.0-rc4.$extension" -o "public-assets/HAWidgets-v0.7.0-rc4.$extension"
+            cmp "deliverables/HAWidgets-v0.7.0-rc4.$extension" "public-assets/HAWidgets-v0.7.0-rc4.$extension"
+          done
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs public-assets/HAWidgets-v0.7.0-rc4.apk | tee public-assets/signature.txt
+          grep -F '8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' public-assets/signature.txt
+          "$AAPT" dump badging public-assets/HAWidgets-v0.7.0-rc4.apk | tee public-assets/manifest.txt
+          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.7.0-rc4'" public-assets/manifest.txt
+          grep -Fx "sdkVersion:'31'" public-assets/manifest.txt
+          grep -Fx "targetSdkVersion:'36'" public-assets/manifest.txt
+          ! grep -q '^application-debuggable:' public-assets/manifest.txt
+          (cd public-assets && sha256sum HAWidgets-v0.7.0-rc4.apk HAWidgets-v0.7.0-rc4.aab > sha256.txt)
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = 273a6d60360b295523f23bd4b416a34ff4cb2d2b
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
+          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .draft)" = true
+          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .merged)" = false
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v0.7.0-rc4-public-verification
+          path: |
+            deliverables
+            public-assets
+          if-no-files-found: error

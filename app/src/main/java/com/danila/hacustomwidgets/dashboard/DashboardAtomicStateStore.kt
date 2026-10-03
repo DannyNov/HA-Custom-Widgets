@@ -120,6 +120,8 @@ class DashboardAtomicStateStore(context: Context) {
         .put("confirmed_raw", confirmedRawState)
         .put("brightness_attributes", brightness.toAttributes())
         .put("last_confirmed_brightness", lastConfirmedBrightness)
+        .put("last_confirmed_temperature", lastConfirmedTemperature)
+        .put("last_confirmed_color", lastConfirmedColor?.let { org.json.JSONArray(listOf(it.hue, it.saturation)) })
         .put("brightness_connection", brightnessConnectionId)
         .put("confirmed_ha_updated", confirmedHaLastUpdatedMillis)
         .put("revision", revision)
@@ -161,6 +163,8 @@ class DashboardAtomicStateStore(context: Context) {
         brightness = com.danila.hacustomwidgets.data.model.LightBrightness.parse(json.optJSONObject("brightness_attributes") ?: JSONObject()),
         brightnessConnectionId = json.optNullable("brightness_connection"),
         lastConfirmedBrightness = json.optInt("last_confirmed_brightness").takeIf { it in 1..255 },
+        lastConfirmedTemperature = com.danila.hacustomwidgets.data.model.KelvinRange.integer(json, "last_confirmed_temperature"),
+        lastConfirmedColor = com.danila.hacustomwidgets.data.model.LightColor.parse(JSONObject().put("hs_color", json.opt("last_confirmed_color"))),
         confirmedHaLastUpdatedMillis = json.optLong("confirmed_ha_updated")
             .takeIf { !json.isNull("confirmed_ha_updated") },
         revision = json.optLong("revision"),
