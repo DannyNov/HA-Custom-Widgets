@@ -28,12 +28,16 @@
 ## Скриншоты
 
 <p align="center">
-  <img src="docs/images/screenshots/ru/01-dashboard.jpg" width="31%" alt="HA Dashboard — освещение и датчики">
-  <img src="docs/images/screenshots/ru/02-controls.jpg" width="31%" alt="HA Dashboard — розетки и выключатели">
-  <img src="docs/images/screenshots/ru/03-timer.jpg" width="31%" alt="HA Dashboard — активный таймер автоотключения">
+  <img src="docs/images/screenshots/ru/01-dashboard-current.jpg" width="31%" alt="HA Dashboard — освещение и датчики">
+  <img src="docs/images/screenshots/ru/07-light-controls.jpg" width="31%" alt="Регулировка яркости и цветовой температуры освещения">
+  <img src="docs/images/screenshots/ru/08-color-picker.jpg" width="31%" alt="Выбор цвета освещения">
 </p>
 <p align="center">
+  <img src="docs/images/screenshots/ru/02-controls.jpg" width="31%" alt="HA Dashboard — розетки и выключатели">
+  <img src="docs/images/screenshots/ru/03-timer.jpg" width="31%" alt="HA Dashboard — активный таймер автоотключения">
   <img src="docs/images/screenshots/ru/04-scenarios.jpg" width="31%" alt="Настройка сценариев">
+</p>
+<p align="center">
   <img src="docs/images/screenshots/ru/05-main-tab.jpg" width="31%" alt="Настройка вкладки Главное">
   <img src="docs/images/screenshots/ru/06-card-order.jpg" width="31%" alt="Порядок карточек Dashboard">
 </p>

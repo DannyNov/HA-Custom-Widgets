@@ -28,12 +28,16 @@ Russian system locales use the Russian interface. Every other locale uses Englis
 ## Screenshots
 
 <p align="center">
-  <img src="docs/images/screenshots/en/01-dashboard.jpg" width="31%" alt="HA Dashboard lights and sensors">
-  <img src="docs/images/screenshots/en/02-controls.jpg" width="31%" alt="HA Dashboard outlets and switches">
-  <img src="docs/images/screenshots/en/03-timer.jpg" width="31%" alt="HA Dashboard active auto-off timer">
+  <img src="docs/images/screenshots/en/01-dashboard-current.jpg" width="31%" alt="HA Dashboard — lights and sensors">
+  <img src="docs/images/screenshots/en/07-light-controls.jpg" width="31%" alt="Light brightness and color temperature controls">
+  <img src="docs/images/screenshots/en/08-color-picker.jpg" width="31%" alt="Light color picker">
 </p>
 <p align="center">
+  <img src="docs/images/screenshots/en/02-controls.jpg" width="31%" alt="HA Dashboard outlets and switches">
+  <img src="docs/images/screenshots/en/03-timer.jpg" width="31%" alt="HA Dashboard active auto-off timer">
   <img src="docs/images/screenshots/en/04-scenarios.jpg" width="31%" alt="Scenario configuration">
+</p>
+<p align="center">
   <img src="docs/images/screenshots/en/05-main-tab.jpg" width="31%" alt="Main tab configuration">
   <img src="docs/images/screenshots/en/06-card-order.jpg" width="31%" alt="Dashboard card ordering">
 </p>
