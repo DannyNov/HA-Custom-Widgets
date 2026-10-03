@@ -1,4 +1,4 @@
-name: v0.7.0 RC compile and tests
+name: v0.7.0 Final compile and tests
 
 on:
   push:
@@ -41,7 +41,10 @@ jobs:
           rc3="$RUNNER_TEMP/v070-rc3"
           git worktree add --detach "$rc3" 42ef1127af68f1b8d475132e92004bb7a0588bca
           (cd "$rc3" && python3 .github/scripts/verify-v070-rc3-scope.py)
-          python3 .github/scripts/verify-v070-rc4-scope.py
+          rc4="$RUNNER_TEMP/v070-rc4"
+          git worktree add --detach "$rc4" 248c91175b473a5b8be11d0fcdf381f23f67c884
+          (cd "$rc4" && python3 .github/scripts/verify-v070-rc4-scope.py)
+          python3 .github/scripts/verify-v070-final-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -145,6 +148,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - source: v0.7.0-rc4
+            ref: 248c91175b473a5b8be11d0fcdf381f23f67c884
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.7.0-rc4-api36
+            ref: 248c91175b473a5b8be11d0fcdf381f23f67c884
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.7.0-rc3
             ref: 42ef1127af68f1b8d475132e92004bb7a0588bca
             fixture: true
