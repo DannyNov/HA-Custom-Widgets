@@ -45,9 +45,12 @@ class CompactSlotsHostTest {
                 val ctx = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply { fontScale = font })
                 repo.saveConfiguration(config.copy(showFavorites = main, showMaintenance = maintenance, showLastUpdated = updated), catalog)
                 val state = repo.get(970)!!
-                val remote = GlanceRemoteViews().compose(ctx, DpSize(width.dp,300.dp)) { GlanceTheme {
-                    DashboardContent(ctx,state,970,DpSize(width.dp,300.dp),RemoteViews(ctx.packageName,com.danila.hacustomwidgets.R.layout.dashboard_collection_shell))
-                } }.remoteViews
+                val controls = composeGlanceDashboard(ctx,970,DpSize(width.dp,300.dp)) {
+                    DashboardChrome(ctx,state,970,DpSize(width.dp,300.dp))
+                }
+                val remote = composeGlanceDashboard(ctx,970,DpSize(width.dp,300.dp)) {
+                    DashboardContent(ctx,state,970,DpSize(width.dp,300.dp),RemoteViews(ctx.packageName,com.danila.hacustomwidgets.R.layout.dashboard_collection_shell),controls)
+                }
                 instrumentation.runOnMainSync {
                     val v=remote.apply(ctx,null); val density=ctx.resources.displayMetrics.density
                     v.measure(View.MeasureSpec.makeMeasureSpec((width*density).toInt(),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec((300*density).toInt(),View.MeasureSpec.EXACTLY))
@@ -78,5 +81,23 @@ class CompactSlotsHostTest {
                     assertEquals(if(updated && width>=240) 1 else 0,texts.count { it.text.toString().contains(":") })
                 }
             }
+    }
+
+    @Test fun unconfiguredChromeRemainsCompactAndClickable() = runBlocking {
+        for (width in listOf(180,320)) {
+            val remote = composeGlanceDashboard(context,971,DpSize(width.dp,300.dp)) {
+                DashboardChrome(context,null,971,DpSize(width.dp,300.dp))
+            }
+            instrumentation.runOnMainSync {
+                val v=remote.apply(context,null); val density=context.resources.displayMetrics.density
+                v.measure(View.MeasureSpec.makeMeasureSpec((width*density).toInt(),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+                v.layout(0,0,v.measuredWidth,v.measuredHeight)
+                val texts=flatten(v).filterIsInstance<TextView>()
+                for (label in listOf("↻","⚙")) assertTrue(target(texts.single { it.text.toString()==label }).hasOnClickListeners())
+                assertFalse(texts.any { it.text.toString() in listOf("★","‹","›") })
+                assertFalse(flatten(v).any { it.contentDescription?.toString()==com.danila.hacustomwidgets.tr("Maintenance","Обслуживание") })
+                assertTrue(texts.any { it.text.toString()==com.danila.hacustomwidgets.tr("Configure HA Dashboard","Настройте HA Dashboard") })
+            }
+        }
     }
 }

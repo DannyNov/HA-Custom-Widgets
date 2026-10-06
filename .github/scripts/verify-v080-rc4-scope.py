@@ -7,8 +7,8 @@ assert set(changed)==set(expected),changed
 for path,digest in expected.items():
     assert hashlib.sha256(Path(path).read_bytes().replace(b'\r\n',b'\n')).hexdigest()==digest,path
 meta=Path('app/build.gradle.kts').read_text()
-assert 'versionCode = 103' in meta and 'versionName = "0.8.0-rc4"' in meta
+assert 'versionCode = 104' in meta and 'versionName = "0.8.0-rc4"' in meta
 assert 'minSdk = 31' in meta and 'targetSdk = 36' in meta
 audit=json.loads(Path('V080_RC4_VERSION_AUDIT.json').read_text())
-assert audit['maximum']==102
+assert audit['maximum']==103
 print('RC4: conditional slots and isolated chrome; native collection algorithm, IDs, adapters and composer unchanged')
