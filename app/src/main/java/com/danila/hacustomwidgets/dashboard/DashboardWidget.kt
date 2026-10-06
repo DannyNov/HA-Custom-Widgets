@@ -96,7 +96,6 @@ internal fun DashboardContent(
     appWidgetId: Int,
     size: DpSize,
     collectionBody: RemoteViews?,
-    chrome: RemoteViews? = null,
 ) {
     val width = size.width.value.toInt().coerceAtLeast(180)
     val height = size.height.value.toInt().coerceAtLeast(110)
@@ -109,9 +108,13 @@ internal fun DashboardContent(
     Column(
         modifier = GlanceModifier.fillMaxSize().background(background).cornerRadius(22.dp).padding(padding),
     ) {
-        if (chrome == null) DashboardChrome(context, state, appWidgetId, size)
-        else AndroidRemoteViews(chrome, GlanceModifier.fillMaxWidth())
-        if (state == null) return@Column
+        DashboardHeader(context, appWidgetId, state, width, primary, accent)
+        Spacer(GlanceModifier.height(5.dp))
+        if (state == null) {
+            Text(tr("Configure HA Dashboard", "Настройте HA Dashboard"), style = TextStyle(color = primary, fontSize = 15.sp))
+            return@Column
+        }
+        DashboardTabs(state, appWidgetId, primary, secondary, accent)
         Spacer(GlanceModifier.height(6.dp))
         AndroidRemoteViews(requireNotNull(collectionBody), GlanceModifier.fillMaxWidth().defaultWeight())
     }

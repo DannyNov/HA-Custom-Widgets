@@ -66,16 +66,18 @@ internal object DashboardCollectionsRenderer {
 
     suspend fun dashboard(context: Context, state: DashboardState?, widgetId: Int, size: DpSize): RemoteViews {
         val collection = state?.let { render(context, it, widgetId, size) }
-        // Variable control layouts must not change the parent layout of stable ListViews.
-        val controls = composeGlanceDashboard(context, widgetId, size) {
+        val chrome = composeGlanceDashboard(context, widgetId, size) {
             DashboardChrome(context, state, widgetId, size)
         }
-        val chrome = composeGlanceDashboard(context, widgetId, size) {
-            DashboardContent(context, state, widgetId, size, collection?.body, controls)
-        }
+        val padding = ((if (size.width.value < 250) 8 else 10) * context.resources.displayMetrics.density).toInt()
         return RemoteViews(context.packageName, R.layout.dashboard_collection_root).apply {
-            removeAllViews(R.id.dashboard_collection_root)
-            addStableView(R.id.dashboard_collection_root, chrome, 1)
+            setViewPadding(R.id.dashboard_collection_root, padding, padding, padding, padding)
+            removeAllViews(R.id.dashboard_chrome)
+            addStableView(R.id.dashboard_chrome, chrome, 1)
+            // Keep collections outside variable Glance chrome and its generated view IDs.
+            removeAllViews(R.id.dashboard_body)
+            collection?.let { addStableView(R.id.dashboard_body, it.body, 2) }
+            setViewVisibility(R.id.dashboard_body, if (collection == null) View.GONE else View.VISIBLE)
             // Android 12 checks the rootParent, so these actions MUST be on the
             // outer RemoteViews delivered to AppWidgetHostView, never on a nested shell.
             collection?.let {

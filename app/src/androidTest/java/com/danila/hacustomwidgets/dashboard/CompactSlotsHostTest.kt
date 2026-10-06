@@ -45,14 +45,12 @@ class CompactSlotsHostTest {
                 val ctx = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply { fontScale = font })
                 repo.saveConfiguration(config.copy(showFavorites = main, showMaintenance = maintenance, showLastUpdated = updated), catalog)
                 val state = repo.get(970)!!
-                val controls = composeGlanceDashboard(ctx,970,DpSize(width.dp,300.dp)) {
-                    DashboardChrome(ctx,state,970,DpSize(width.dp,300.dp))
-                }
-                val remote = composeGlanceDashboard(ctx,970,DpSize(width.dp,300.dp)) {
-                    DashboardContent(ctx,state,970,DpSize(width.dp,300.dp),RemoteViews(ctx.packageName,com.danila.hacustomwidgets.R.layout.dashboard_collection_shell),controls)
-                }
+                val remote = DashboardCollectionsRenderer.dashboard(ctx,state,970,DpSize(width.dp,300.dp))
                 instrumentation.runOnMainSync {
-                    val v=remote.apply(ctx,null); val density=ctx.resources.displayMetrics.density
+                    val v=android.appwidget.AppWidgetHostView(ctx)
+                    val provider=android.appwidget.AppWidgetManager.getInstance(ctx).installedProviders.single { it.provider.className==DashboardWidgetReceiver::class.java.name }
+                    v.setAppWidget(970,provider); v.setPadding(0,0,0,0); v.updateAppWidget(remote)
+                    val density=ctx.resources.displayMetrics.density
                     v.measure(View.MeasureSpec.makeMeasureSpec((width*density).toInt(),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec((300*density).toInt(),View.MeasureSpec.EXACTLY))
                     v.layout(0,0,v.measuredWidth,v.measuredHeight)
                     val texts=flatten(v).filterIsInstance<TextView>()
@@ -76,6 +74,8 @@ class CompactSlotsHostTest {
                     val settings=target(texts.single { it.text.toString()=="⚙" })
                     assertEquals("No header gap",if(maintenance) (36*density).toInt() else 0,x(settings)-x(refresh)-refresh.width)
                     val header=refresh.parent as View
+                    val chrome=v.findViewById<View>(com.danila.hacustomwidgets.R.id.dashboard_chrome)
+                    assertEquals("Only accepted header, spacer and tabs height",header.height+(53*density).toInt(),chrome.height)
                     headerHeight[width to font]?.let { assertEquals(it.toInt(),header.height) }
                     headerHeight[width to font]=header.height
                     assertEquals(if(updated && width>=240) 1 else 0,texts.count { it.text.toString().contains(":") })

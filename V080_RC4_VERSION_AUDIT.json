@@ -1,5 +1,5 @@
 {
-  "maximum": 103,
+  "maximum": 104,
   "commits": 193,
   "rows": [
     {
@@ -781,6 +781,10 @@
     {
       "sha": "ccdfb8f774abfe665c0201dc83608117f1a205a2",
       "versionCode": 103
+    },
+    {
+      "sha": "9e70df0df79ea3748aba57d4f2b55c7b8ba7cb3a",
+      "versionCode": 104
     }
   ],
   "ciRuns": 529,
@@ -803,6 +807,12 @@
       "versionCode": 103,
       "published": false,
       "result": "superseded to test exact nested chrome geometry and unconfigured path"
+    },
+    {
+      "sha": "9e70df0df79ea3748aba57d4f2b55c7b8ba7cb3a",
+      "versionCode": 104,
+      "published": false,
+      "result": "API31 exposed nested Glance generated-ID collisions; stable native chrome/body siblings required"
     }
   ]
 }
