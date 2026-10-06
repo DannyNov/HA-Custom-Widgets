@@ -154,24 +154,66 @@ class MaintenanceHostTest {
             }
         } finally { java.util.Locale.setDefault(previous) }
     }
+    @Test fun outlinedWrenchAndAttentionPixelsShareBounds() {
+        fun render(id: Int, tint: Int): android.graphics.Bitmap {
+            val image = android.graphics.Bitmap.createBitmap(280,280,android.graphics.Bitmap.Config.ARGB_8888)
+            val drawable = context.getDrawable(id)!!.mutate()
+            drawable.setTint(tint); drawable.setBounds(0,0,280,280); drawable.draw(android.graphics.Canvas(image))
+            return image
+        }
+        val normal = render(com.danila.hacustomwidgets.R.drawable.ic_maintenance,android.graphics.Color.BLUE)
+        val attention = render(com.danila.hacustomwidgets.R.drawable.ic_maintenance_attention,android.graphics.Color.RED)
+        var ink = 0; var extra = 0
+        for (y in 0 until 280) for (x in 0 until 280) {
+            val n = normal.getPixel(x,y); val a = attention.getPixel(x,y)
+            if (android.graphics.Color.alpha(n)>0) {
+                ink++; assertEquals(android.graphics.Color.alpha(n),android.graphics.Color.alpha(a))
+                assertEquals(255,android.graphics.Color.blue(n)); assertEquals(255,android.graphics.Color.red(a))
+            } else if (android.graphics.Color.alpha(a)>0) {
+                extra++; assertTrue("Small upper-right exclamation",x>=240 && y<=90)
+                assertEquals(255,android.graphics.Color.red(a))
+            }
+        }
+        assertTrue("Recognizable light outline",ink in 5000..16000)
+        assertTrue("Visible small exclamation",extra in 300..1800)
+        assertEquals(0,android.graphics.Color.alpha(normal.getPixel(180,100)))
+    }
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
     @Test fun wrenchTargetsAndNarrowFontScaleMatrix() = runBlocking {
         val c = isolated(); val repo = DashboardRepository(c); repo.saveConfiguration(config(907), catalog())
+        val heights = mutableMapOf<Pair<Int, Float>, Int>()
         for (width in listOf(180, 230, 320)) for (font in listOf(1f, 1.5f, 2f)) for (show in listOf(false, true)) for (attention in listOf(false, true)) {
             val ctx = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply { fontScale = font })
             val state = repo.get(907)!!.copy(config = config(907).copy(showMaintenance = show), maintenance = repo.get(907)!!.maintenance.copy(repairs = if (attention) listOf(RepairIssue("ha", "id", "warning")) else emptyList()))
             val remote = GlanceRemoteViews().compose(ctx, DpSize(width.dp, 100.dp)) { GlanceTheme {
                 DashboardHeader(ctx, 907, state, width, androidx.glance.unit.ColorProvider(com.danila.hacustomwidgets.R.color.widget_primary), androidx.glance.unit.ColorProvider(com.danila.hacustomwidgets.R.color.widget_accent))
             } }.remoteViews
+            val baseline = GlanceRemoteViews().compose(ctx, DpSize(width.dp, 100.dp)) { GlanceTheme {
+                LegacyV070Header(ctx, 907, state, width, androidx.glance.unit.ColorProvider(com.danila.hacustomwidgets.R.color.widget_primary), androidx.glance.unit.ColorProvider(com.danila.hacustomwidgets.R.color.widget_accent))
+            } }.remoteViews
             instrumentation.runOnMainSync {
                 val v = remote.apply(ctx, null); val density = ctx.resources.displayMetrics.density
                 v.measure(View.MeasureSpec.makeMeasureSpec((width * density).toInt(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)); v.layout(0,0,v.measuredWidth,v.measuredHeight)
+                val legacy = baseline.apply(ctx, null)
+                legacy.measure(View.MeasureSpec.makeMeasureSpec((width * density).toInt(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                legacy.layout(0,0,legacy.measuredWidth,legacy.measuredHeight)
+                assertEquals("v0.7.0 header height width=$width font=$font show=$show attention=$attention", legacy.measuredHeight, v.measuredHeight)
+                val key = width to font
+                heights[key]?.let { assertEquals(it.toInt(), v.measuredHeight) }; heights[key] = v.measuredHeight
+                for (label in listOf("↻", "⚙")) {
+                    val before = flatten(legacy).filterIsInstance<TextView>().single { it.text.toString() == label }
+                    val after = flatten(v).filterIsInstance<TextView>().single { it.text.toString() == label }
+                    assertEquals(before.height,after.height); assertEquals(before.width,after.width)
+                    assertTrue(after.hasOnClickListeners() || (after.parent as? View)?.hasOnClickListeners() == true)
+                }
                 val icons = flatten(v).filter { it.contentDescription?.toString() == com.danila.hacustomwidgets.tr("Maintenance", "Обслуживание") }
                 assertEquals(if (show) 1 else 0, icons.size)
                 if (show) {
                     var target: View? = icons.single()
                     while (target != null && !target.hasOnClickListeners()) target = target.parent as? View
-                    assertNotNull(target); assertTrue(target!!.height >= 48 * density - 1); assertTrue(target!!.width >= 48 * density - 1)
+                    assertNotNull(target); assertEquals((20 * density).toInt(), target!!.height); assertEquals((36 * density).toInt(), target!!.width)
+                    assertTrue(target!!.height <= legacy.measuredHeight)
+                    assertEquals((20 * density).toInt(), icons.single().width); assertEquals((20 * density).toInt(), icons.single().height)
                 }
             }
         }

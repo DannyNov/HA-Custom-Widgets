@@ -27,7 +27,8 @@ data class RepairIssue(
         else tr("Review in Home Assistant Repairs", "Проверьте в Repairs Home Assistant")
 }
 
-data class MaintenanceBattery(val entity: HaEntity, val area: String?, val deviceKey: String) {
+data class MaintenanceBattery(val entity: HaEntity, val area: String?, val deviceKey: String, val deviceName: String? = null) {
+    val title: String get() = deviceName ?: MaintenancePolicy.batteryTitle(entity.friendlyName)
     val attention: Boolean get() = MaintenancePolicy.batteryAttention(entity)
     // Use the Dashboard's existing icon/color policy, normalizing HA binary semantics only here.
     val metric: DashboardMetric get() {
@@ -45,7 +46,7 @@ data class MaintenanceBattery(val entity: HaEntity, val area: String?, val devic
             entity.unit == "%" -> entity.displayState
             else -> entity.displayState
         }
-        return DashboardMetric(entity.entityId, entity.friendlyName, display, raw, entity.domain, "battery")
+        return DashboardMetric(entity.entityId, title, display, raw, entity.domain, "battery")
     }
 }
 
@@ -62,6 +63,12 @@ data class MaintenanceSnapshot(
 }
 
 object MaintenancePolicy {
+    // Only an entire trailing entity label is removed. Interior words and label-only
+    // names remain intact; a registry device name is never processed by this fallback.
+    private val batterySuffix = Regex("""\s+(?:battery level|battery|уровень заряда батареи|уровень батареи|батарея)$""", RegexOption.IGNORE_CASE)
+    fun batteryTitle(name: String): String = name.trim().let { value ->
+        batterySuffix.replace(value, "").trimEnd().takeIf { it.isNotBlank() } ?: value
+    }
     fun isBattery(entity: HaEntity) = entity.domain in setOf("sensor", "binary_sensor") &&
         entity.deviceClass == "battery" && entity.disabledBy == null
     fun isRelevant(entity: HaEntity) = isBattery(entity) || (entity.domain == "update" && entity.disabledBy == null)
@@ -80,8 +87,10 @@ object MaintenancePolicy {
     fun batteries(catalog: HaCatalog): List<MaintenanceBattery> {
         val areas = catalog.areas.associate { it.id to it.name }
         return catalog.groups.flatMap { group -> group.entities.filter(::isBattery).map {
-            MaintenanceBattery(it, areas[it.areaId ?: group.device?.areaId], group.key)
-        } }.distinctBy { it.entity.entityId }.sortedWith(compareBy({ it.area.orEmpty() }, { it.entity.friendlyName }))
+            val device = group.device?.takeIf { device -> it.deviceId == device.id }
+            val name = device?.name?.trim()?.takeIf { name -> name.isNotBlank() && name != device.id }
+            MaintenanceBattery(it, areas[it.areaId ?: group.device?.areaId], group.key, name)
+        } }.distinctBy { it.entity.entityId }.sortedWith(compareBy({ it.area.orEmpty() }, { it.title }))
     }
     fun localizedTitle(issue: RepairIssue, resources: JSONObject): String? {
         val key = "component.${issue.domain}.issues.${issue.translationKey ?: issue.issueId}.title"
@@ -105,10 +114,11 @@ object MaintenancePolicy {
     fun parseEntity(json: JSONObject) = HaEntity(json.getString("id"), json.getString("state"), json.getString("name"),
         json.optString("unit").takeIf { it.isNotBlank() }, null, deviceClass = json.optString("class").takeIf { it.isNotBlank() })
     fun batteriesJson(values: List<MaintenanceBattery>) = JSONArray().apply { values.forEach {
-        put(entityJson(it.entity).put("area", it.area).put("device", it.deviceKey))
+        put(entityJson(it.entity).put("area", it.area).put("device", it.deviceKey).put("deviceName", it.deviceName))
     } }
     fun parseBatteries(array: JSONArray) = (0 until array.length()).map { val j = array.getJSONObject(it)
-        MaintenanceBattery(parseEntity(j), j.optString("area").takeIf { it.isNotBlank() }, j.getString("device"))
+        MaintenanceBattery(parseEntity(j), j.optString("area").takeIf { it.isNotBlank() }, j.getString("device"),
+            j.optString("deviceName").takeIf { it.isNotBlank() })
     }
     fun repairsJson(values: List<RepairIssue>) = JSONArray().apply { values.forEach { issue ->
         put(JSONObject().put("domain", issue.domain).put("issue_id", issue.issueId).put("severity", issue.severity)

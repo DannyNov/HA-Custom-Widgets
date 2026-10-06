@@ -622,8 +622,8 @@ data class DashboardState(
         DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })
             .filter { it in config.visibleSpaceIds }
             .mapNotNull { id -> spaces.firstOrNull { it.id == id } } +
-        listOfNotNull(DashboardSpace(MAINTENANCE_TAB_ID, tr("Maintenance", "Обслуживание"), emptyList()).takeIf { config.showMaintenance }) +
-        listOfNotNull(DashboardSpace(SCENARIOS_TAB_ID, tr("Scenarios", "Сценарии"), emptyList()).takeIf { config.scenariosEnabled })).ifEmpty {
+        listOfNotNull(DashboardSpace(SCENARIOS_TAB_ID, tr("Scenarios", "Сценарии"), emptyList()).takeIf { config.scenariosEnabled }) +
+        listOfNotNull(DashboardSpace(MAINTENANCE_TAB_ID, tr("Maintenance", "Обслуживание"), emptyList()).takeIf { config.showMaintenance })).ifEmpty {
             listOf(DashboardSpace(EMPTY_TAB_ID, tr("Choose tabs", "Выберите вкладки"), emptyList()))
         }
     val selectedTab: DashboardSpace get() = tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first()

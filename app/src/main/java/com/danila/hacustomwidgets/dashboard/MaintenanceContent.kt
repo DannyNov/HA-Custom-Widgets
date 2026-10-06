@@ -61,7 +61,7 @@ internal fun MaintenanceBatteryRow(battery: MaintenanceBattery, primary: ColorPr
         else -> secondary
     }
     Column(GlanceModifier.fillMaxWidth().padding(bottom = 5.dp).background(ColorProvider(R.color.widget_tile)).cornerRadius(12.dp).padding(8.dp)) {
-        Text(battery.entity.friendlyName, style = TextStyle(color = primary, fontSize = 13.sp))
+        Text(battery.title, style = TextStyle(color = primary, fontSize = 13.sp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(ImageProvider(batteryIconResource(metric)), tr("Battery", "Батарея"), modifier = GlanceModifier.width(16.dp).height(16.dp), colorFilter = ColorFilter.tint(color))
             Text(" ${metric.state}", style = TextStyle(color = color, fontSize = 12.sp))

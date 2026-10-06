@@ -198,10 +198,11 @@ internal fun DashboardHeader(
             style = TextStyle(color = accent, fontSize = 18.sp),
         )
         if (state?.config?.showMaintenance == true) {
-            Box(GlanceModifier.width(48.dp).height(48.dp).clickable(actionRunCallback<DashboardNavigateAction>(
+            // Fits inside the original refresh/settings row; never sets its height.
+            Box(GlanceModifier.width(36.dp).height(20.dp).clickable(actionRunCallback<DashboardNavigateAction>(
                 actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAINTENANCE_TAB_ID))), contentAlignment = Alignment.Center) {
                 Image(ImageProvider(if (state.maintenance.attention) R.drawable.ic_maintenance_attention else R.drawable.ic_maintenance),
-                    contentDescription = tr("Maintenance", "Обслуживание"), modifier = GlanceModifier.width(24.dp).height(24.dp),
+                    contentDescription = tr("Maintenance", "Обслуживание"), modifier = GlanceModifier.width(20.dp).height(20.dp),
                     colorFilter = androidx.glance.ColorFilter.tint(if (state.maintenance.attention) ColorProvider(R.color.widget_problem) else accent))
             }
         }
