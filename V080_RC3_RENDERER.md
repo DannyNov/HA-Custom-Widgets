@@ -11,6 +11,11 @@ first visible stable item and pixel offset in the host. Only the active collecti
 RemoteCollectionItems are included in an update, avoiding the rejected prototype's
 2,329,696-byte all-space payload.
 
+The native ListView copies the actual Glance 1.1.1 glance_list.xml transparent selector,
+null divider, Glance.AppWidget.List style and ListChildren theme. It does not override
+scrollbars or cacheColorHint differently from the pinned library. Match-parent sizing
+implements the original LazyColumn.fillMaxSize contract inside the remaining body area.
+
 Rows use the actual Glance 1.1.1 normalization and collection translation context,
 including its fill-in action transport and view-type layout capacity. The small bridge
 is adapted from the pinned library's GlanceRemoteViews/LazyListTranslator implementation;

@@ -20,10 +20,10 @@ assert '★' not in s and 'Избран' not in s and 'Show Favorites' not in s
 for token in ('MainTabSettingsText.title','MainTabSettingsText.configure','MainTabSettingsText.select','MainTabVisibilitySetting(showFavorites, onShowFavorites)'):
     assert token in s,token
 meta=Path('app/build.gradle.kts').read_text()
-assert 'versionCode = 100' in meta and 'versionName = "0.8.0-rc3"' in meta
+assert 'versionCode = 101' in meta and 'versionName = "0.8.0-rc3"' in meta
 assert 'minSdk = 31' in meta and 'targetSdk = 36' in meta and 'androidx.glance:glance-appwidget:1.1.1' in meta
 audit=json.loads(Path('V080_RC3_VERSION_AUDIT.json').read_text())
-assert audit['maximum']==99 and audit['ciRuns']==515
+assert audit['maximum']==100 and audit['ciRuns']==519
 assert audit['missing']==['8ac8590fdd4c4df7a9d3bb5b31adc090f6860b2c']
 renderer=after(root+'DashboardCollectionsRenderer.kt')
 assert 'if (id == selected)' in renderer and renderer.count('setRemoteAdapter(')==1
@@ -32,4 +32,8 @@ assert 'DashboardWidget().update(context, appWidgetId)' in after(root+'Dashboard
 assert 'addStableView' in renderer and '0x00e00000' in renderer
 assert 'setSelection' not in renderer and 'setScrollPosition' not in renderer
 assert 'reflection' in after(root+'GlanceCollectionComposer.kt')
+native=after('app/src/main/res/layout/dashboard_collection_list.xml')
+for attribute in ('android:listSelector="@android:color/transparent"', 'android:divider="@null"', 'android:theme="@style/Glance.AppWidget.Theme.ListChildren"', 'style="@style/Glance.AppWidget.List"'):
+    assert attribute in native, attribute
+assert 'scrollbars=' not in native and 'cacheColorHint=' not in native
 print('RC3 scope: Main terminology; persistent native collections with Glance 1.1.1 rows and active adapter updates; unchanged header geometry and Maintenance behavior')
