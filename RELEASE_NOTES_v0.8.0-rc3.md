@@ -3,7 +3,7 @@
 Narrow corrective Pre-release after the physically checked RC2.
 
 - Dashboard settings consistently call the same tab **Main / Главное**. The switch, configure button, screen title and selection instructions use the same terminology. Persisted `showFavorites` and favorite device keys are unchanged.
-- Each space keeps its own native scrollable framework collection in the widget host, with a distinct persisted view ID. Switching spaces changes visibility; each update sends adapter data only for the active space. Main, Scenarios and Maintenance have separate collections too. Glance 1.1.1 still translates their original rows and action transport. Stable item IDs support anchor synchronization during refresh, reorder and entity removal.
+- Each space keeps its own native scrollable framework collection in the widget host, with a distinct persisted view ID. Switching spaces changes visibility; each update sends adapter data only for the active space. Main, Scenarios and Maintenance have separate collections too. Glance 1.1.1 still translates their original rows and action transport. Unchanged collection order preserves its viewport during refresh. During touch-mode reorder Android retains a bounded numeric position rather than searching for the previous item ID; removed rows have a safe framework fallback.
 
 The host owns the actual first visible item and pixel offset; the app does not pretend to restore scrolling by writing an unused preference. A launcher that saves/restores the widget view hierarchy can restore its viewport. A completely new host with no saved view state starts at the top; catalog structure or widget size changes may require a new hierarchy. Honor launcher behavior still needs the physical A → B → A / B check.
 

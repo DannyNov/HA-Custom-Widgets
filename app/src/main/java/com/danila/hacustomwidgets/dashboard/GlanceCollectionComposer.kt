@@ -21,6 +21,27 @@ import androidx.glance.appwidget.lazy.EmittableLazyListItem
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** The same version-pinned translator for chrome, with the real widget action identity. */
+internal suspend fun composeGlanceDashboard(
+    context: Context, appWidgetId: Int, size: DpSize, content: @Composable () -> Unit,
+): RemoteViews = withContext(BroadcastFrameClock()) {
+    val root = RemoteViewsRoot(maxDepth = 50)
+    val configuration = LayoutConfiguration.create(context, appWidgetId)
+    val recomposer = Recomposer(coroutineContext)
+    val composition = Composition(GlanceApplier(root), recomposer)
+    try {
+        composition.setContent {
+            CompositionLocalProvider(LocalContext provides context,
+                LocalGlanceId provides AppWidgetId(appWidgetId), LocalSize provides size,
+                LocalAppWidgetOptions provides android.os.Bundle()) { GlanceTheme { content() } }
+        }
+        launch { recomposer.runRecomposeAndApplyChanges() }
+        recomposer.close(); recomposer.join()
+        normalizeCompositionTree(root)
+        translateComposition(context, appWidgetId, root, configuration, configuration.addLayout(root), size)
+    } finally { composition.dispose() }
+}
+
 /**
  * Version-pinned bridge to the actual Glance 1.1.1 collection translator. The public
  * GlanceRemoteViews API returns a whole hierarchy, not its collection items. Translating

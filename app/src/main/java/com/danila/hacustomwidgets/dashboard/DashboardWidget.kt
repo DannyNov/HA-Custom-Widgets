@@ -7,9 +7,6 @@ import android.os.SystemClock
 import android.util.Log
 import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,17 +20,12 @@ import androidx.glance.Visibility
 import androidx.glance.visibility
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
-import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.AndroidRemoteViews
-import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
-import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -57,49 +49,38 @@ import com.danila.hacustomwidgets.data.model.HaCatalog
 import java.text.DateFormat
 import java.util.Date
 import java.time.Instant
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
-private data class DashboardRenderSnapshot(val state: DashboardState?, val collections: Map<DpSize, RemoteViews>)
+/** Glance composes the UI; native outer RemoteViews publishes the collection actions. */
+class DashboardWidget {
+    suspend fun update(context: Context, appWidgetId: Int) {
+        val lock = locks.getOrPut(appWidgetId) { kotlinx.coroutines.sync.Mutex() }
+        lock.lock()
+        try { render(context, appWidgetId) } finally { lock.unlock() }
+    }
 
-class DashboardWidget : GlanceAppWidget() {
-    override val sizeMode: SizeMode = SizeMode.Exact
+    private suspend fun render(context: Context, appWidgetId: Int) {
+        val manager = AppWidgetManager.getInstance(context)
+        val options = manager.getAppWidgetOptions(appWidgetId)
+        val sizes = options.getParcelableArrayList<android.util.SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+            ?.map { DpSize(it.width.dp, it.height.dp) }?.distinct()?.takeIf { it.isNotEmpty() }
+            ?: listOf(DpSize(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180).coerceAtLeast(180).dp,
+                options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 110).coerceAtLeast(110).dp),
+                DpSize(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 180).coerceAtLeast(180).dp,
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110).coerceAtLeast(110).dp)).distinct()
+        val state = (context.applicationContext as HaWidgetApplication).container.dashboards.get(appWidgetId)
+        val views = sizes.associate { size -> android.util.SizeF(size.width.value, size.height.value) to
+            DashboardCollectionsRenderer.dashboard(context, state, appWidgetId, size) }
+        manager.updateAppWidget(appWidgetId, if (views.size == 1) views.values.single() else RemoteViews(views))
+    }
 
-    override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
-        val repository = (context.applicationContext as HaWidgetApplication).container.dashboards
-        val states = repository.observe(appWidgetId)
-        val sizes = GlanceAppWidgetManager(context).getAppWidgetSizes(id).ifEmpty { listOf(DpSize(180.dp, 110.dp)) }
-        suspend fun render(state: DashboardState?) = DashboardRenderSnapshot(state,
-            if (state == null) emptyMap() else sizes.associateWith {
-                DashboardCollectionsRenderer.render(context, state, appWidgetId, it)
-            })
-        // First publication already contains the real shell. A temporary loading hierarchy
-        // during provider recreation would discard the launcher's retained collections.
-        val initial = render(states.value)
-        val prepared = states.map { render(it) }
-        val started = System.currentTimeMillis()
-        Log.d(TAG, "provideGlance started widgetId=$appWidgetId ts=$started")
-        provideContent {
-            val compositionStarted = SystemClock.elapsedRealtime()
-            val snapshot by prepared.collectAsState(initial)
-            val state = snapshot.state
-            Log.d(
-                TAG,
-                "COMPOSITION_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
-                    "revision=${state?.stateRevision} cardsTotal=${state?.cards?.size ?: 0} " +
-                    "monotonicMs=$compositionStarted",
-            )
-            SideEffect {
-                Log.d(
-                    TAG,
-                    "COMPOSITION_END processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
-                        "tab=${state?.selectedTabId} revision=${state?.stateRevision} " +
-                        "durationMs=${SystemClock.elapsedRealtime() - compositionStarted}",
-                )
-            }
-            GlanceTheme { DashboardContent(context, state, appWidgetId, LocalSize.current,
-                snapshot.collections[LocalSize.current] ?: snapshot.collections.values.firstOrNull()) }
-        }
+    suspend fun updateAll(context: Context) {
+        val ids = AppWidgetManager.getInstance(context).getAppWidgetIds(
+            android.content.ComponentName(context, DashboardWidgetReceiver::class.java))
+        ids.forEach { update(context, it) }
+    }
+    private companion object {
+        val locks = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.sync.Mutex>()
     }
 }
 
@@ -930,8 +911,22 @@ private fun controlLabel(
 private fun stableItemId(value: String): Long = DashboardStatePolicy.stableCollectionId(value)
 private val ACTIVE_STATES = setOf("on", "open", "active", "playing", "heat", "cool", "home")
 
-class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget: GlanceAppWidget = DashboardWidget()
+class DashboardWidgetReceiver : android.appwidget.AppWidgetProvider() {
+    private fun renderAsync(context: Context, ids: IntArray) {
+        val pending = goAsync()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default).launch {
+            try { ids.forEach { DashboardWidget().update(context.applicationContext, it) } }
+            catch (error: Exception) { Log.e(TAG, "System widget render failed", error) }
+            finally { pending.finish() }
+        }
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_LOCALE_CHANGED) {
+            renderAsync(context, AppWidgetManager.getInstance(context).getAppWidgetIds(
+                android.content.ComponentName(context, javaClass)))
+        } else super.onReceive(context, intent)
+    }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val container = (context.applicationContext as HaWidgetApplication).container
@@ -941,12 +936,12 @@ class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
                 "widgetIds=${appWidgetIds.joinToString()} source=SYSTEM",
         )
         container.dashboardEvents.ensureStarted("APPWIDGET_UPDATE")
-        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        renderAsync(context, appWidgetIds)
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager,
         appWidgetId: Int, newOptions: android.os.Bundle) {
-        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        renderAsync(context, intArrayOf(appWidgetId))
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {

@@ -59,8 +59,8 @@ class DashboardRenderCoordinator(
                 val started = SystemClock.elapsedRealtime()
                 Log.d(TAG, "RENDER_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId revision=$target reason=$reason monotonicMs=$started")
                 try {
-                    val activeSession = repository.publishForRender(appWidgetId, slot.force.getAndSet(false))
-                    if (!activeSession) performDashboardWidgetUpdate(applicationContext, appWidgetId)
+                    repository.publishForRender(appWidgetId, slot.force.getAndSet(false))
+                    performDashboardWidgetUpdate(applicationContext, appWidgetId)
                     DashboardCountdownWorker.schedule(applicationContext, appWidgetId, repository.get(appWidgetId))
                     repository.markRendered(appWidgetId, target)
                     Log.d(
@@ -133,8 +133,7 @@ class DashboardRenderWorker(context: Context, params: WorkerParameters) : Corout
 }
 
 private suspend fun performDashboardWidgetUpdate(context: Context, appWidgetId: Int) {
-    val glanceId = GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
-    DashboardWidget().update(context, glanceId)
+    DashboardWidget().update(context, appWidgetId)
 }
 
 /** Compatibility entry point: every caller is routed through the coordinator. */

@@ -17,9 +17,11 @@ is adapted from the pinned library's GlanceRemoteViews/LazyListTranslator implem
 it uses typed internal library entry points, not reflection or launcher-specific APIs.
 Upgrading Glance or Kotlin requires re-auditing this version-pinned bridge.
 
-The first publication after provider recreation is prepared before provideContent:
+The existing render coordinator now publishes the completed outer native RemoteViews directly:
 there is no temporary loading hierarchy that would discard retained host collections.
-The system controls ListView stable-ID synchronization and missing-anchor fallback.
+Collection adapter/template actions are attached to the outer RemoteViews because Android 12 rejects nested adapter actions whose rootParent is not AppWidgetHostView. Glance still composes chrome and rows with the actual widget action identity. The outer XML layout gives hierarchy restore a deterministic inflation ID.
+
+The system controls ListView synchronization and missing-anchor fallback. AOSP AbsListView.handleDataChanged retains a bounded numeric position in touch mode, even with stable IDs; stable-ID search is only supported for selection sync outside touch mode. Tests keep the exact stable-ID assertion in that supported mode and separately check touch-mode reorder retains its nonempty numeric viewport. This is not a promise of stable-anchor restoration after touch-mode reorder.
 No application API can read the scroll position of a ListView owned by another launcher.
 Saved AppWidgetHostView hierarchy state can restore distinct collection positions;
 a completely new host without that saved state starts at the top. Widget size or

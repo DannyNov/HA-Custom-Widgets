@@ -57,21 +57,18 @@ class DashboardViewportHostTest {
     private fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
     private data class Anchor(val id: Long, val top: Int)
-    private inner class Fixture(val activity: ViewportHostActivity, val widgetId: Int) {
+    private inner class Fixture(val activity: ViewportHostActivity, val widgetId: Int, suppliedHost: AppWidgetHostView? = null) {
         val composer = GlanceRemoteViews()
         lateinit var host: AppWidgetHostView
         init { instrumentation.runOnMainSync {
             val provider = android.appwidget.AppWidgetManager.getInstance(context).installedProviders.single {
                 it.provider == ComponentName(context, DashboardWidgetReceiver::class.java)
             }
-            host = AppWidgetHostView(activity).apply { setAppWidget(widgetId, provider) }
+            host = suppliedHost ?: AppWidgetHostView(activity).apply { setAppWidget(widgetId, provider) }
             activity.surface.addView(host, FrameLayout.LayoutParams(320.px(), 440.px()))
         } }
         fun publish(state: DashboardState) {
-            val body = runBlocking { DashboardCollectionsRenderer.render(context, state, widgetId, DpSize(320.dp, 440.dp)) }
-            val remote = runBlocking { composer.compose(context, DpSize(320.dp, 440.dp)) {
-                GlanceTheme { DashboardContent(context, state, widgetId, DpSize(320.dp, 440.dp), body) }
-            }.remoteViews }
+            val remote = runBlocking { DashboardCollectionsRenderer.dashboard(context, state, widgetId, DpSize(320.dp, 440.dp)) }
             publishRemote(remote, state.selectedTabId)
         }
         fun publishRemote(remote: android.widget.RemoteViews, tab: String) {
@@ -178,7 +175,10 @@ class DashboardViewportHostTest {
     }
     @Test fun stableAnchorSurvivesCardReorderAndCollapsedSections() = withHost { activity ->
         val state = state(); val fixture = Fixture(activity, 9301)
-        fixture.publish(state); val anchor = fixture.scroll(18)
+        fixture.publish(state); fixture.scroll(18)
+        instrumentation.setInTouchMode(false)
+        instrumentation.runOnMainSync { fixture.visible().setSelectionFromTop(18, 0) }
+        fixture.settle(); val anchor = fixture.anchor()
         val keys = state.cards.filter { it.areaId == "r0" }.map { it.key }
         fixture.publish(state.copy(config = state.config.copy(cardOrderBySpace = mapOf("area:r0" to keys.reversed()))))
         assertEquals(anchor.id, fixture.anchor().id)
@@ -195,6 +195,16 @@ class DashboardViewportHostTest {
         fixture.publish(state.copy(selectedTabId = "area:r7", config = state.config.copy(spaceOrderIds = state.config.spaceOrderIds.reversed())))
         fixture.assertAnchor(anchor)
     }
+    @Test fun touchModeReorderRetainsUsableViewportWithoutStableIdSearchPromise() = withHost { activity ->
+        val state = state(); val fixture = Fixture(activity, 9301)
+        fixture.publish(state); fixture.scroll(18)
+        val before = fixture.visible().firstVisiblePosition
+        val keys = state.cards.filter { it.areaId == "r0" }.map { it.key }
+        fixture.publish(state.copy(config = state.config.copy(cardOrderBySpace = mapOf("area:r0" to keys.reversed()))))
+        assertTrue(fixture.visible().childCount > 0)
+        assertEquals(before, fixture.visible().firstVisiblePosition)
+        assertEquals(keys.size, fixture.visible().count)
+    }
     @Test fun hidingAndShowingSystemTabsRetainsOtherCollectionViews() = withHost { activity ->
         val state = state(); val fixture = Fixture(activity, 9301)
         fixture.publish(state); val anchor = fixture.scroll(17); val list = fixture.visible()
@@ -203,24 +213,40 @@ class DashboardViewportHostTest {
         fixture.publish(state); assertSame(list, fixture.visible()); fixture.assertAnchor(anchor)
     }
     @Test fun frameworkSavedHierarchyRestoresViewportAfterHostRecreation() = withHost { activity ->
-        val state = state(); val fixture = Fixture(activity, 9301)
-        instrumentation.runOnMainSync { fixture.host.id = 9301 }
-        fixture.publish(state); val anchor = fixture.scroll(17)
-        val saved = android.util.SparseArray<android.os.Parcelable>()
-        instrumentation.runOnMainSync { fixture.host.saveHierarchyState(saved) }
-        fixture.dispose()
-        val recreated = Fixture(activity, 9301)
-        instrumentation.runOnMainSync { recreated.host.id = 9301 }
-        recreated.publish(state)
-        instrumentation.runOnMainSync { recreated.host.restoreHierarchyState(saved) }
-        recreated.settle(); recreated.assertAnchor(anchor)
+        val manager = android.appwidget.AppWidgetManager.getInstance(context)
+        val provider = manager.installedProviders.single { it.provider == ComponentName(context, DashboardWidgetReceiver::class.java) }
+        val owner = android.appwidget.AppWidgetHost(context, 98741)
+        instrumentation.uiAutomation.adoptShellPermissionIdentity(android.Manifest.permission.BIND_APPWIDGET)
+        val id = owner.allocateAppWidgetId()
+        try {
+            assertTrue("Real framework widget binding", manager.bindAppWidgetIdIfAllowed(id, provider.provider))
+            val state = state().let { it.copy(config = it.config.copy(appWidgetId = id)) }
+            val remote = runBlocking { DashboardCollectionsRenderer.dashboard(context, state, id, DpSize(320.dp, 440.dp)) }
+            manager.updateAppWidget(id, remote)
+            lateinit var original: AppWidgetHostView
+            instrumentation.runOnMainSync { original = owner.createView(activity, id, provider) }
+            val fixture = Fixture(activity, id, original)
+            fixture.settle(); val anchor = fixture.scroll(17)
+            val saved = android.util.SparseArray<android.os.Parcelable>()
+            instrumentation.runOnMainSync { fixture.host.saveHierarchyState(saved) }
+            fixture.dispose()
+            lateinit var replacement: AppWidgetHostView
+            instrumentation.runOnMainSync { replacement = owner.createView(activity, id, provider) }
+            val recreated = Fixture(activity, id, replacement)
+            recreated.settle()
+            instrumentation.runOnMainSync { recreated.host.restoreHierarchyState(saved) }
+            recreated.settle(); recreated.assertAnchor(anchor)
+        } finally {
+            owner.deleteAppWidgetId(id)
+            instrumentation.uiAutomation.dropShellPermissionIdentity()
+        }
     }
     @Test fun narrowLargeFontRendererKeepsExactlyOneVisibleCollection() = runBlocking {
         val state = state()
         for (width in listOf(180, 230, 320)) for (scale in listOf(1f, 1.5f, 2f)) {
             val themed = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply { fontScale = scale })
             for (tab in listOf("area:r0", MAIN_TAB_ID, SCENARIOS_TAB_ID, MAINTENANCE_TAB_ID)) {
-                val body = DashboardCollectionsRenderer.render(themed, state.copy(selectedTabId = tab), 9301, DpSize(width.dp, 440.dp))
+                val body = DashboardCollectionsRenderer.render(themed, state.copy(selectedTabId = tab), 9301, DpSize(width.dp, 440.dp)).body
                 val remote = GlanceRemoteViews().compose(themed, DpSize(width.dp, 440.dp)) {
                     GlanceTheme { DashboardContent(themed, state.copy(selectedTabId = tab), 9301, DpSize(width.dp, 440.dp), body) }
                 }.remoteViews
@@ -263,7 +289,8 @@ class DashboardViewportHostTest {
         val fixture = Fixture(activity, id); fixture.publishRemote(native, "probe")
         instrumentation.runOnMainSync {
             val target = descendants(fixture.visible()).filterIsInstance<android.widget.TextView>().single { it.text.toString() == "Viewport action probe" }
-            assertTrue(target.performClick())
+            val clickable = generateSequence<View>(target) { it.parent as? View }.first { it.hasOnClickListeners() }
+            assertTrue(clickable.performClick())
         }
         val deadline = android.os.SystemClock.uptimeMillis() + 5000
         while ((ViewportProbe.counts[id]?.get() ?: 0) == 0 && android.os.SystemClock.uptimeMillis() < deadline) android.os.SystemClock.sleep(25)

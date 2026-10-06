@@ -1,5 +1,5 @@
 {
-  "ciRuns": 503,
+  "ciRuns": 507,
   "rows": [
     {
       "sha": "00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc",
@@ -630,6 +630,10 @@
       "versionCode": 43
     },
     {
+      "sha": "d5b82ee27c8744b3b49a6513d8910f2e05d94b6a",
+      "versionCode": 97
+    },
+    {
       "sha": "d6a9a5ed3a1fcdb028c80aa9c50fe7e87e8e95c5",
       "versionCode": 41
     },
@@ -753,7 +757,7 @@
   "missing": [
     "8ac8590fdd4c4df7a9d3bb5b31adc090f6860b2c"
   ],
-  "maximum": 96,
+  "maximum": 97,
   "branches": [
     {
       "name": "feature/brightness-v063",
@@ -765,7 +769,7 @@
     },
     {
       "name": "feature/maintenance-v080",
-      "sha": "443308655eb5e2b04845af72db56ab26ba6964aa"
+      "sha": "d5b82ee27c8744b3b49a6513d8910f2e05d94b6a"
     },
     {
       "name": "feature/remove-entity-widget",
