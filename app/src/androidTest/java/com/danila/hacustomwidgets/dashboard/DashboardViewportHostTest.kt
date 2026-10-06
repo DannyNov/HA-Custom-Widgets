@@ -177,8 +177,15 @@ class DashboardViewportHostTest {
         val state = state(); val fixture = Fixture(activity, 9301)
         fixture.publish(state); fixture.scroll(18)
         instrumentation.setInTouchMode(false)
+        instrumentation.runOnMainSync {
+            assertTrue("Keyboard selection-sync fixture must take focus", fixture.visible().requestFocus())
+            fixture.visible().setSelectionFromTop(18, 0)
+        }
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_DOWN)
         instrumentation.runOnMainSync { fixture.visible().setSelectionFromTop(18, 0) }
         fixture.settle(); val anchor = fixture.anchor()
+        assertFalse("Stable-id selection search requires non-touch mode", fixture.visible().isInTouchMode)
+        assertEquals(18, fixture.visible().selectedItemPosition)
         val keys = state.cards.filter { it.areaId == "r0" }.map { it.key }
         fixture.publish(state.copy(config = state.config.copy(cardOrderBySpace = mapOf("area:r0" to keys.reversed()))))
         assertEquals(anchor.id, fixture.anchor().id)
@@ -215,28 +222,52 @@ class DashboardViewportHostTest {
     @Test fun frameworkSavedHierarchyRestoresViewportAfterHostRecreation() = withHost { activity ->
         val manager = android.appwidget.AppWidgetManager.getInstance(context)
         val provider = manager.installedProviders.single { it.provider == ComponentName(context, DashboardWidgetReceiver::class.java) }
-        val owner = android.appwidget.AppWidgetHost(context, 98741)
+        // Observe genuine service callbacks without changing AppWidgetHostView behavior.
+        class ObservedHostView(context: Context) : AppWidgetHostView(context) {
+            @Volatile var delivered: android.widget.RemoteViews? = null
+            override fun updateAppWidget(views: android.widget.RemoteViews?) {
+                super.updateAppWidget(views)
+                if (views != null) delivered = views
+            }
+        }
+        val owner = object : android.appwidget.AppWidgetHost(context, 98741) {
+            override fun onCreateView(context: Context, id: Int, info: AppWidgetProviderInfo): AppWidgetHostView = ObservedHostView(context)
+        }
         instrumentation.uiAutomation.adoptShellPermissionIdentity(android.Manifest.permission.BIND_APPWIDGET)
         val id = owner.allocateAppWidgetId()
         try {
             assertTrue("Real framework widget binding", manager.bindAppWidgetIdIfAllowed(id, provider.provider))
             val state = state().let { it.copy(config = it.config.copy(appWidgetId = id)) }
-            val remote = runBlocking { DashboardCollectionsRenderer.dashboard(context, state, id, DpSize(320.dp, 440.dp)) }
-            manager.updateAppWidget(id, remote)
+            val marker = "system-publication-${UUID.randomUUID()}"
+            val remote = runBlocking { DashboardCollectionsRenderer.dashboard(context, state, id, DpSize(320.dp, 440.dp)) }.apply {
+                setContentDescription(com.danila.hacustomwidgets.R.id.dashboard_collection_root, marker)
+            }
             lateinit var original: AppWidgetHostView
             instrumentation.runOnMainSync { original = owner.createView(activity, id, provider) }
             val fixture = Fixture(activity, id, original)
+            owner.startListening()
+            manager.updateAppWidget(id, remote)
+            val deadline = android.os.SystemClock.uptimeMillis() + 10000
+            var received = false
+            while (!received && android.os.SystemClock.uptimeMillis() < deadline) {
+                instrumentation.runOnMainSync { received = original.findViewById<View>(com.danila.hacustomwidgets.R.id.dashboard_collection_root)?.contentDescription == marker }
+                if (!received) android.os.SystemClock.sleep(25)
+            }
+            assertTrue("Host must receive the real service publication", received)
             fixture.settle(); val anchor = fixture.scroll(17)
+            val cachedPublication = (original as ObservedHostView).delivered!!
             val saved = android.util.SparseArray<android.os.Parcelable>()
             instrumentation.runOnMainSync { fixture.host.saveHierarchyState(saved) }
+            assertNotEquals("System must supply an inflation identity", -1L, (saved[id] as android.os.Bundle).getLong("inflation_id", -1L))
             fixture.dispose()
-            lateinit var replacement: AppWidgetHostView
-            instrumentation.runOnMainSync { replacement = owner.createView(activity, id, provider) }
-            val recreated = Fixture(activity, id, replacement)
-            recreated.settle()
+            val recreated = Fixture(activity, id)
+            // Launchers may cache the last service publication. A fresh getAppWidgetViews
+            // has no publication ID on AOSP12, so it cannot restore this saved hierarchy.
+            recreated.publishRemote(cachedPublication, "cached-system-publication")
             instrumentation.runOnMainSync { recreated.host.restoreHierarchyState(saved) }
             recreated.settle(); recreated.assertAnchor(anchor)
         } finally {
+            owner.stopListening()
             owner.deleteAppWidgetId(id)
             instrumentation.uiAutomation.dropShellPermissionIdentity()
         }

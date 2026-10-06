@@ -55,7 +55,7 @@ jobs:
           expected_cert="8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a"
           test "$actual_cert" = "$expected_cert"
           badging="$($AAPT dump badging "$apk")"
-          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='98' versionName='0.8.0-rc3'"
+          printf '%s\n' "$badging" | grep -F "package: name='com.danila.hacustomwidgets' versionCode='99' versionName='0.8.0-rc3'"
           printf '%s\n' "$badging" | grep -Fx "sdkVersion:'31'"
           printf '%s\n' "$badging" | grep -Fx "targetSdkVersion:'36'"
           if printf '%s\n' "$badging" | grep -q '^application-debuggable:'; then
@@ -65,7 +65,7 @@ jobs:
           {
             printf 'applicationId=com.danila.hacustomwidgets\n'
             printf 'versionName=0.8.0-rc3\n'
-            printf 'versionCode=98\n'
+            printf 'versionCode=99\n'
             printf 'debuggable=false\n'
           } | tee app/build/outputs/apk/release/build-info.txt
           sha256sum "$apk" | tee app/build/outputs/apk/release/apk-sha256.txt
