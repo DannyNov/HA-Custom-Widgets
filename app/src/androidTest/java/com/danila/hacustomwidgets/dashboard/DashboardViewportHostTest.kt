@@ -245,7 +245,13 @@ class DashboardViewportHostTest {
             lateinit var original: AppWidgetHostView
             instrumentation.runOnMainSync { original = owner.createView(activity, id, provider) }
             val fixture = Fixture(activity, id, original)
-            owner.startListening()
+            // startListening synchronously applies pending updates as well as subscribing;
+            // it is a view operation and must run on the UI thread on every API level.
+            instrumentation.runOnMainSync { owner.startListening() }
+            val initialDeadline = android.os.SystemClock.uptimeMillis() + 10000
+            while ((original as ObservedHostView).delivered == null && android.os.SystemClock.uptimeMillis() < initialDeadline) android.os.SystemClock.sleep(25)
+            assertNotNull("Initial system binding publication must finish first", (original as ObservedHostView).delivered)
+            instrumentation.waitForIdleSync()
             manager.updateAppWidget(id, remote)
             val deadline = android.os.SystemClock.uptimeMillis() + 10000
             var received = false
@@ -267,7 +273,7 @@ class DashboardViewportHostTest {
             instrumentation.runOnMainSync { recreated.host.restoreHierarchyState(saved) }
             recreated.settle(); recreated.assertAnchor(anchor)
         } finally {
-            owner.stopListening()
+            instrumentation.runOnMainSync { owner.stopListening() }
             owner.deleteAppWidgetId(id)
             instrumentation.uiAutomation.dropShellPermissionIdentity()
         }
