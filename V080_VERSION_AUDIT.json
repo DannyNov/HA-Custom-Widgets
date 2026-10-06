@@ -1288,6 +1288,14 @@
       "result": "local candidate only; superseded after regression fixes"
     }
   ],
-  "maximumIncludingLocalCandidates": 89,
-  "assignedCode": 90
+  "maximumIncludingLocalCandidates": 90,
+  "assignedCode": 91,
+  "ciCandidates": [
+    {
+      "sha": "d989def1d719df69f9fea1d2512b8ef0fca392db",
+      "versionCode": 90,
+      "compileRun": 37455360180,
+      "signedRun": 37455360012
+    }
+  ]
 }

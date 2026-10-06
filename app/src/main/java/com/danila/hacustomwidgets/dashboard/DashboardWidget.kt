@@ -119,7 +119,7 @@ internal fun DashboardContent(
         DashboardTabs(state, appWidgetId, primary, secondary, accent)
         Spacer(GlanceModifier.height(6.dp))
         if (state.selectedTabId == MAINTENANCE_TAB_ID) {
-            MaintenanceContent(state.maintenance, primary, secondary)
+            MaintenanceContent(state.maintenance, primary, secondary, GlanceModifier.fillMaxWidth().defaultWeight())
             return@Column
         }
         val sections = dashboardSections(state)

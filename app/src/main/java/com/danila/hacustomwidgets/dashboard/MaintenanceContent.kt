@@ -17,15 +17,16 @@ import com.danila.hacustomwidgets.R
 import com.danila.hacustomwidgets.tr
 
 @Composable
-internal fun MaintenanceContent(snapshot: MaintenanceSnapshot, primary: ColorProvider, secondary: ColorProvider) {
-    LazyColumn(GlanceModifier.fillMaxWidth()) {
+internal fun MaintenanceContent(snapshot: MaintenanceSnapshot, primary: ColorProvider, secondary: ColorProvider, modifier: GlanceModifier) {
+    LazyColumn(modifier) {
         if (!snapshot.catalogLoaded) item { Text(tr("Refresh to load Maintenance", "Обновите для загрузки обслуживания"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
         if (!snapshot.repairsLoaded || snapshot.repairsError) item {
             Text(if (snapshot.repairsError) tr("Repairs unavailable · refresh to retry", "Repairs недоступны · обновите для повтора")
                 else tr("Repairs have not loaded yet", "Repairs ещё не загружены"), style = TextStyle(color = secondary, fontSize = 12.sp))
         }
         item { Text(tr("⚠ Requires attention", "⚠ Требуют внимания"), style = TextStyle(color = primary, fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = GlanceModifier.padding(vertical = 6.dp)) }
-        if (!snapshot.attention) item { Text(tr("Nothing requires attention", "Ничего не требует внимания"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
+        if (!snapshot.attention) item { Text(if (snapshot.catalogLoaded && snapshot.repairsLoaded && !snapshot.repairsError)
+            tr("Nothing requires attention", "Ничего не требует внимания") else tr("No known items require attention", "Среди известных данных нет тревог"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
         snapshot.activeRepairs.forEach { issue -> item(itemId = DashboardStatePolicy.stableCollectionId("repair:${issue.domain}:${issue.issueId}")) {
             MaintenanceRow(issue.title, issue.detail, primary, secondary)
         } }

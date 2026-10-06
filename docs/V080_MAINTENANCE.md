@@ -23,3 +23,5 @@ Catalog persists complete maintenance entity metadata independently of ordinary 
 Existing compile/unit/host/upgrade assertions are retained. Historical tests that intentionally test no extra system tab explicitly disable Maintenance in their fixture, preserving exact assertions. Existing transport fixtures inject an empty Repairs reader instead of accessing their fake hostname. Upgrade source fixture remains compilable with historical application classes, using reflection only after upgrading. All 21 previous upgrade cases remain, plus v0.7.0 Final on API31/API36 (23 total).
 
 Release rule: exact-source full gate and permanent signed artifacts first; public RC only; no force push, main merge, Final, or Telegram. Stop for physical testing after publication.
+
+Candidate 90 passed 498 local unit tests and signed CI, then was superseded to harden translation timeout handling, force a Maintenance catalog refresh on upgrade, and retain wrench geometry when attention changes. Candidate 91 exceeds maximum90 and adds two host checks (62 hosts per API). Translation failure after a successful Repairs listing retains active issues with a localized fallback title.

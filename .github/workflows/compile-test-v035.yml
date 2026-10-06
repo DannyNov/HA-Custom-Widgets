@@ -6,7 +6,7 @@ on:
 
 jobs:
   compile-test:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') && !contains(github.event.head_commit.message, '[publish-v080-rc1]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -82,7 +82,7 @@ jobs:
           if-no-files-found: error
 
   glance-host:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') && !contains(github.event.head_commit.message, '[publish-v080-rc1]') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -127,7 +127,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("HOST_TEST_RESULT", totals)
-          if totals["tests"] < 60 or any(totals[k] for k in ("failures", "errors", "skipped")):
+          if totals["tests"] < 62 or any(totals[k] for k in ("failures", "errors", "skipped")):
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -144,7 +144,7 @@ jobs:
             app/build/outputs/androidTest-results/connected
 
   upgrade:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') && !contains(github.event.head_commit.message, '[publish-v080-rc1]') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

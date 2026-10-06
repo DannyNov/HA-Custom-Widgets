@@ -4,7 +4,8 @@ import com.danila.hacustomwidgets.dashboard.MaintenancePolicy
 import com.danila.hacustomwidgets.dashboard.RepairIssue
 import com.danila.hacustomwidgets.data.security.HomeAssistantConnection
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
@@ -12,13 +13,14 @@ import org.json.JSONArray
 import java.io.IOException
 
 /** Read-only snapshot; separate bounded request socket, same HA connection/token. */
-internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantConnection): List<RepairIssue> = withTimeout(20_000) {
+internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantConnection): List<RepairIssue> {
     val result = CompletableDeferred<List<RepairIssue>>()
     val base = connection.baseUrl.toHttpUrl()
     val url = base.newBuilder().addPathSegments("api/websocket").build().toString()
         .replaceFirst(if (base.isHttps) "https://" else "http://", if (base.isHttps) "wss://" else "ws://")
     var issues = emptyList<RepairIssue>()
     var titles = emptyMap<String, String>()
+    val listedIssues = java.util.concurrent.atomic.AtomicReference<List<RepairIssue>?>(null)
     val socket = http.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
         fun translation(socket: WebSocket, id: Int, language: String) {
             socket.send(JSONObject().put("id", id).put("type", "frontend/get_translations").put("language", language)
@@ -35,11 +37,13 @@ internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantC
                         1 -> {
                             if (!message.optBoolean("success")) throw IOException("Repairs API unavailable")
                             issues = MaintenancePolicy.parseIssues(message.getJSONObject("result"))
+                            listedIssues.set(issues)
                             if (issues.isEmpty()) result.complete(issues) else translation(webSocket, 2, "en")
                         }
                         2 -> {
                             val resources = message.optJSONObject("result")?.optJSONObject("resources") ?: JSONObject()
                             titles = issues.mapNotNull { issue -> MaintenancePolicy.localizedTitle(issue, resources)?.let { "${issue.domain}:${issue.issueId}" to it } }.toMap()
+                            listedIssues.set(issues.map { issue -> issue.copy(titles = titles["${issue.domain}:${issue.issueId}"]?.let { mapOf("en" to it) }.orEmpty()) })
                             translation(webSocket, 3, "ru")
                         }
                         3 -> {
@@ -56,7 +60,13 @@ internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantC
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (!result.isCompleted) result.completeExceptionally(IOException("Repairs connection closed")) }
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { result.completeExceptionally(IOException("Repairs connection failed", t)) }
     })
-    try { result.await() } finally { socket.cancel() }
+    return try {
+        withTimeoutOrNull(20_000) { result.await() } ?: listedIssues.get() ?: throw IOException("Repairs response timed out")
+    } catch (error: Throwable) {
+        if (error is CancellationException) throw error
+        // Translation failures must never hide a successfully fetched active issue.
+        listedIssues.get() ?: throw error
+    } finally { socket.cancel() }
 }
 
 internal val maintenanceRegistryEvents = setOf("repairs_issue_registry_updated", "entity_registry_updated", "device_registry_updated", "area_registry_updated")

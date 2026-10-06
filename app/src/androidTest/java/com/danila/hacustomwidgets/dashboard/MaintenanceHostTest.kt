@@ -57,6 +57,15 @@ class MaintenanceHostTest {
         repo.saveConfiguration(repo.getConfig(902)!!.copy(showMaintenance = true), catalog("5"))
         repo.setSelectedTab(902, MAINTENANCE_TAB_ID); assertTrue(repo.get(902)!!.maintenance.attention)
     }
+    @Test fun upgradeCatalogIsDueEvenWhenHistoricalTimestampIsFresh() {
+        val c = isolated(); val repo = DashboardRepository(c); repo.saveConfiguration(config(909), catalog())
+        assertFalse(repo.requiresCatalogRefresh(909))
+        val prefs = c.getSharedPreferences("dashboard_structure", 0)
+        val key = prefs.all.keys.single(); val legacy = JSONObject(prefs.getString(key, null)!!).apply { remove("batteries"); remove("updates") }
+        prefs.edit().putString(key, legacy.toString()).commit()
+        assertTrue(DashboardRepository(c).requiresCatalogRefresh(909))
+        assertTrue(DashboardRepository(c).getConfig(909)!!.showMaintenance)
+    }
     @Test fun eventStatesChangeAttentionAndCatalogRemovalWithoutManualConfiguration() {
         val c = isolated(); val repo = DashboardRepository(c); repo.saveConfiguration(config(904), catalog())
         assertFalse(repo.get(904)!!.maintenance.attention)
@@ -97,6 +106,26 @@ class MaintenanceHostTest {
         assertFalse(repo.get(908)!!.maintenance.attention); assertTrue(repo.get(908)!!.maintenance.repairsError)
     }
     private fun flatten(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { flatten(v.getChildAt(it)) } else emptyList()
+    @Test fun wrenchNormalRedAndSmallExclamationKeepIdenticalGeometry() {
+        fun draw(resource: Int, color: Int): android.graphics.Bitmap {
+            val drawable = context.getDrawable(resource)!!.mutate(); drawable.setTint(color); drawable.setBounds(0,0,112,112)
+            return android.graphics.Bitmap.createBitmap(112,112,android.graphics.Bitmap.Config.ARGB_8888).also { drawable.draw(android.graphics.Canvas(it)) }
+        }
+        val normal = draw(com.danila.hacustomwidgets.R.drawable.ic_maintenance, android.graphics.Color.GRAY)
+        val alert = draw(com.danila.hacustomwidgets.R.drawable.ic_maintenance_attention, android.graphics.Color.RED)
+        var extraPixels = 0; var wrenchPixels = 0
+        for (y in 0 until 112) for (x in 0 until 112) {
+            val a = normal.getPixel(x,y); val b = alert.getPixel(x,y)
+            if (android.graphics.Color.alpha(a) > 0) {
+                wrenchPixels++; assertEquals(android.graphics.Color.alpha(a), android.graphics.Color.alpha(b))
+                assertEquals(255, android.graphics.Color.red(b)); assertEquals(0, android.graphics.Color.green(b))
+            } else if (android.graphics.Color.alpha(b) > 0) {
+                extraPixels++; assertTrue(x in 88..96 && y in 4..40)
+            }
+        }
+        assertTrue(wrenchPixels > 0); assertTrue(extraPixels in 1 until wrenchPixels / 4)
+        normal.recycle(); alert.recycle()
+    }
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
     @Test fun batteryRowsWrapAtNarrowWidthsAndLargeFontInBothLocales() = runBlocking {
         val previous = java.util.Locale.getDefault()

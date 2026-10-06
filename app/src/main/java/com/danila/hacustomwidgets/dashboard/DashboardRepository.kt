@@ -168,7 +168,7 @@ class DashboardRepository(context: Context) {
         val structure = structurePrefs.getString(structureKey(appWidgetId), null)?.let {
             runCatching { JSONObject(it) }.getOrNull()
         } ?: return true
-        return structure.optInt("schema", 0) < STORAGE_SCHEMA_VERSION ||
+        return !structure.has("batteries") || structure.optInt("schema", 0) < STORAGE_SCHEMA_VERSION ||
             DashboardCatalogPolicy.isDue(structure.optLong("catalog_updated_at", 0L), now)
     }
 
