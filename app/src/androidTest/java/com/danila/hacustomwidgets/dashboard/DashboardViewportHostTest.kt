@@ -58,13 +58,12 @@ class DashboardViewportHostTest {
     private data class Anchor(val id: Long, val top: Int)
     private inner class Fixture(val activity: ViewportHostActivity, val widgetId: Int) {
         val composer = GlanceRemoteViews()
-        val host = AppWidgetHostView(activity).apply {
-            setAppWidget(widgetId, AppWidgetProviderInfo().apply {
-                provider = ComponentName(context, DashboardWidgetReceiver::class.java)
-                initialLayout = com.danila.hacustomwidgets.R.layout.widget_preview
-            })
-        }
+        lateinit var host: AppWidgetHostView
         init { instrumentation.runOnMainSync {
+            val provider = android.appwidget.AppWidgetManager.getInstance(context).installedProviders.single {
+                it.provider == ComponentName(context, DashboardWidgetReceiver::class.java)
+            }
+            host = AppWidgetHostView(activity).apply { setAppWidget(widgetId, provider) }
             activity.surface.addView(host, FrameLayout.LayoutParams(320.px(), 440.px()))
         } }
         private fun layout() {

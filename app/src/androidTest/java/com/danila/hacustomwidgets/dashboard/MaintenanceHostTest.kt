@@ -206,7 +206,17 @@ class MaintenanceHostTest {
                     assertEquals(before.height,after.height); assertEquals(before.width,after.width)
                     assertTrue(after.hasOnClickListeners() || (after.parent as? View)?.hasOnClickListeners() == true)
                 }
-                val icons = flatten(v).filter { it.contentDescription?.toString() == com.danila.hacustomwidgets.tr("Maintenance", "Обслуживание") }
+                val mountedIcons = flatten(v).filter { it.contentDescription?.toString() == com.danila.hacustomwidgets.tr("Maintenance", "Обслуживание") }
+                assertEquals("Hidden key remains mounted to preserve collection identity", 1, mountedIcons.size)
+                fun visible(view: View): Boolean {
+                    var current: View? = view
+                    while (current != null) {
+                        if (current.visibility != View.VISIBLE) return false
+                        current = current.parent as? View
+                    }
+                    return true
+                }
+                val icons = mountedIcons.filter(::visible)
                 assertEquals(if (show) 1 else 0, icons.size)
                 if (show) {
                     var target: View? = icons.single()

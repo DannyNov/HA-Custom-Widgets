@@ -24,7 +24,11 @@ class MainTabSettingsHostTest {
         try {
             Locale.setDefault(locale)
             ActivityScenario.launch<ViewportHostActivity>(Intent(instrumentation.targetContext, ViewportHostActivity::class.java)).use { scenario ->
-                scenario.onActivity { it.setContent { HaCustomWidgetsTheme { MainTabVisibilitySetting(true) { value -> changed.set(!value) } } } }
+                scenario.onActivity {
+                    // Activity creation applies the emulator's resource configuration locale.
+                    Locale.setDefault(locale)
+                    it.setContent { HaCustomWidgetsTheme { MainTabVisibilitySetting(true) { value -> changed.set(!value) } } }
+                }
                 instrumentation.waitForIdleSync()
                 var found: List<AccessibilityNodeInfo> = emptyList()
                 val deadline = android.os.SystemClock.uptimeMillis() + 5000
@@ -33,7 +37,8 @@ class MainTabSettingsHostTest {
                     if (found.any { it.text?.toString() == expected }) break
                     android.os.SystemClock.sleep(50)
                 }
-                assertTrue(found.any { it.text?.toString() == expected })
+                assertTrue("Expected $expected; locale=${Locale.getDefault()}; texts=${found.mapNotNull { it.text }}",
+                    found.any { it.text?.toString() == expected })
                 assertFalse(found.any { it.text?.contains("Favorites") == true || it.text?.contains("Избран") == true || it.text?.contains("★") == true })
                 val switch = found.first { it.isCheckable && it.isClickable }
                 assertTrue(switch.performAction(AccessibilityNodeInfo.ACTION_CLICK))
