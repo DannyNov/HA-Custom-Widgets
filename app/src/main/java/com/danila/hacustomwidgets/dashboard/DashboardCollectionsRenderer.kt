@@ -70,10 +70,13 @@ internal object DashboardCollectionsRenderer {
             DashboardChrome(context, state, widgetId, size)
         }
         val padding = ((if (size.width.value < 250) 8 else 10) * context.resources.displayMetrics.density).toInt()
+        // API31 cannot reapply ViewStub rows across structural chrome changes.
+        val chromeId = state?.let { 1 + (if (it.config.showFavorites) 1 else 0) +
+            (if (it.config.showMaintenance) 2 else 0) + (if (it.config.showLastUpdated && size.width.value >= 240) 4 else 0) } ?: 0
         return RemoteViews(context.packageName, R.layout.dashboard_collection_root).apply {
             setViewPadding(R.id.dashboard_collection_root, padding, padding, padding, padding)
             removeAllViews(R.id.dashboard_chrome)
-            addStableView(R.id.dashboard_chrome, chrome, 1)
+            addStableView(R.id.dashboard_chrome, chrome, chromeId)
             // Keep collections outside variable Glance chrome and its generated view IDs.
             removeAllViews(R.id.dashboard_body)
             collection?.let { addStableView(R.id.dashboard_body, it.body, 2) }

@@ -1,5 +1,5 @@
 {
-  "maximum": 104,
+  "maximum": 105,
   "commits": 193,
   "rows": [
     {
@@ -785,6 +785,10 @@
     {
       "sha": "9e70df0df79ea3748aba57d4f2b55c7b8ba7cb3a",
       "versionCode": 104
+    },
+    {
+      "sha": "076a034fea31bd3933ad0f0cd4c8d14daeebe279",
+      "versionCode": 105
     }
   ],
   "ciRuns": 529,
@@ -813,6 +817,12 @@
       "versionCode": 104,
       "published": false,
       "result": "API31 exposed nested Glance generated-ID collisions; stable native chrome/body siblings required"
+    },
+    {
+      "sha": "076a034fea31bd3933ad0f0cd4c8d14daeebe279",
+      "versionCode": 105,
+      "published": false,
+      "result": "API36 passes; API31 needs distinct stable chrome IDs per structural variant to avoid ViewStub reapply fallback"
     }
   ]
 }
