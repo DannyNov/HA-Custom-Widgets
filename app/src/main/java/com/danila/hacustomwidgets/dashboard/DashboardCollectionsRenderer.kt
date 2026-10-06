@@ -66,8 +66,12 @@ internal object DashboardCollectionsRenderer {
 
     suspend fun dashboard(context: Context, state: DashboardState?, widgetId: Int, size: DpSize): RemoteViews {
         val collection = state?.let { render(context, it, widgetId, size) }
+        // Variable control layouts must not change the parent layout of stable ListViews.
+        val controls = composeGlanceDashboard(context, widgetId, size) {
+            DashboardChrome(context, state, widgetId, size)
+        }
         val chrome = composeGlanceDashboard(context, widgetId, size) {
-            DashboardContent(context, state, widgetId, size, collection?.body)
+            DashboardContent(context, state, widgetId, size, collection?.body, controls)
         }
         return RemoteViews(context.packageName, R.layout.dashboard_collection_root).apply {
             removeAllViews(R.id.dashboard_collection_root)

@@ -134,7 +134,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("HOST_TEST_RESULT", totals)
-          if totals["tests"] < 78 or any(totals[k] for k in ("failures", "errors", "skipped")):
+          if totals["tests"] < 79 or any(totals[k] for k in ("failures", "errors", "skipped")):
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4

@@ -62,7 +62,11 @@ class CompactSlotsHostTest {
                     val row=left.parent as View
                     assertEquals("Left arrow fills hidden star slot",x(row)+(if(main) (48*density).toInt() else 0),x(left))
                     assertEquals(x(row)+row.width,x(right)+right.width)
-                    assertEquals(if(main) 4 else 3,(row as ViewGroup).childCount)
+                    // API31 Glance rows include zero-size ViewStub scaffolding.
+                    val children = row as ViewGroup
+                    assertEquals(if(main) 4 else 3,(0 until children.childCount).count {
+                        children.getChildAt(it).visibility == View.VISIBLE && children.getChildAt(it).width > 0
+                    })
                     val icons=flatten(v).filter { it.contentDescription?.toString()==com.danila.hacustomwidgets.tr("Maintenance","Обслуживание") }
                     assertEquals(if(maintenance) 1 else 0,icons.size)
                     val refresh=target(texts.single { it.text.toString()=="↻" })

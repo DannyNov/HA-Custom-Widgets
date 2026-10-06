@@ -1,5 +1,5 @@
 {
-  "maximum": 101,
+  "maximum": 102,
   "commits": 193,
   "rows": [
     {
@@ -773,6 +773,10 @@
     {
       "sha": "057c7500148a74ed41f5ab19724e8933fffb8fea",
       "versionCode": 1
+    },
+    {
+      "sha": "1cdadd8dcd2d67156318692da82fc7ff168971a0",
+      "versionCode": 102
     }
   ],
   "ciRuns": 529,
@@ -782,5 +786,13 @@
   "releases": 27,
   "main": "2568552bf0d46c37ba91a75c2508b4d31a6e0fd4",
   "feature": "7da19824ae9aec5773499281ecd5a65bf80953b1",
-  "base": "fa8de584b8834ef9021cd4780842c86e7d3955f7"
+  "base": "fa8de584b8834ef9021cd4780842c86e7d3955f7",
+  "candidates": [
+    {
+      "sha": "1cdadd8dcd2d67156318692da82fc7ff168971a0",
+      "versionCode": 102,
+      "published": false,
+      "result": "host tests rejected layout identity change"
+    }
+  ]
 }
