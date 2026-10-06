@@ -16,8 +16,6 @@ import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
-import androidx.glance.Visibility
-import androidx.glance.visibility
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.AndroidRemoteViews
@@ -204,10 +202,9 @@ internal fun DashboardHeader(
             ),
             style = TextStyle(color = accent, fontSize = 18.sp),
         )
-        if (state != null) {
+        if (state != null && state.config.showMaintenance) {
             // Fits inside the original refresh/settings row; never sets its height.
             Box(GlanceModifier.width(36.dp).height(20.dp)
-                .visibility(if (state.config.showMaintenance) Visibility.Visible else Visibility.Gone)
                 .clickable(actionRunCallback<DashboardNavigateAction>(
                 actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAINTENANCE_TAB_ID))), contentAlignment = Alignment.Center) {
                 Image(ImageProvider(if (state.maintenance.attention) R.drawable.ic_maintenance_attention else R.drawable.ic_maintenance),
@@ -239,16 +236,18 @@ private fun DashboardTabs(
             .cornerRadius(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = GlanceModifier.width(48.dp).height(48.dp)
-                .visibility(if (state.config.showFavorites) Visibility.Visible else Visibility.Gone).clickable(
-                actionRunCallback<DashboardNavigateAction>(
-                    actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAIN_TAB_ID),
+        if (state.config.showFavorites) {
+            Box(
+                modifier = GlanceModifier.width(48.dp).height(48.dp)
+                    .clickable(
+                    actionRunCallback<DashboardNavigateAction>(
+                        actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAIN_TAB_ID),
+                    ),
                 ),
-            ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("★", style = TextStyle(color = if (selectedIndex == 0) accent else secondary, fontSize = 15.sp))
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("★", style = TextStyle(color = if (selectedIndex == 0) accent else secondary, fontSize = 15.sp))
+            }
         }
         Box(
             modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(

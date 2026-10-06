@@ -182,9 +182,9 @@ class MaintenanceHostTest {
     @Test fun wrenchTargetsAndNarrowFontScaleMatrix() = runBlocking {
         val c = isolated(); val repo = DashboardRepository(c); repo.saveConfiguration(config(907), catalog())
         val heights = mutableMapOf<Pair<Int, Float>, Int>()
-        for (width in listOf(180, 230, 320)) for (font in listOf(1f, 1.5f, 2f)) for (show in listOf(false, true)) for (attention in listOf(false, true)) {
+        for (width in listOf(180, 230, 320)) for (font in listOf(1f, 1.5f, 2f)) for (show in listOf(false, true)) for (attention in listOf(false, true)) for (updated in listOf(false, true)) {
             val ctx = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply { fontScale = font })
-            val state = repo.get(907)!!.copy(config = config(907).copy(showMaintenance = show), maintenance = repo.get(907)!!.maintenance.copy(repairs = if (attention) listOf(RepairIssue("ha", "id", "warning")) else emptyList()))
+            val state = repo.get(907)!!.copy(config = config(907).copy(showMaintenance = show, showLastUpdated = updated), maintenance = repo.get(907)!!.maintenance.copy(repairs = if (attention) listOf(RepairIssue("ha", "id", "warning")) else emptyList()))
             val remote = GlanceRemoteViews().compose(ctx, DpSize(width.dp, 100.dp)) { GlanceTheme {
                 DashboardHeader(ctx, 907, state, width, androidx.glance.unit.ColorProvider(com.danila.hacustomwidgets.R.color.widget_primary), androidx.glance.unit.ColorProvider(com.danila.hacustomwidgets.R.color.widget_accent))
             } }.remoteViews
@@ -204,10 +204,13 @@ class MaintenanceHostTest {
                     val before = flatten(legacy).filterIsInstance<TextView>().single { it.text.toString() == label }
                     val after = flatten(v).filterIsInstance<TextView>().single { it.text.toString() == label }
                     assertEquals(before.height,after.height); assertEquals(before.width,after.width)
+                    fun x(view: View): Int = view.left + ((view.parent as? View)?.let(::x) ?: 0)
+                    val shift = if (show && label == "↻") (36 * density).toInt() else 0
+                    assertEquals("Header control position $label", x(before) - shift, x(after))
                     assertTrue(after.hasOnClickListeners() || (after.parent as? View)?.hasOnClickListeners() == true)
                 }
                 val mountedIcons = flatten(v).filter { it.contentDescription?.toString() == com.danila.hacustomwidgets.tr("Maintenance", "Обслуживание") }
-                assertEquals("Hidden key remains mounted to preserve collection identity", 1, mountedIcons.size)
+                assertEquals("Hidden key must not create a reserved slot", if (show) 1 else 0, mountedIcons.size)
                 fun visible(view: View): Boolean {
                     var current: View? = view
                     while (current != null) {
