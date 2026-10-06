@@ -1,4 +1,4 @@
-name: v0.8.0 RC4 compile and tests
+name: v0.8.0 Final compile and tests
 
 on:
   push:
@@ -53,7 +53,10 @@ jobs:
           rc3="$RUNNER_TEMP/v080-rc3"
           git worktree add --detach "$rc3" fa8de584b8834ef9021cd4780842c86e7d3955f7
           (cd "$rc3" && python3 .github/scripts/verify-v080-rc3-scope.py)
-          python3 .github/scripts/verify-v080-rc4-scope.py
+          approved_rc4="$RUNNER_TEMP/v080-rc4"
+          git worktree add --detach "$approved_rc4" d963e85424e55fc29924f26c9f3352c9d20a54a5
+          (cd "$approved_rc4" && python3 .github/scripts/verify-v080-rc4-scope.py)
+          python3 .github/scripts/verify-v080-final-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -157,6 +160,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - source: v0.8.0-rc4
+            ref: d963e85424e55fc29924f26c9f3352c9d20a54a5
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.8.0-rc4-api36
+            ref: d963e85424e55fc29924f26c9f3352c9d20a54a5
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.8.0-rc3
             ref: fa8de584b8834ef9021cd4780842c86e7d3955f7
             fixture: true
