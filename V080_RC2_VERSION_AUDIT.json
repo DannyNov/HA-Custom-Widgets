@@ -721,5 +721,16 @@
   "missing": [
     "8ac8590fdd4c4df7a9d3bb5b31adc090f6860b2c"
   ],
-  "maximum": 91
+  "maximum": 91,
+  "internalCandidates": [
+    {
+      "sha": "e67ddc41cbed9833595ffda85383682b571b278e",
+      "versionCode": 92,
+      "ciRun": 37462400023,
+      "signedRun": 37462400046,
+      "reason": "Two visual assertion coordinates referred to old badge placement or a contour stroke; header matrix passed. No publication."
+    }
+  ],
+  "maximumIncludingCandidates": 92,
+  "assignedCode": 93
 }

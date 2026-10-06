@@ -120,7 +120,7 @@ class MaintenanceHostTest {
                 wrenchPixels++; assertEquals(android.graphics.Color.alpha(a), android.graphics.Color.alpha(b))
                 assertEquals(255, android.graphics.Color.red(b)); assertEquals(0, android.graphics.Color.green(b))
             } else if (android.graphics.Color.alpha(b) > 0) {
-                extraPixels++; assertTrue(x in 88..96 && y in 4..40)
+                extraPixels++; assertTrue(x in 100..107 && y in 4..34)
             }
         }
         assertTrue(wrenchPixels > 0); assertTrue(extraPixels in 1 until wrenchPixels / 4)
@@ -176,7 +176,7 @@ class MaintenanceHostTest {
         }
         assertTrue("Recognizable light outline",ink in 5000..16000)
         assertTrue("Visible small exclamation",extra in 300..1800)
-        assertEquals(0,android.graphics.Color.alpha(normal.getPixel(180,100)))
+        assertEquals(0,android.graphics.Color.alpha(normal.getPixel(100,168)))
     }
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
     @Test fun wrenchTargetsAndNarrowFontScaleMatrix() = runBlocking {

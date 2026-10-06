@@ -4,6 +4,6 @@ Public Pre-release for the next physical check. Maintenance now follows Scenario
 
 Battery attention remains strictly ≤5% (6% does not alert), binary low/on alerts, unknown/unavailable do not. Battery colors, Repairs, Updates, refresh, realtime, section structure and per-widget default visibility remain unchanged.
 
-versionName 0.8.0-rc2; versionCode 92, exceeding the audited maximum 91. Package com.danila.hacustomwidgets; minSdk31; targetSdk36; debuggable=false; permanent signing certificate preserved.
+versionName 0.8.0-rc2; versionCode 93, exceeding the used internal candidate 92 (preflight maximum 91). Package com.danila.hacustomwidgets; minSdk31; targetSdk36; debuggable=false; permanent signing certificate preserved.
 
 Draft PR #8 stays open and unmerged. No Final, Telegram or main merge. Physical phone validation is pending.
