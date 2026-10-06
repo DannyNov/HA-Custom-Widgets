@@ -5,10 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
+import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -20,16 +18,12 @@ import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
-import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.AndroidRemoteViews
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
-import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -53,35 +47,38 @@ import com.danila.hacustomwidgets.data.model.HaCatalog
 import java.text.DateFormat
 import java.util.Date
 import java.time.Instant
+import kotlinx.coroutines.launch
 
-class DashboardWidget : GlanceAppWidget() {
-    override val sizeMode: SizeMode = SizeMode.Exact
+/** Glance composes the UI; native outer RemoteViews publishes the collection actions. */
+class DashboardWidget {
+    suspend fun update(context: Context, appWidgetId: Int) {
+        val lock = locks.getOrPut(appWidgetId) { kotlinx.coroutines.sync.Mutex() }
+        lock.lock()
+        try { render(context, appWidgetId) } finally { lock.unlock() }
+    }
 
-    override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
-        val repository = (context.applicationContext as HaWidgetApplication).container.dashboards
-        val states = repository.observe(appWidgetId)
-        val started = System.currentTimeMillis()
-        Log.d(TAG, "provideGlance started widgetId=$appWidgetId ts=$started")
-        provideContent {
-            val compositionStarted = SystemClock.elapsedRealtime()
-            val state by states.collectAsState()
-            Log.d(
-                TAG,
-                "COMPOSITION_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
-                    "revision=${state?.stateRevision} cardsTotal=${state?.cards?.size ?: 0} " +
-                    "monotonicMs=$compositionStarted",
-            )
-            SideEffect {
-                Log.d(
-                    TAG,
-                    "COMPOSITION_END processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
-                        "tab=${state?.selectedTabId} revision=${state?.stateRevision} " +
-                        "durationMs=${SystemClock.elapsedRealtime() - compositionStarted}",
-                )
-            }
-            GlanceTheme { DashboardContent(context, state, appWidgetId, LocalSize.current) }
-        }
+    private suspend fun render(context: Context, appWidgetId: Int) {
+        val manager = AppWidgetManager.getInstance(context)
+        val options = manager.getAppWidgetOptions(appWidgetId)
+        val sizes = options.getParcelableArrayList<android.util.SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+            ?.map { DpSize(it.width.dp, it.height.dp) }?.distinct()?.takeIf { it.isNotEmpty() }
+            ?: listOf(DpSize(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180).coerceAtLeast(180).dp,
+                options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 110).coerceAtLeast(110).dp),
+                DpSize(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 180).coerceAtLeast(180).dp,
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110).coerceAtLeast(110).dp)).distinct()
+        val state = (context.applicationContext as HaWidgetApplication).container.dashboards.get(appWidgetId)
+        val views = sizes.associate { size -> android.util.SizeF(size.width.value, size.height.value) to
+            DashboardCollectionsRenderer.dashboard(context, state, appWidgetId, size) }
+        manager.updateAppWidget(appWidgetId, if (views.size == 1) views.values.single() else RemoteViews(views))
+    }
+
+    suspend fun updateAll(context: Context) {
+        val ids = AppWidgetManager.getInstance(context).getAppWidgetIds(
+            android.content.ComponentName(context, DashboardWidgetReceiver::class.java))
+        ids.forEach { update(context, it) }
+    }
+    private companion object {
+        val locks = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.sync.Mutex>()
     }
 }
 
@@ -93,11 +90,12 @@ internal data class DashboardSection(
 )
 
 @Composable
-private fun DashboardContent(
+internal fun DashboardContent(
     context: Context,
     state: DashboardState?,
     appWidgetId: Int,
     size: DpSize,
+    collectionBody: RemoteViews?,
 ) {
     val width = size.width.value.toInt().coerceAtLeast(180)
     val height = size.height.value.toInt().coerceAtLeast(110)
@@ -118,21 +116,48 @@ private fun DashboardContent(
         }
         DashboardTabs(state, appWidgetId, primary, secondary, accent)
         Spacer(GlanceModifier.height(6.dp))
-        val sections = dashboardSections(state)
-        if (sections.isEmpty()) {
-            Text(
-                if (state.selectedTabId == MAIN_TAB_ID) tr("Add devices to the Main tab", "Добавьте устройства во вкладку «Главное»")
-                else if (state.selectedTabId == SCENARIOS_TAB_ID) tr("No available scenarios", "Нет доступных сценариев")
-                else if (state.selectedTabId == EMPTY_TAB_ID) tr("Choose visible tabs in Dashboard settings", "Выберите видимые вкладки в настройках Dashboard")
+        AndroidRemoteViews(requireNotNull(collectionBody), GlanceModifier.fillMaxWidth().defaultWeight())
+    }
+}
+
+@Composable
+internal fun DashboardChrome(context: Context, state: DashboardState?, appWidgetId: Int, size: DpSize) {
+    val width = size.width.value.toInt().coerceAtLeast(180)
+    val primary = ColorProvider(R.color.widget_primary)
+    val secondary = ColorProvider(R.color.widget_secondary)
+    val accent = ColorProvider(R.color.widget_accent)
+    Column(GlanceModifier.fillMaxWidth()) {
+        DashboardHeader(context, appWidgetId, state, width, primary, accent)
+        Spacer(GlanceModifier.height(5.dp))
+        if (state == null) {
+            Text(tr("Configure HA Dashboard", "Настройте HA Dashboard"), style = TextStyle(color = primary, fontSize = 15.sp))
+        } else DashboardTabs(state, appWidgetId, primary, secondary, accent)
+    }
+}
+
+@Composable
+internal fun DashboardSpaceList(
+    state: DashboardState, id: String, appWidgetId: Int,
+    width: Int, primary: ColorProvider, secondary: ColorProvider,
+) {
+        val modifier = GlanceModifier.fillMaxSize()
+        if (id == MAINTENANCE_TAB_ID) {
+            MaintenanceContent(state.maintenance, primary, secondary, modifier)
+        } else {
+            val tabState = state.copy(selectedTabId = id)
+            val sections = if (id == EMPTY_TAB_ID) emptyList() else dashboardSections(tabState)
+            LazyColumn(modifier) {
+                if (sections.isEmpty()) item(itemId = stableItemId("empty:$id")) { Text(
+                if (id == MAIN_TAB_ID) tr("Add devices to the Main tab", "Добавьте устройства во вкладку «Главное»")
+                else if (id == SCENARIOS_TAB_ID) tr("No available scenarios", "Нет доступных сценариев")
+                else if (id == EMPTY_TAB_ID) tr("Choose visible tabs in Dashboard settings", "Выберите видимые вкладки в настройках Dashboard")
                 else tr("No available devices in this space", "В этом пространстве нет доступных устройств"),
                 style = TextStyle(color = secondary, fontSize = 13.sp),
-            )
-        } else {
-            LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                ) }
                 sections.forEach { section ->
                     if (section.title != null) {
                         item(itemId = stableItemId("section:${section.key}")) {
-                            SectionHeader(section, state, appWidgetId, primary, secondary)
+                            SectionHeader(section, tabState, appWidgetId, primary, secondary)
                         }
                     }
                     if (section.key !in state.collapsedSections) {
@@ -154,11 +179,10 @@ private fun DashboardContent(
                 }
             }
         }
-    }
 }
 
 @Composable
-private fun DashboardHeader(
+internal fun DashboardHeader(
     context: Context,
     appWidgetId: Int,
     state: DashboardState?,
@@ -193,6 +217,16 @@ private fun DashboardHeader(
             ),
             style = TextStyle(color = accent, fontSize = 18.sp),
         )
+        if (state != null && state.config.showMaintenance) {
+            // Fits inside the original refresh/settings row; never sets its height.
+            Box(GlanceModifier.width(36.dp).height(20.dp)
+                .clickable(actionRunCallback<DashboardNavigateAction>(
+                actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAINTENANCE_TAB_ID))), contentAlignment = Alignment.Center) {
+                Image(ImageProvider(if (state.maintenance.attention) R.drawable.ic_maintenance_attention else R.drawable.ic_maintenance),
+                    contentDescription = tr("Maintenance", "Обслуживание"), modifier = GlanceModifier.width(20.dp).height(20.dp),
+                    colorFilter = androidx.glance.ColorFilter.tint(if (state.maintenance.attention) ColorProvider(R.color.widget_problem) else accent))
+            }
+        }
         Text(
             "⚙",
             modifier = GlanceModifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
@@ -217,15 +251,18 @@ private fun DashboardTabs(
             .cornerRadius(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (state.config.showFavorites) Box(
-            modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
-                actionRunCallback<DashboardNavigateAction>(
-                    actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAIN_TAB_ID),
+        if (state.config.showFavorites) {
+            Box(
+                modifier = GlanceModifier.width(48.dp).height(48.dp)
+                    .clickable(
+                    actionRunCallback<DashboardNavigateAction>(
+                        actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAIN_TAB_ID),
+                    ),
                 ),
-            ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("★", style = TextStyle(color = if (selectedIndex == 0) accent else secondary, fontSize = 15.sp))
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("★", style = TextStyle(color = if (selectedIndex == 0) accent else secondary, fontSize = 15.sp))
+            }
         }
         Box(
             modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
@@ -888,8 +925,22 @@ private fun controlLabel(
 private fun stableItemId(value: String): Long = DashboardStatePolicy.stableCollectionId(value)
 private val ACTIVE_STATES = setOf("on", "open", "active", "playing", "heat", "cool", "home")
 
-class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget: GlanceAppWidget = DashboardWidget()
+class DashboardWidgetReceiver : android.appwidget.AppWidgetProvider() {
+    private fun renderAsync(context: Context, ids: IntArray) {
+        val pending = goAsync()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default).launch {
+            try { ids.forEach { DashboardWidget().update(context.applicationContext, it) } }
+            catch (error: Exception) { Log.e(TAG, "System widget render failed", error) }
+            finally { pending.finish() }
+        }
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_LOCALE_CHANGED) {
+            renderAsync(context, AppWidgetManager.getInstance(context).getAppWidgetIds(
+                android.content.ComponentName(context, javaClass)))
+        } else super.onReceive(context, intent)
+    }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val container = (context.applicationContext as HaWidgetApplication).container
@@ -899,17 +950,18 @@ class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
                 "widgetIds=${appWidgetIds.joinToString()} source=SYSTEM",
         )
         container.dashboardEvents.ensureStarted("APPWIDGET_UPDATE")
-        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        renderAsync(context, appWidgetIds)
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager,
         appWidgetId: Int, newOptions: android.os.Bundle) {
-        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        renderAsync(context, intArrayOf(appWidgetId))
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val container = (context.applicationContext as HaWidgetApplication).container
         appWidgetIds.forEach(container.dashboards::delete)
+        appWidgetIds.forEach { DashboardCollectionsRenderer.forget(context, it) }
         container.dashboardEvents.stopIfUnused()
         super.onDeleted(context, appWidgetIds)
     }

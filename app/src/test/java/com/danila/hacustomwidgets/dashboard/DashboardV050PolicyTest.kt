@@ -41,10 +41,10 @@ class DashboardV050PolicyTest {
     @Test fun multipleDashboardsUseChooser() = assertEquals(DashboardSettingsDestination.Choose(listOf(2, 7)), DashboardSettingsLaunchPolicy.resolve(listOf(2, 7)))
     @Test fun duplicateDashboardIdsAreDeduplicated() = assertEquals(DashboardSettingsDestination.Direct(2), DashboardSettingsLaunchPolicy.resolve(listOf(2, 2)))
 
-    @Test fun scenarioTabIsLastByDefault() {
+    @Test fun scenarioTabPrecedesLastMaintenanceByDefault() {
         val config = config()
         val state = DashboardState(config, listOf(DashboardSpace("s", "Дом", listOf("a"))), emptyList(), emptyList(), MAIN_TAB_ID, emptySet(), emptySet(), emptyMap(), 0, false, 0, null)
-        assertEquals(SCENARIOS_TAB_ID, state.tabs.last().id)
+        assertEquals(listOf(SCENARIOS_TAB_ID, MAINTENANCE_TAB_ID), state.tabs.takeLast(2).map { it.id })
     }
 
     @Test fun scenarioTabCanBeHidden() {

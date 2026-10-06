@@ -22,6 +22,8 @@ private data class DashboardStructureSnapshot(
     val cardKeysBySpace: Map<String, List<String>>,
     val areaCardKeys: Map<String, List<String>>,
     val structureBytes: Int,
+    val batteries: List<MaintenanceBattery>,
+    val updates: List<HaEntity>,
 )
 
 class DashboardRepository(context: Context) {
@@ -29,6 +31,7 @@ class DashboardRepository(context: Context) {
     private val timerConnection = com.danila.hacustomwidgets.data.security.SecureConnectionStore(context)
     private val configPrefs = context.getSharedPreferences("dashboard_widgets", Context.MODE_PRIVATE)
     private val structurePrefs = context.getSharedPreferences("dashboard_structure", Context.MODE_PRIVATE)
+    private val maintenancePrefs = context.getSharedPreferences("dashboard_maintenance", Context.MODE_PRIVATE)
     private val statePrefs = context.getSharedPreferences("dashboard_entity_states", Context.MODE_PRIVATE)
     private val operationPrefs = context.getSharedPreferences("dashboard_operations", Context.MODE_PRIVATE)
     private val atomicStore = DashboardAtomicStateStore(context)
@@ -51,11 +54,23 @@ class DashboardRepository(context: Context) {
             .putStringSet(KEY_IDS, configuredIds() + config.appWidgetId.toString())
             .apply()
         updateFromCatalog(config.appWidgetId, catalog)
-        if (!config.showFavorites && configPrefs.getString(key(config.appWidgetId, "selected_tab"), MAIN_TAB_ID) == MAIN_TAB_ID) {
+        if ((!config.showMaintenance && configPrefs.getString(key(config.appWidgetId, "selected_tab"), MAIN_TAB_ID) == MAINTENANCE_TAB_ID) ||
+            !config.showFavorites && configPrefs.getString(key(config.appWidgetId, "selected_tab"), MAIN_TAB_ID) == MAIN_TAB_ID) {
             get(config.appWidgetId)?.let { state ->
                 configPrefs.edit().putString(key(config.appWidgetId, "selected_tab"), state.selectedTabId).apply()
             }
         }
+    }
+
+    @Synchronized
+    fun updateRepairs(issues: List<RepairIssue>?, failed: Boolean = false) {
+        val identity = brightnessConnectionId().orEmpty()
+        val editor = maintenancePrefs.edit()
+        if (maintenancePrefs.getString("connection", null) != identity) editor.clear()
+        editor.putString("connection", identity).putBoolean("error", failed)
+        if (issues != null) editor.putString("issues", MaintenancePolicy.repairsJson(issues).toString())
+        editor.apply()
+        all().forEach { touchAndRequestRender(it.appWidgetId, "REPAIRS") }
     }
 
     fun getConfig(appWidgetId: Int): DashboardConfig? = configPrefs
@@ -153,7 +168,7 @@ class DashboardRepository(context: Context) {
         val structure = structurePrefs.getString(structureKey(appWidgetId), null)?.let {
             runCatching { JSONObject(it) }.getOrNull()
         } ?: return true
-        return structure.optInt("schema", 0) < STORAGE_SCHEMA_VERSION ||
+        return !structure.has("batteries") || structure.optInt("schema", 0) < STORAGE_SCHEMA_VERSION ||
             DashboardCatalogPolicy.isDue(structure.optLong("catalog_updated_at", 0L), now)
     }
 
@@ -203,6 +218,8 @@ class DashboardRepository(context: Context) {
             }
         }.distinctBy { it.entityId }
         val structure = JSONObject()
+            .put("batteries", MaintenancePolicy.batteriesJson(MaintenancePolicy.batteries(catalog)))
+            .put("updates", JSONArray().apply { allEntities.filter { it.domain == "update" }.forEach { put(MaintenancePolicy.entityJson(it)) } })
             .put("schema", STORAGE_SCHEMA_VERSION)
             .put("catalog_updated_at", System.currentTimeMillis())
             .put("spaces", spacesJson(spaces))
@@ -584,9 +601,11 @@ class DashboardRepository(context: Context) {
         }
         val visibleTabs = DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })
             .filter { id -> id in config.visibleSpaceIds && spaces.any { it.id == id } } +
-            listOfNotNull(SCENARIOS_TAB_ID.takeIf { config.scenariosEnabled })
+            listOfNotNull(MAINTENANCE_TAB_ID.takeIf { config.showMaintenance }, SCENARIOS_TAB_ID.takeIf { config.scenariosEnabled })
         val storedTab = configPrefs.getString(key(appWidgetId, "selected_tab"), MAIN_TAB_ID) ?: MAIN_TAB_ID
-        val selectedTab = DashboardStatePolicy.resolveSelectedTab(storedTab, visibleTabs, config.showFavorites)
+        val selectedTab = if (storedTab == MAINTENANCE_TAB_ID && !config.showMaintenance)
+            visibleTabs.firstOrNull { it != SCENARIOS_TAB_ID } ?: if (config.showFavorites) MAIN_TAB_ID else visibleTabs.firstOrNull() ?: EMPTY_TAB_ID
+        else DashboardStatePolicy.resolveSelectedTab(storedTab, visibleTabs, config.showFavorites)
         // Fall back while a space is absent, retaining the user's tab for its return.
         val result = DashboardState(
             config = config,
@@ -594,6 +613,15 @@ class DashboardRepository(context: Context) {
             cards = cards,
             scenarioActions = scenarios,
             selectedTabId = selectedTab,
+            maintenance = MaintenanceSnapshot(
+                batteries = structure.batteries.map { battery -> battery.copy(entity = atomic.entities[battery.entity.entityId]?.let { battery.entity.copy(state = it.rawState) } ?: battery.entity) },
+                updates = structure.updates.map { entity -> atomic.entities[entity.entityId]?.let { entity.copy(state = it.rawState) } ?: entity },
+                repairs = maintenancePrefs.getString("issues", null)?.takeIf { maintenancePrefs.getString("connection", null) == brightnessConnectionId().orEmpty() }
+                    ?.let { runCatching { MaintenancePolicy.parseStoredRepairs(JSONArray(it)) }.getOrNull() }.orEmpty(),
+                repairsLoaded = maintenancePrefs.contains("issues") && maintenancePrefs.getString("connection", null) == brightnessConnectionId().orEmpty(),
+                repairsError = maintenancePrefs.getBoolean("error", false) && maintenancePrefs.getString("connection", null) == brightnessConnectionId().orEmpty(),
+                catalogLoaded = structurePrefs.getString(structureKey(appWidgetId), null)?.let { JSONObject(it).has("batteries") } == true,
+            ),
             collapsedSections = configPrefs.getStringSet(key(appWidgetId, "collapsed"), emptySet())
                 ?.toSet().orEmpty(),
             inFlightDeviceKeys = visibleOperations.filterValues { it.status.isActive }.keys,
@@ -699,13 +727,16 @@ class DashboardRepository(context: Context) {
                 val spaces = parseSpaces(json.optJSONArray("spaces") ?: JSONArray())
                 val cards = parseCards(json.optJSONArray("cards") ?: JSONArray())
                 val scenarios = parseScenarios(json.optJSONArray("scenarios") ?: JSONArray())
+                val batteries = MaintenancePolicy.parseBatteries(json.optJSONArray("batteries") ?: JSONArray())
+                val updatesJson = json.optJSONArray("updates") ?: JSONArray()
+                val updates = (0 until updatesJson.length()).map { MaintenancePolicy.parseEntity(updatesJson.getJSONObject(it)) }
                 val ids = cards.flatMap { card ->
                     buildList {
                         addAll(card.metrics.map { it.entityId })
                         addAll(card.controls.map { it.entityId })
                         card.timerState?.entityId?.let(::add)
                     }
-                }.plus(scenarios.map { it.entityId }).distinct()
+                }.plus(scenarios.map { it.entityId }).plus(batteries.map { it.entity.entityId }).plus(updates.map { it.entityId }).distinct()
                 val areaCards = cards.filter { it.areaId != null }.groupBy { requireNotNull(it.areaId) }
                     .mapValues { (_, values) -> values.map { it.key } }
                 val spaceCards = spaces.associate { space ->
@@ -713,7 +744,7 @@ class DashboardRepository(context: Context) {
                 } + ("__unassigned_space__" to cards.filter { it.areaId == null }.map { it.key })
                 DashboardStructureSnapshot(
                     spaces, cards, scenarios, ids, spaceCards, areaCards,
-                    raw.toByteArray(Charsets.UTF_8).size,
+                    raw.toByteArray(Charsets.UTF_8).size, batteries, updates,
                 )
             }.getOrNull()?.also { registerStructure(appWidgetId, it) }
         }
@@ -912,6 +943,7 @@ class DashboardRepository(context: Context) {
         .put("grouping", JSONObject().also { out -> groupingBySpace.forEach { (k, v) -> out.put(k, v.name) } })
         .put("favorites", JSONArray(favoriteDeviceKeys))
         .put("show_favorites", showFavorites)
+        .put("show_maintenance", showMaintenance)
         .put("entity_order", mapOfListsJson(entityOrderByDevice))
         .put("card_order", mapOfListsJson(cardOrderBySpace))
         .put("show_updated", showLastUpdated)
@@ -937,6 +969,7 @@ class DashboardRepository(context: Context) {
         },
         favoriteDeviceKeys = json.optJSONArray("favorites").stringList(),
         showFavorites = json.optBoolean("show_favorites", true),
+        showMaintenance = json.optBoolean("show_maintenance", true),
         entityOrderByDevice = json.optJSONObject("entity_order").mapOfLists(),
         cardOrderBySpace = json.optJSONObject("card_order").mapOfLists(),
         showLastUpdated = json.optBoolean("show_updated", true),

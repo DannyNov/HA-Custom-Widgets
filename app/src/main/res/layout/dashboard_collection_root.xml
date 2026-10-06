@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/dashboard_collection_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/dashboard_widget_background"
+    android:clipToOutline="true">
+    <FrameLayout android:id="@+id/dashboard_chrome"
+        android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <FrameLayout android:id="@+id/dashboard_body"
+        android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:layout_marginTop="6dp" />
+</LinearLayout>

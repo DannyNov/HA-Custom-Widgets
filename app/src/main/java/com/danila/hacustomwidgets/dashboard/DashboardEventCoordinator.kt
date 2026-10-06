@@ -33,6 +33,7 @@ class DashboardEventCoordinator(
     private val dashboards: DashboardRepository,
     private val fetchCatalog: suspend (HomeAssistantConnection) -> HaCatalog = client::getCatalog,
     private val fetchEntities: suspend (HomeAssistantConnection, List<String>) -> List<HaEntity> = client::getEntities,
+    private val fetchRepairIssues: suspend (HomeAssistantConnection) -> List<RepairIssue> = client::getRepairs,
 ) {
     private val appContext = context.applicationContext
     private val syncPrefs = appContext.getSharedPreferences("dashboard_sync_freshness", Context.MODE_PRIVATE)
@@ -58,6 +59,7 @@ class DashboardEventCoordinator(
     private val systemBinding = RealtimeBindingState()
     @Volatile private var screenInteractive = true
     private var stageDeadlineJob: Job? = null
+    private var maintenanceRefreshJob: Job? = null
 
     init { scope.launch { connectionLoop() } }
 
@@ -70,7 +72,7 @@ class DashboardEventCoordinator(
     fun ensureStarted(reason: String, reconcileIfStale: Boolean = true) {
         val ids = desiredEntityIds()
         when {
-            ids.isEmpty() -> log("WS_START_SKIPPED", "reason=no_widgets source=$reason")
+            !hasRealtimeWork() -> log("WS_START_SKIPPED", "reason=no_widgets source=$reason")
             connectionStore.load() == null -> log("WS_START_SKIPPED", "reason=no_connection source=$reason")
             !screenInteractive -> log("WS_START_SKIPPED", "reason=screen_off source=$reason")
             socketState !in ACTIVE_STATES -> {
@@ -106,7 +108,7 @@ class DashboardEventCoordinator(
     }
 
     fun connectivityChanged() {
-        if (!screenInteractive || desiredEntityIds().isEmpty()) return
+        if (!screenInteractive || !hasRealtimeWork()) return
         if (socketState in ACTIVE_STATES || currentSocket != null) {
             invalidateGeneration("connectivity_change", reconnect = true)
         } else ensureStarted("CONNECTIVITY_AVAILABLE", reconcileIfStale = true)
@@ -118,7 +120,7 @@ class DashboardEventCoordinator(
             counters.subscriptionChanges.incrementAndGet()
             log("SUBSCRIPTION_SET_CHANGED", "reason=$reason entityCount=${ids.size}")
             when {
-                ids.isEmpty() -> stopIfUnused()
+                !hasRealtimeWork() -> stopIfUnused()
                 socketState == DashboardSocketState.SUBSCRIBED && ids != subscribedEntities ->
                     replaceSubscription(reason, ids)
                 else -> ensureStarted(reason, reconcileIfStale = false)
@@ -178,6 +180,7 @@ class DashboardEventCoordinator(
             catalogConfigs.forEach { config ->
                 dashboards.updateFromCatalog(config.appWidgetId, requireNotNull(catalog))
             }
+            refreshRepairs(connection)
             val completedAt = System.currentTimeMillis()
             syncPrefs.edit().also { editor ->
                 allIds.forEach { editor.putLong(syncKey(it), completedAt) }
@@ -192,8 +195,33 @@ class DashboardEventCoordinator(
         }
     }
 
+    private suspend fun refreshRepairs(connection: HomeAssistantConnection) {
+        try {
+            val issues = fetchRepairIssues(connection)
+            if (connectionStore.load() == connection) dashboards.updateRepairs(issues)
+        }
+        catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            if (connectionStore.load() == connection) dashboards.updateRepairs(null, failed = true)
+        }
+    }
+
+    private fun refreshMaintenanceRegistry(eventType: String) {
+        synchronized(stateLock) {
+            maintenanceRefreshJob?.cancel()
+            maintenanceRefreshJob = scope.launch {
+                delay(500)
+                if (eventType == "repairs_issue_registry_updated") {
+                    reconcileMutex.withLock { connectionStore.load()?.let { refreshRepairs(it) } }
+                } else {
+                    reconcileNow("MAINTENANCE_REGISTRY", true, source = DashboardStateSource.MANUAL_REFRESH)
+                }
+            }
+        }
+    }
+
     fun stopIfUnused() {
-        if (desiredEntityIds().isNotEmpty()) return
+        if (hasRealtimeWork()) return
         invalidateGeneration("no_widgets", reconnect = false)
         socketState = DashboardSocketState.STOPPED
     }
@@ -203,10 +231,12 @@ class DashboardEventCoordinator(
     private fun desiredEntityIds(): Set<String> =
         dashboards.all().flatMap { dashboards.entityIds(it.appWidgetId) }.toSet()
 
+    private fun hasRealtimeWork() = desiredEntityIds().isNotEmpty() || dashboards.all().any { it.showMaintenance }
+
     private suspend fun connectionLoop() {
         while (scope.isActive) {
             commands.receive()
-            while (scope.isActive && desiredEntityIds().isNotEmpty() && screenInteractive) {
+            while (scope.isActive && hasRealtimeWork() && screenInteractive) {
                 if (socketState in ACTIVE_STATES) break
                 val delayMs = if (socketState == DashboardSocketState.BACKOFF) {
                     DashboardEventPolicy.reconnectDelayMs((reconnectAttempt - 1).coerceAtLeast(0))
@@ -215,7 +245,7 @@ class DashboardEventCoordinator(
                     log("WS_RECONNECT", "attempt=$reconnectAttempt delayMs=$delayMs")
                     delay(delayMs)
                 }
-                if (!screenInteractive || desiredEntityIds().isEmpty()) break
+                if (!screenInteractive || !hasRealtimeWork()) break
                 if (socketState in ACTIVE_STATES) break
                 try { openGeneration(); break }
                 catch (error: Throwable) {
@@ -271,6 +301,9 @@ class DashboardEventCoordinator(
             subscriptionMode = if (DashboardEventPolicy.supportsSubscribeEntities(haVersion)) {
                 EntitySubscriptionMode.SUBSCRIBE_ENTITIES
             } else EntitySubscriptionMode.STATE_CHANGED
+            val registryFirstId = commandCounter.getAndAdd(4).toInt() + 1
+            client.subscribeMaintenanceEvents(socket, registryFirstId)
+            scope.launch { reconcileMutex.withLock { connectionStore.load()?.let { refreshRepairs(it) } } }
             sendSubscription(socket, generation, id, desiredEntityIds(), subscriptionMode)
         }
         override fun onAuthInvalid(socket: WebSocket) {
@@ -284,7 +317,10 @@ class DashboardEventCoordinator(
             if (!success && subscriptionMode == EntitySubscriptionMode.SUBSCRIBE_ENTITIES) {
                 subscriptionMode = EntitySubscriptionMode.STATE_CHANGED
                 log("WS_SUBSCRIBE_START", "fallback=state_changed error=${error.orEmpty()}")
-                sendSubscription(socket, generation, id, desiredEntityIds(), subscriptionMode)
+                val registryFirstId = commandCounter.getAndAdd(4).toInt() + 1
+            client.subscribeMaintenanceEvents(socket, registryFirstId)
+            scope.launch { reconcileMutex.withLock { connectionStore.load()?.let { refreshRepairs(it) } } }
+            sendSubscription(socket, generation, id, desiredEntityIds(), subscriptionMode)
                 return
             }
             if (!success) return failGeneration(socket, generation, id, "subscribe_rejected", null)
@@ -293,7 +329,7 @@ class DashboardEventCoordinator(
             transition(generation, DashboardSocketState.SUBSCRIBED)
             log("WS_SUBSCRIBED", "subscriptionMode=$subscriptionMode entityCount=${subscribedEntities.size}")
             val latestEntities = desiredEntityIds()
-            if (latestEntities.isEmpty()) {
+            if (!hasRealtimeWork()) {
                 stopIfUnused()
                 return
             }
@@ -303,6 +339,9 @@ class DashboardEventCoordinator(
             }
             if (subscriptionMode == EntitySubscriptionMode.STATE_CHANGED) requestReconciliation("WS_SUBSCRIBED_FALLBACK", true)
             log("RESOURCE_SNAPSHOT", counters.snapshot())
+        }
+        override fun onRegistryChanged(socket: WebSocket, eventType: String) {
+            if (isCurrent(socket, generation, id)) refreshMaintenanceRegistry(eventType)
         }
         override fun onEntities(socket: WebSocket, subscriptionId: Int, entities: List<HaEntity>, initial: Boolean) {
             if (!isCurrent(socket, generation, id) || subscriptionId != currentSubscriptionId) {

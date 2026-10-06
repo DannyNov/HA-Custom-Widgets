@@ -1,0 +1,240 @@
+name: Publish verified v0.8.0 RC4 only
+on:
+  push:
+    branches: [feature/maintenance-v080]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish-rc:
+    if: github.ref == 'refs/heads/feature/maintenance-v080' && contains(github.event.head_commit.message, '[publish-v080-rc4]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      actions: write
+    concurrency:
+      group: publish-v0.8.0-rc4
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: d963e85424e55fc29924f26c9f3352c9d20a54a5
+      CONTROLLER_SHA: ${{ github.sha }}
+      TAG: v0.8.0-rc4
+      EXPECTED_CODE: '106'
+      CI_RUN: '37512002624'
+      SIGNED_RUN: '37512002601'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: d963e85424e55fc29924f26c9f3352c9d20a54a5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Wait for exact-source full gate and preserve release discipline
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = DannyNov/HA-Custom-Widgets
+          git merge-base --is-ancestor "$SOURCE_SHA" "$CONTROLLER_SHA"
+          git diff --exit-code "$SOURCE_SHA" "$CONTROLLER_SHA" -- . ':!.github/workflows/publish-v080-rc.yml'
+          for attempt in $(seq 1 140); do
+            finished=true
+            for id in "$CI_RUN" "$SIGNED_RUN"; do
+              run=$(gh api "repos/$GH_REPO/actions/runs/$id")
+              test "$(jq -r .head_sha <<< "$run")" = "$SOURCE_SHA"
+              test "$(jq -r .event <<< "$run")" = push
+              if test "$(jq -r .status <<< "$run")" != completed; then finished=false; else test "$(jq -r .conclusion <<< "$run")" = success; fi
+            done
+            if $finished; then break; fi
+            sleep 30
+          done
+          $finished
+          gh api "repos/$GH_REPO/actions/runs/$CI_RUN/jobs?per_page=100&filter=all" > exact-gate-all-attempts.json
+          jq '{jobs: [.jobs | group_by(.name)[] | sort_by(.run_attempt, .id) | last]}' exact-gate-all-attempts.json > exact-gate-jobs.json
+          test "$(jq --arg source "$SOURCE_SHA" '[.jobs[] | select(.head_sha != $source)] | length' exact-gate-jobs.json)" = 0
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic")] | length' exact-gate-jobs.json)" = 32
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic" and .conclusion != "success")] | length' exact-gate-jobs.json)" = 0
+          test "$(jq '[.jobs[] | select(.name | startswith("upgrade ("))] | length' exact-gate-jobs.json)" = 29
+          grep -F 'versionCode = 106' app/build.gradle.kts
+          grep -F 'versionName = "0.8.0-rc4"' app/build.gradle.kts
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = 2568552bf0d46c37ba91a75c2508b4d31a6e0fd4
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .merged)" = false
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .draft)" = true
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .state)" = open
+          # Save full pre-existing public release metadata for post-publication comparison.
+          gh api "repos/$GH_REPO/releases?per_page=100" > releases-before.json
+      - name: Independently inspect signed APK and AAB before publication
+        run: |
+          set -euo pipefail
+          gh run download "$SIGNED_RUN" --name HA-Custom-Widgets-v0.8.0-rc4-release --dir rc-assets
+          mkdir deliverables
+          cp rc-assets/apk/release/HAWidgets-v0.8.0-rc4.apk deliverables/
+          cp rc-assets/bundle/release/app-release.aab deliverables/HAWidgets-v0.8.0-rc4.aab
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          apk=deliverables/HAWidgets-v0.8.0-rc4.apk
+          "$APKSIGNER" verify --verbose --print-certs "$apk" | tee deliverables/signature.txt
+          cert=$(sed -n 's/^.*certificate SHA-256 digest: //p' deliverables/signature.txt | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$cert" = 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a
+          "$AAPT" dump badging "$apk" | tee deliverables/manifest.txt
+          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.8.0-rc4'" deliverables/manifest.txt
+          grep -Fx "sdkVersion:'31'" deliverables/manifest.txt
+          grep -Fx "targetSdkVersion:'36'" deliverables/manifest.txt
+          ! grep -q '^application-debuggable:' deliverables/manifest.txt
+          jarsigner -verify deliverables/HAWidgets-v0.8.0-rc4.aab | tee deliverables/aab-signature.txt
+          grep -F 'jar verified.' deliverables/aab-signature.txt
+          keytool -printcert -jarfile deliverables/HAWidgets-v0.8.0-rc4.aab > deliverables/aab-certificate.txt
+          grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' deliverables/aab-certificate.txt
+          curl --fail --location 'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar' -o bundletool.jar
+          echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  bundletool.jar' | sha256sum -c -
+          java -jar bundletool.jar dump manifest --bundle=deliverables/HAWidgets-v0.8.0-rc4.aab --module=base > deliverables/aab-manifest.xml
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root=ET.parse('deliverables/aab-manifest.xml').getroot()
+          ns='{http://schemas.android.com/apk/res/android}'
+          assert root.get('package')=='com.danila.hacustomwidgets'
+          assert root.get(ns+'versionCode')==os.environ['EXPECTED_CODE']
+          assert root.get(ns+'versionName')=='0.8.0-rc4'
+          sdk=root.find('uses-sdk')
+          assert sdk.get(ns+'minSdkVersion')=='31' and sdk.get(ns+'targetSdkVersion')=='36'
+          assert root.find('application').get(ns+'debuggable','false')=='false'
+          PY
+          cp rc-assets/apk/release/build-info.txt deliverables/build-info.txt
+          printf 'sourceSHA=%s\nciRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$CI_RUN" "$SIGNED_RUN" >> deliverables/build-info.txt
+          (cd deliverables && sha256sum HAWidgets-v0.8.0-rc4.apk HAWidgets-v0.8.0-rc4.aab > sha256.txt)
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.0.3" --jq .object.sha)" = f8c7a9c8a9a11d823873a274ae9f2eb340314499
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1" --jq .object.sha)" = af315c33410b8833f3339ee13682081ff8819f2a
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1-rc6" --jq .object.sha)" = 7cd3cc5ca5238cd330c7dedf91f107f33bc3e737
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1-rc7" --jq .object.sha)" = ba8847701e14ccd43dccdd15847c892330dcc6a4
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1.1" --jq .object.sha)" = df0fff631634657403b5436d8a7440de91f79cba
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1.1-rc1" --jq .object.sha)" = 7fe94a6bee9c0994161a046b73f978b37074043c
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.2" --jq .object.sha)" = 718136bb62386ffbfff3bcdd18de4d403ad14d70
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.2-rc1" --jq .object.sha)" = 7f133dd7aafb60c937c5c7e3067596806a9a6502
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3" --jq .object.sha)" = c26bb1af90872db9a6bfb49ede693294d6a2fd51
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc1" --jq .object.sha)" = 41c35c0f736a06bebd5d167b495923d13e751640
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc2" --jq .object.sha)" = 484fda6ba2cc7b1620f187309fff6246ec4a9d28
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc3" --jq .object.sha)" = 184d71d8003000f933330330628e41f3ddf20b47
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc4" --jq .object.sha)" = ba2bb30e8ab3ff79888f7766f0b5070eca1e80a6
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc5" --jq .object.sha)" = ce38f2a889410b50be130644bb4fe99edb93e24d
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc6" --jq .object.sha)" = 99e97b987db3467ff036dafe74e605c661c33796
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc7" --jq .object.sha)" = 900756d2960ada770ec580a0e6ec3c7d8d27ffb4
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc8" --jq .object.sha)" = a588b78539144ed0c3dfac3493f46cdf544d3824
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.4" --jq .object.sha)" = 273a6d60360b295523f23bd4b416a34ff4cb2d2b
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.4-rc1" --jq .object.sha)" = 66298240b6707c3e3d40e6d60ce079e2be664efe
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0" --jq .object.sha)" = 58a39ededb89c325e17da016c134726c7c5e0374
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc2" --jq .object.sha)" = 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc3" --jq .object.sha)" = 42ef1127af68f1b8d475132e92004bb7a0588bca
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc4" --jq .object.sha)" = 248c91175b473a5b8be11d0fcdf381f23f67c884
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc1" --jq .object.sha)" = b733daeae463bac15a909264f624efbae463af77
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc2" --jq .object.sha)" = 703ac9e06273b7a192084b2b6e07204aae3ba004
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc3" --jq .object.sha)" = fa8de584b8834ef9021cd4780842c86e7d3955f7
+      - name: Publish public Pre-release and verify public downloads
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then echo 'RC already exists; refusing to overwrite'; exit 1; fi
+          if gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then echo 'Tag already exists; refusing to move it'; exit 1; fi
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/feature/maintenance-v080" --jq .object.sha)" = "$CONTROLLER_SHA"
+          cat > RELEASE_NOTES_v0.8.0-rc4.md <<'NOTES'
+          # HA Custom Widgets v0.8.0-rc4
+
+          Минимальный косметический кандидат после физической проверки RC3 на Honor.
+          При скрытом «Обслуживании» контейнер ключа не создаётся: время и ручное обновление занимают прежнее место перед настройками. При скрытом «Главном» контейнер звезды не создаётся: левая стрелка занимает первый слот.
+          Высота header, цвета, attention, навигация и независимые позиции прокрутки пространств/экземпляров сохранены.
+
+          Minimal cosmetic candidate: omit disabled Maintenance and Main controls entirely, restoring compact header/navigation geometry. Native sibling containers isolate changing chrome from RC3 collections. The stable ListViews, IDs, adapters and Glance row composer are preserved.
+
+          Source: `d963e85424e55fc29924f26c9f3352c9d20a54a5`; RC3 base: `fa8de584b8834ef9021cd4780842c86e7d3955f7`.
+          Version: 0.8.0-rc4, code 106; preflight maximum 105, including unpublished candidates.
+          Validation: 506 unit tests; 80 host tests on each API31/API36 including four ON/OFF combinations, legacy header bounds, unconfigured path and viewport preservation; 29 upgrade jobs including v0.7.0 Final/RC4 and v0.8.0 RC1/RC2/RC3.
+          Production diff versus RC3: 4 files, +55/-18 lines. Collection algorithms, persistent IDs, adapters, rows and configuration semantics are unchanged.
+          One emulator SDK archive installation failure required a single whole-job retry on the same SHA; assertions were not weakened.
+          [Full gate](https://github.com/DannyNov/HA-Custom-Widgets/actions/runs/37512002624) · [Signed build](https://github.com/DannyNov/HA-Custom-Widgets/actions/runs/37512002601).
+          Permanent certificate SHA-256: `8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a`.
+          Package `com.danila.hacustomwidgets`, minSdk 31, targetSdk 36, debuggable false. APK/AAB hashes are in sha256.txt.
+          Install over your existing version. Stop for physical Honor verification of Main ON/OFF × Maintenance ON/OFF. PR #8 remains Draft/open/unmerged; no Final or Telegram.
+          NOTES
+          gh release create "$TAG" deliverables/HAWidgets-v0.8.0-rc4.apk deliverables/HAWidgets-v0.8.0-rc4.aab deliverables/sha256.txt deliverables/build-info.txt deliverables/signature.txt \
+            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.8.0-rc4' --notes-file RELEASE_NOTES_v0.8.0-rc4.md --prerelease --latest=false
+          gh release view "$TAG" --json url,isDraft,isPrerelease,tagName,targetCommitish | tee deliverables/release.json
+          test "$(jq -r .isPrerelease deliverables/release.json)" = true
+          test "$(jq -r .isDraft deliverables/release.json)" = false
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .object.sha)" = "$SOURCE_SHA"
+          mkdir public-assets
+          for extension in apk aab; do
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "https://github.com/$GH_REPO/releases/download/$TAG/HAWidgets-v0.8.0-rc4.$extension" -o "public-assets/HAWidgets-v0.8.0-rc4.$extension"
+            cmp "deliverables/HAWidgets-v0.8.0-rc4.$extension" "public-assets/HAWidgets-v0.8.0-rc4.$extension"
+          done
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs public-assets/HAWidgets-v0.8.0-rc4.apk | tee public-assets/signature.txt
+          grep -F '8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' public-assets/signature.txt
+          "$AAPT" dump badging public-assets/HAWidgets-v0.8.0-rc4.apk | tee public-assets/manifest.txt
+          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.8.0-rc4'" public-assets/manifest.txt
+          grep -Fx "sdkVersion:'31'" public-assets/manifest.txt
+          grep -Fx "targetSdkVersion:'36'" public-assets/manifest.txt
+          ! grep -q '^application-debuggable:' public-assets/manifest.txt
+          jarsigner -verify public-assets/HAWidgets-v0.8.0-rc4.aab | tee public-assets/aab-signature.txt
+          grep -F 'jar verified.' public-assets/aab-signature.txt
+          keytool -printcert -jarfile public-assets/HAWidgets-v0.8.0-rc4.aab > public-assets/aab-certificate.txt
+          grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' public-assets/aab-certificate.txt
+          java -jar bundletool.jar dump manifest --bundle=public-assets/HAWidgets-v0.8.0-rc4.aab --module=base > public-assets/aab-manifest.xml
+          cmp deliverables/aab-manifest.xml public-assets/aab-manifest.xml
+          (cd public-assets && sha256sum HAWidgets-v0.8.0-rc4.apk HAWidgets-v0.8.0-rc4.aab > sha256.txt)
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = 2568552bf0d46c37ba91a75c2508b4d31a6e0fd4
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
+
+
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.0.3" --jq .object.sha)" = f8c7a9c8a9a11d823873a274ae9f2eb340314499
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1" --jq .object.sha)" = af315c33410b8833f3339ee13682081ff8819f2a
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1-rc6" --jq .object.sha)" = 7cd3cc5ca5238cd330c7dedf91f107f33bc3e737
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1-rc7" --jq .object.sha)" = ba8847701e14ccd43dccdd15847c892330dcc6a4
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1.1" --jq .object.sha)" = df0fff631634657403b5436d8a7440de91f79cba
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.1.1-rc1" --jq .object.sha)" = 7fe94a6bee9c0994161a046b73f978b37074043c
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.2" --jq .object.sha)" = 718136bb62386ffbfff3bcdd18de4d403ad14d70
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.2-rc1" --jq .object.sha)" = 7f133dd7aafb60c937c5c7e3067596806a9a6502
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3" --jq .object.sha)" = c26bb1af90872db9a6bfb49ede693294d6a2fd51
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc1" --jq .object.sha)" = 41c35c0f736a06bebd5d167b495923d13e751640
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc2" --jq .object.sha)" = 484fda6ba2cc7b1620f187309fff6246ec4a9d28
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc3" --jq .object.sha)" = 184d71d8003000f933330330628e41f3ddf20b47
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc4" --jq .object.sha)" = ba2bb30e8ab3ff79888f7766f0b5070eca1e80a6
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc5" --jq .object.sha)" = ce38f2a889410b50be130644bb4fe99edb93e24d
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc6" --jq .object.sha)" = 99e97b987db3467ff036dafe74e605c661c33796
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc7" --jq .object.sha)" = 900756d2960ada770ec580a0e6ec3c7d8d27ffb4
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.3-rc8" --jq .object.sha)" = a588b78539144ed0c3dfac3493f46cdf544d3824
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.4" --jq .object.sha)" = 273a6d60360b295523f23bd4b416a34ff4cb2d2b
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.6.4-rc1" --jq .object.sha)" = 66298240b6707c3e3d40e6d60ce079e2be664efe
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0" --jq .object.sha)" = 58a39ededb89c325e17da016c134726c7c5e0374
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc2" --jq .object.sha)" = 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc3" --jq .object.sha)" = 42ef1127af68f1b8d475132e92004bb7a0588bca
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc4" --jq .object.sha)" = 248c91175b473a5b8be11d0fcdf381f23f67c884
+          gh api "repos/$GH_REPO/releases?per_page=100" > releases-after.json
+          python3 - <<'PY'
+          import json
+          before=json.load(open('releases-before.json')); after={r['id']:r for r in json.load(open('releases-after.json'))}
+          for release in before:
+              current=after[release['id']]
+              for field in ('tag_name','name','body','draft','prerelease','target_commitish','created_at','published_at'):
+                  assert release[field]==current[field], (release['tag_name'],field)
+              assert [(a['id'],a['name'],a['digest']) for a in release['assets']]==[(a['id'],a['name'],a['digest']) for a in current['assets']]
+          PY
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc1" --jq .object.sha)" = b733daeae463bac15a909264f624efbae463af77
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc2" --jq .object.sha)" = 703ac9e06273b7a192084b2b6e07204aae3ba004
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc3" --jq .object.sha)" = fa8de584b8834ef9021cd4780842c86e7d3955f7
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .draft)" = true
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .state)" = open
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .merged)" = false
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v0.8.0-rc4-public-verification
+          path: |
+            deliverables
+            public-assets
+            exact-gate-jobs.json
+            exact-gate-all-attempts.json
+          if-no-files-found: error

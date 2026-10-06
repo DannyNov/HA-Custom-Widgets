@@ -34,7 +34,7 @@ class DashboardModelsTest {
     }
 
     @Test fun mainOnlyDashboardKeepsMainAndDefaultScenariosTab() {
-        val config = DashboardConfig(1, emptyList(), emptyMap(), emptyList(), emptyMap(), emptyMap(), true, true)
+        val config = DashboardConfig(1, emptyList(), emptyMap(), emptyList(), emptyMap(), emptyMap(), true, true, showMaintenance = false)
         val state = DashboardState(
             config, emptyList(), emptyList(), emptyList(), MAIN_TAB_ID,
             emptySet(), emptySet(), emptyMap(), 0, false, 0, null,

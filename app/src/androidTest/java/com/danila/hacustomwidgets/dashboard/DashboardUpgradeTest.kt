@@ -97,6 +97,7 @@ class DashboardUpgradeTest {
                     return
                 }
                 val prefs = context.getSharedPreferences("dashboard_widgets", 0)
+                assertEquals(true, repo.getConfig(dashboardId)!!.javaClass.getMethod("getShowMaintenance").invoke(repo.getConfig(dashboardId)))
                 val secondId = prefs.getInt("final-upgrade-second-id", -1)
                 assertEquals(secondId == -1, repo.getConfig(dashboardId)!!.javaClass.getMethod("getShowFavorites").invoke(repo.getConfig(dashboardId)))
                 if (secondId != -1) {

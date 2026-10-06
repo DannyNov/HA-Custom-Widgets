@@ -35,6 +35,7 @@ interface StateChangedWebSocketListener {
     fun onAuthInvalid(socket: WebSocket)
     fun onSubscriptionResult(socket: WebSocket, subscriptionId: Int, success: Boolean, error: String?)
     fun onEntities(socket: WebSocket, subscriptionId: Int, entities: List<HaEntity>, initial: Boolean)
+    fun onRegistryChanged(socket: WebSocket, eventType: String) {}
     fun onClosed(socket: WebSocket, code: Int, reason: String)
     fun onFailure(socket: WebSocket, error: Throwable)
 }
@@ -53,6 +54,14 @@ class HomeAssistantClient(
 ) {
     // An obsolete brightness target must not be replayed by transport recovery.
     private val brightnessHttp = http.newBuilder().retryOnConnectionFailure(false).build()
+
+    suspend fun getRepairs(connection: HomeAssistantConnection) = fetchRepairs(http, connection)
+
+    fun subscribeMaintenanceEvents(socket: WebSocket, firstId: Int) {
+        maintenanceRegistryEvents.forEachIndexed { i, event ->
+            socket.send(JSONObject().put("id", firstId + i).put("type", "subscribe_events").put("event_type", event).toString())
+        }
+    }
 
     suspend fun testConnection(connection: HomeAssistantConnection) = withContext(Dispatchers.IO) {
         execute(connection, "/api/").use { response ->
@@ -197,6 +206,10 @@ class HomeAssistantClient(
                         "event" -> {
                             val subscriptionId = message.optInt("id")
                             val event = message.optJSONObject("event") ?: return@runCatching
+                            if (event.optString("event_type") in maintenanceRegistryEvents) {
+                                listener.onRegistryChanged(webSocket, event.getString("event_type"))
+                                return@runCatching
+                            }
                             val newState = stateChangedEntity(event)
                             if (newState != null) {
                                 listener.onEntities(webSocket, subscriptionId, listOf(newState), false)

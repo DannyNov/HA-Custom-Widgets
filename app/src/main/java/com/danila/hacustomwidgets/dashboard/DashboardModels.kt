@@ -547,6 +547,7 @@ data class DashboardConfig(
     val scenarioHiddenEntityIds: List<String> = emptyList(),
     val scenarioRunnableEntityIds: List<String> = emptyList(),
     val showFavorites: Boolean = true,
+    val showMaintenance: Boolean = true,
 )
 
 object DashboardCustomizationPolicy {
@@ -615,12 +616,14 @@ data class DashboardState(
     val lastUpdatedMillis: Long,
     val error: String?,
     val scenarioRunStatusByEntity: Map<String, DashboardOperationStatus> = emptyMap(),
+    val maintenance: MaintenanceSnapshot = MaintenanceSnapshot(),
 ) {
     val tabs: List<DashboardSpace> = (listOfNotNull(DashboardSpace(MAIN_TAB_ID, "Главное", emptyList()).takeIf { config.showFavorites }) +
         DashboardOrderPolicy.merge(config.spaceOrderIds, spaces.map { it.id })
             .filter { it in config.visibleSpaceIds }
             .mapNotNull { id -> spaces.firstOrNull { it.id == id } } +
-        listOfNotNull(DashboardSpace(SCENARIOS_TAB_ID, tr("Scenarios", "Сценарии"), emptyList()).takeIf { config.scenariosEnabled })).ifEmpty {
+        listOfNotNull(DashboardSpace(SCENARIOS_TAB_ID, tr("Scenarios", "Сценарии"), emptyList()).takeIf { config.scenariosEnabled }) +
+        listOfNotNull(DashboardSpace(MAINTENANCE_TAB_ID, tr("Maintenance", "Обслуживание"), emptyList()).takeIf { config.showMaintenance })).ifEmpty {
             listOf(DashboardSpace(EMPTY_TAB_ID, tr("Choose tabs", "Выберите вкладки"), emptyList()))
         }
     val selectedTab: DashboardSpace get() = tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first()

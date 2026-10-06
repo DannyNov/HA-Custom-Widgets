@@ -1,4 +1,4 @@
-name: v0.7.0 Final compile and tests
+name: v0.8.0 Final compile and tests
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   compile-test:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') && !contains(github.event.head_commit.message, '[publish-v080-rc3]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -44,7 +44,19 @@ jobs:
           rc4="$RUNNER_TEMP/v070-rc4"
           git worktree add --detach "$rc4" 248c91175b473a5b8be11d0fcdf381f23f67c884
           (cd "$rc4" && python3 .github/scripts/verify-v070-rc4-scope.py)
-          python3 .github/scripts/verify-v070-final-scope.py
+          final="$RUNNER_TEMP/v070-final"
+          git worktree add --detach "$final" 58a39ededb89c325e17da016c134726c7c5e0374
+          (cd "$final" && python3 .github/scripts/verify-v070-final-scope.py)
+          rc2="$RUNNER_TEMP/v080-rc2"
+          git worktree add --detach "$rc2" 703ac9e06273b7a192084b2b6e07204aae3ba004
+          (cd "$rc2" && python3 .github/scripts/verify-v080-rc2-scope.py)
+          rc3="$RUNNER_TEMP/v080-rc3"
+          git worktree add --detach "$rc3" fa8de584b8834ef9021cd4780842c86e7d3955f7
+          (cd "$rc3" && python3 .github/scripts/verify-v080-rc3-scope.py)
+          approved_rc4="$RUNNER_TEMP/v080-rc4"
+          git worktree add --detach "$approved_rc4" d963e85424e55fc29924f26c9f3352c9d20a54a5
+          (cd "$approved_rc4" && python3 .github/scripts/verify-v080-rc4-scope.py)
+          python3 .github/scripts/verify-v080-final-scope.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -70,7 +82,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("TEST_RESULT " + " ".join(f"{key}={value}" for key, value in totals.items()))
-          if totals["tests"] < 475 or totals["failures"] or totals["errors"] or totals["skipped"]:
+          if totals["tests"] < 506 or totals["failures"] or totals["errors"] or totals["skipped"]:
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -80,7 +92,7 @@ jobs:
           if-no-files-found: error
 
   glance-host:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') && !contains(github.event.head_commit.message, '[publish-v080-rc3]') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -125,7 +137,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("HOST_TEST_RESULT", totals)
-          if totals["tests"] < 52 or any(totals[k] for k in ("failures", "errors", "skipped")):
+          if totals["tests"] < 80 or any(totals[k] for k in ("failures", "errors", "skipped")):
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -142,12 +154,67 @@ jobs:
             app/build/outputs/androidTest-results/connected
 
   upgrade:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-reviewed-rc4]') && !contains(github.event.head_commit.message, '[publish-v080-rc3]') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
+          - source: v0.8.0-rc4
+            ref: d963e85424e55fc29924f26c9f3352c9d20a54a5
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.8.0-rc4-api36
+            ref: d963e85424e55fc29924f26c9f3352c9d20a54a5
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
+          - source: v0.8.0-rc3
+            ref: fa8de584b8834ef9021cd4780842c86e7d3955f7
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.8.0-rc3-api36
+            ref: fa8de584b8834ef9021cd4780842c86e7d3955f7
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
+          - source: v0.8.0-rc2
+            ref: 703ac9e06273b7a192084b2b6e07204aae3ba004
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.8.0-rc2-api36
+            ref: 703ac9e06273b7a192084b2b6e07204aae3ba004
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
+          - source: v0.8.0-rc1
+            ref: b733daeae463bac15a909264f624efbae463af77
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.8.0-rc1-api36
+            ref: b733daeae463bac15a909264f624efbae463af77
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
+          - source: v0.7.0
+            ref: 58a39ededb89c325e17da016c134726c7c5e0374
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.7.0-api36
+            ref: 58a39ededb89c325e17da016c134726c7c5e0374
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.7.0-rc4
             ref: 248c91175b473a5b8be11d0fcdf381f23f67c884
             fixture: true
@@ -349,4 +416,3 @@ jobs:
         with:
           name: fixture-persistence-evidence
           path: fixture-evidence/
-

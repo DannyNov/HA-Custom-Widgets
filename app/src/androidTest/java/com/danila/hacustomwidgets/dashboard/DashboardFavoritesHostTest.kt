@@ -20,7 +20,7 @@ class DashboardFavoritesHostTest {
     private val catalog = HaCatalog(listOf(HaDeviceGroup(HaDevice("device", "Socket", areaId = "room"),
         listOf(HaEntity("switch.socket", "on", "Socket", null, "2026-09-30T00:00:00Z")))), listOf(HaArea("room", "Room")))
     private fun config(id: Int) = DashboardConfig(id, listOf("area:room"), emptyMap(), listOf("device"),
-        emptyMap(), emptyMap(), false, true)
+        emptyMap(), emptyMap(), false, true, showMaintenance = false)
 
     @Test fun upgradeDefaultIsTrueWithoutRewritingOrLosingFavorites() {
         val c = isolated(); val repo = DashboardRepository(c); repo.saveConfiguration(config(801), catalog)
