@@ -1,4 +1,4 @@
-name: v0.7.0 Final compile and tests
+name: v0.8.0 RC1 compile and tests
 
 on:
   push:
@@ -44,7 +44,9 @@ jobs:
           rc4="$RUNNER_TEMP/v070-rc4"
           git worktree add --detach "$rc4" 248c91175b473a5b8be11d0fcdf381f23f67c884
           (cd "$rc4" && python3 .github/scripts/verify-v070-rc4-scope.py)
-          python3 .github/scripts/verify-v070-final-scope.py
+          final="$RUNNER_TEMP/v070-final"
+          git worktree add --detach "$final" 58a39ededb89c325e17da016c134726c7c5e0374
+          (cd "$final" && python3 .github/scripts/verify-v070-final-scope.py)
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -70,7 +72,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("TEST_RESULT " + " ".join(f"{key}={value}" for key, value in totals.items()))
-          if totals["tests"] < 475 or totals["failures"] or totals["errors"] or totals["skipped"]:
+          if totals["tests"] < 498 or totals["failures"] or totals["errors"] or totals["skipped"]:
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -125,7 +127,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("HOST_TEST_RESULT", totals)
-          if totals["tests"] < 52 or any(totals[k] for k in ("failures", "errors", "skipped")):
+          if totals["tests"] < 60 or any(totals[k] for k in ("failures", "errors", "skipped")):
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4
@@ -148,6 +150,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - source: v0.7.0
+            ref: 58a39ededb89c325e17da016c134726c7c5e0374
+            fixture: true
+            legacy: false
+            favorites: true
+          - source: v0.7.0-api36
+            ref: 58a39ededb89c325e17da016c134726c7c5e0374
+            fixture: true
+            legacy: false
+            favorites: true
+            api: 36
           - source: v0.7.0-rc4
             ref: 248c91175b473a5b8be11d0fcdf381f23f67c884
             fixture: true

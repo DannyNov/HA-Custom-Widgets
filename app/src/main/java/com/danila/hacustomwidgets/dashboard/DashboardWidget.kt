@@ -93,7 +93,7 @@ internal data class DashboardSection(
 )
 
 @Composable
-private fun DashboardContent(
+internal fun DashboardContent(
     context: Context,
     state: DashboardState?,
     appWidgetId: Int,
@@ -118,6 +118,10 @@ private fun DashboardContent(
         }
         DashboardTabs(state, appWidgetId, primary, secondary, accent)
         Spacer(GlanceModifier.height(6.dp))
+        if (state.selectedTabId == MAINTENANCE_TAB_ID) {
+            MaintenanceContent(state.maintenance, primary, secondary)
+            return@Column
+        }
         val sections = dashboardSections(state)
         if (sections.isEmpty()) {
             Text(
@@ -158,7 +162,7 @@ private fun DashboardContent(
 }
 
 @Composable
-private fun DashboardHeader(
+internal fun DashboardHeader(
     context: Context,
     appWidgetId: Int,
     state: DashboardState?,
@@ -193,6 +197,14 @@ private fun DashboardHeader(
             ),
             style = TextStyle(color = accent, fontSize = 18.sp),
         )
+        if (state?.config?.showMaintenance == true) {
+            Box(GlanceModifier.width(48.dp).height(48.dp).clickable(actionRunCallback<DashboardNavigateAction>(
+                actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAINTENANCE_TAB_ID))), contentAlignment = Alignment.Center) {
+                Image(ImageProvider(if (state.maintenance.attention) R.drawable.ic_maintenance_attention else R.drawable.ic_maintenance),
+                    contentDescription = tr("Maintenance", "Обслуживание"), modifier = GlanceModifier.width(24.dp).height(24.dp),
+                    colorFilter = androidx.glance.ColorFilter.tint(if (state.maintenance.attention) ColorProvider(R.color.widget_problem) else accent))
+            }
+        }
         Text(
             "⚙",
             modifier = GlanceModifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)

@@ -45,7 +45,7 @@ class DashboardCatalogRegressionTest {
             val connection = SecureConnectionStore(context).also { it.save("https://catalog-test.invalid", "fixture-token") }
             coordinator = DashboardEventCoordinator(context, connection, HomeAssistantClient(), repo,
                 fetchCatalog = { catalogs++; if (fail) error("fixture failure"); remote },
-                fetchEntities = { _, ids -> states++; remote.groups.flatMap { it.entities }.filter { it.entityId in ids } })
+                fetchRepairIssues = { emptyList() }, fetchEntities = { _, ids -> states++; remote.groups.flatMap { it.entities }.filter { it.entityId in ids } })
         }
         fun expire(id: Int) {
             val prefs = context.getSharedPreferences("dashboard_structure", Context.MODE_PRIVATE)
