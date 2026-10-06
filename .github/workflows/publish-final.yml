@@ -1,4 +1,4 @@
-name: Publish verified v0.7.0 Final
+name: Publish verified v0.8.0 Final
 on:
   push:
     branches: [main]
@@ -14,18 +14,18 @@ jobs:
       contents: write
       actions: read
     concurrency:
-      group: publish-v0.7.0
+      group: publish-v0.8.0
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       SOURCE_SHA: ${{ github.sha }}
-      REVIEWED_SHA: 248c91175b473a5b8be11d0fcdf381f23f67c884
-      TAG: v0.7.0
-      EXPECTED_CODE: '88'
-      GATED_SHA: ae72fb598f3ddd7ac3e1bb4e6cfda3357ced91b1
-      CI_RUN: '37106018714'
-      SIGNED_RUN: '37106018539'
+      REVIEWED_SHA: d963e85424e55fc29924f26c9f3352c9d20a54a5
+      TAG: v0.8.0
+      EXPECTED_CODE: '107'
+      GATED_SHA: 2e6ac298f68d1cdad3f09a3a12b952936ed0eed5
+      CI_RUN: '37531097033'
+      SIGNED_RUN: '37531097020'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -39,13 +39,13 @@ jobs:
           set -euo pipefail
           test "$GH_REPO" = DannyNov/HA-Custom-Widgets
           git diff --exit-code "$REVIEWED_SHA" "$SOURCE_SHA" -- app/src/main app/src/test app/src/androidTest
-          python3 .github/scripts/verify-v070-final-scope.py
-          grep -F 'versionName = "0.7.0"' app/build.gradle.kts
+          python3 .github/scripts/verify-v080-final-scope.py
+          grep -F 'versionName = "0.8.0"' app/build.gradle.kts
           grep -F "versionCode = $EXPECTED_CODE" app/build.gradle.kts
           # Publication-only commits deliberately skip the expensive emulator matrix.
           # Reuse the already completed Final gate and signed build only when the complete
           # app tree is byte-identical to the gated SHA.
-          git diff --exit-code "$GATED_SHA" "$SOURCE_SHA" -- app
+          git diff --exit-code "$GATED_SHA" "$SOURCE_SHA" -- app build.gradle.kts settings.gradle.kts gradle.properties gradle .github/workflows/android.yml .github/workflows/compile-test-v035.yml .github/scripts/verify-v080-final-scope.py
           ci=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN")
           test "$(jq -r .head_sha <<< "$ci")" = "$GATED_SHA"
           test "$(jq -r .status <<< "$ci")" = completed
@@ -54,97 +54,105 @@ jobs:
           test "$(jq -r .head_sha <<< "$signed")" = "$GATED_SHA"
           test "$(jq -r .status <<< "$signed")" = completed
           test "$(jq -r .conclusion <<< "$signed")" = success
+          gh api "repos/$GH_REPO/actions/runs/$CI_RUN/jobs?per_page=100&filter=all" > gate-jobs-all.json
+          jq '{jobs: [.jobs | group_by(.name)[] | sort_by(.run_attempt, .id) | last]}' gate-jobs-all.json > gate-jobs.json
+          test "$(jq --arg sha "$GATED_SHA" '[.jobs[] | select(.head_sha != $sha)] | length' gate-jobs.json)" = 0
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic")] | length' gate-jobs.json)" = 34
+          test "$(jq '[.jobs[] | select(.name != "fixture-persistence-diagnostic" and .conclusion != "success")] | length' gate-jobs.json)" = 0
+          test "$(jq '[.jobs[] | select(.name | startswith("upgrade ("))] | length' gate-jobs.json)" = 31
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_SHA"
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_SHA"
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc2" --jq .object.sha)" = 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc3" --jq .object.sha)" = 42ef1127af68f1b8d475132e92004bb7a0588bca
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc4" --jq .object.sha)" = 248c91175b473a5b8be11d0fcdf381f23f67c884
-          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .draft)" = false
-          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .merged)" = true
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc1" --jq .object.sha)" = b733daeae463bac15a909264f624efbae463af77
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc2" --jq .object.sha)" = 703ac9e06273b7a192084b2b6e07204aae3ba004
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc3" --jq .object.sha)" = fa8de584b8834ef9021cd4780842c86e7d3955f7
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc4" --jq .object.sha)" = d963e85424e55fc29924f26c9f3352c9d20a54a5
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .draft)" = false
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .merged)" = true
       - name: Independently inspect signed APK and AAB before publication
         run: |
           set -euo pipefail
-          gh run download "$SIGNED_RUN" --name HA-Custom-Widgets-v0.7.0-release --dir rc-assets
+          gh run download "$SIGNED_RUN" --name HA-Custom-Widgets-v0.8.0-release --dir rc-assets
           mkdir deliverables
-          cp rc-assets/apk/release/HAWidgets-v0.7.0.apk deliverables/
-          cp rc-assets/bundle/release/app-release.aab deliverables/HAWidgets-v0.7.0.aab
+          cp rc-assets/apk/release/HAWidgets-v0.8.0.apk deliverables/
+          cp rc-assets/bundle/release/app-release.aab deliverables/HAWidgets-v0.8.0.aab
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
-          apk=deliverables/HAWidgets-v0.7.0.apk
+          apk=deliverables/HAWidgets-v0.8.0.apk
           "$APKSIGNER" verify --verbose --print-certs "$apk" | tee deliverables/signature.txt
           cert=$(sed -n 's/^.*certificate SHA-256 digest: //p' deliverables/signature.txt | tr -d ':' | tr '[:upper:]' '[:lower:]')
           test "$cert" = 8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a
           "$AAPT" dump badging "$apk" | tee deliverables/manifest.txt
-          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.7.0'" deliverables/manifest.txt
+          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.8.0'" deliverables/manifest.txt
           grep -Fx "sdkVersion:'31'" deliverables/manifest.txt
           grep -Fx "targetSdkVersion:'36'" deliverables/manifest.txt
           ! grep -q '^application-debuggable:' deliverables/manifest.txt
-          jarsigner -verify deliverables/HAWidgets-v0.7.0.aab | tee deliverables/aab-signature.txt
+          jarsigner -verify deliverables/HAWidgets-v0.8.0.aab | tee deliverables/aab-signature.txt
           grep -F 'jar verified.' deliverables/aab-signature.txt
-          keytool -printcert -jarfile deliverables/HAWidgets-v0.7.0.aab > deliverables/aab-certificate.txt
+          keytool -printcert -jarfile deliverables/HAWidgets-v0.8.0.aab > deliverables/aab-certificate.txt
           grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' deliverables/aab-certificate.txt
           curl --fail --location 'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar' -o bundletool.jar
           echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  bundletool.jar' | sha256sum -c -
-          java -jar bundletool.jar dump manifest --bundle=deliverables/HAWidgets-v0.7.0.aab --module=base > deliverables/aab-manifest.xml
+          java -jar bundletool.jar dump manifest --bundle=deliverables/HAWidgets-v0.8.0.aab --module=base > deliverables/aab-manifest.xml
           python3 - <<'PY'
           import os, xml.etree.ElementTree as ET
           root=ET.parse('deliverables/aab-manifest.xml').getroot()
           ns='{http://schemas.android.com/apk/res/android}'
           assert root.get('package')=='com.danila.hacustomwidgets'
           assert root.get(ns+'versionCode')==os.environ['EXPECTED_CODE']
-          assert root.get(ns+'versionName')=='0.7.0'
+          assert root.get(ns+'versionName')=='0.8.0'
           sdk=root.find('uses-sdk')
           assert sdk.get(ns+'minSdkVersion')=='31' and sdk.get(ns+'targetSdkVersion')=='36'
           assert root.find('application').get(ns+'debuggable','false')=='false'
           PY
           cp rc-assets/apk/release/build-info.txt deliverables/build-info.txt
           printf 'sourceSHA=%s\ngatedSHA=%s\nciRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$GATED_SHA" "$CI_RUN" "$SIGNED_RUN" >> deliverables/build-info.txt
-          (cd deliverables && sha256sum HAWidgets-v0.7.0.apk HAWidgets-v0.7.0.aab > sha256.txt)
+          printf 'preflightMaximum=106\nphysicalBaseSHA=d963e85424e55fc29924f26c9f3352c9d20a54a5\n' >> deliverables/build-info.txt
+          (cd deliverables && sha256sum HAWidgets-v0.8.0.apk HAWidgets-v0.8.0.aab > sha256.txt)
       - name: Publish public Final release and verify public downloads
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then echo 'Final already exists; refusing to overwrite'; exit 1; fi
           if gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then echo 'Tag already exists; refusing to move it'; exit 1; fi
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_SHA"
-          gh release create "$TAG" deliverables/HAWidgets-v0.7.0.apk deliverables/HAWidgets-v0.7.0.aab deliverables/sha256.txt deliverables/build-info.txt deliverables/signature.txt \
-            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.7.0' --notes-file RELEASE_NOTES_v0.7.0.md --latest
+          gh release create "$TAG" deliverables/HAWidgets-v0.8.0.apk deliverables/HAWidgets-v0.8.0.aab deliverables/sha256.txt deliverables/build-info.txt deliverables/signature.txt \
+            --target "$SOURCE_SHA" --title 'HA Custom Widgets v0.8.0' --notes-file RELEASE_NOTES_v0.8.0.md --latest
           gh release view "$TAG" --json url,isDraft,isPrerelease,tagName,targetCommitish | tee deliverables/release.json
           test "$(jq -r .isPrerelease deliverables/release.json)" = false
           test "$(jq -r .isDraft deliverables/release.json)" = false
           test "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .object.sha)" = "$SOURCE_SHA"
           mkdir public-assets
-          for extension in apk aab; do
-            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "https://github.com/$GH_REPO/releases/download/$TAG/HAWidgets-v0.7.0.$extension" -o "public-assets/HAWidgets-v0.7.0.$extension"
-            cmp "deliverables/HAWidgets-v0.7.0.$extension" "public-assets/HAWidgets-v0.7.0.$extension"
+          for asset in HAWidgets-v0.8.0.apk HAWidgets-v0.8.0.aab sha256.txt build-info.txt signature.txt; do
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "https://github.com/$GH_REPO/releases/download/$TAG/$asset" -o "public-assets/$asset"
+            cmp "deliverables/$asset" "public-assets/$asset"
           done
+          (cd public-assets && sha256sum -c sha256.txt)
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
-          "$APKSIGNER" verify --verbose --print-certs public-assets/HAWidgets-v0.7.0.apk | tee public-assets/signature.txt
+          "$APKSIGNER" verify --verbose --print-certs public-assets/HAWidgets-v0.8.0.apk | tee public-assets/signature.txt
           grep -F '8bbb9530cc7954da1fc576f1174dc0dbaaec574d15c024de1ebd6a090d48037a' public-assets/signature.txt
-          "$AAPT" dump badging public-assets/HAWidgets-v0.7.0.apk | tee public-assets/manifest.txt
-          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.7.0'" public-assets/manifest.txt
+          "$AAPT" dump badging public-assets/HAWidgets-v0.8.0.apk | tee public-assets/manifest.txt
+          grep -F "package: name='com.danila.hacustomwidgets' versionCode='$EXPECTED_CODE' versionName='0.8.0'" public-assets/manifest.txt
           grep -Fx "sdkVersion:'31'" public-assets/manifest.txt
           grep -Fx "targetSdkVersion:'36'" public-assets/manifest.txt
           ! grep -q '^application-debuggable:' public-assets/manifest.txt
-          jarsigner -verify public-assets/HAWidgets-v0.7.0.aab | tee public-assets/aab-signature.txt
+          jarsigner -verify public-assets/HAWidgets-v0.8.0.aab | tee public-assets/aab-signature.txt
           grep -F 'jar verified.' public-assets/aab-signature.txt
-          keytool -printcert -jarfile public-assets/HAWidgets-v0.7.0.aab > public-assets/aab-certificate.txt
+          keytool -printcert -jarfile public-assets/HAWidgets-v0.8.0.aab > public-assets/aab-certificate.txt
           grep -F '8B:BB:95:30:CC:79:54:DA:1F:C5:76:F1:17:4D:C0:DB:AA:EC:57:4D:15:C0:24:DE:1E:BD:6A:09:0D:48:03:7A' public-assets/aab-certificate.txt
-          java -jar bundletool.jar dump manifest --bundle=public-assets/HAWidgets-v0.7.0.aab --module=base > public-assets/aab-manifest.xml
+          java -jar bundletool.jar dump manifest --bundle=public-assets/HAWidgets-v0.8.0.aab --module=base > public-assets/aab-manifest.xml
           cmp deliverables/aab-manifest.xml public-assets/aab-manifest.xml
-          (cd public-assets && sha256sum HAWidgets-v0.7.0.apk HAWidgets-v0.7.0.aab > sha256.txt)
+          (cd public-assets && sha256sum HAWidgets-v0.8.0.apk HAWidgets-v0.8.0.aab > sha256.txt)
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_SHA"
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc1" --jq .object.sha)" = afece5e292314a145d4822d7702b992f0f05be1f
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc2" --jq .object.sha)" = 00fdbf0ab983db90d2ad8f6ff25961fb3e6652dc
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc3" --jq .object.sha)" = 42ef1127af68f1b8d475132e92004bb7a0588bca
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.7.0-rc4" --jq .object.sha)" = 248c91175b473a5b8be11d0fcdf381f23f67c884
-          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .draft)" = false
-          test "$(gh api "repos/$GH_REPO/pulls/7" --jq .merged)" = true
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc1" --jq .object.sha)" = b733daeae463bac15a909264f624efbae463af77
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc2" --jq .object.sha)" = 703ac9e06273b7a192084b2b6e07204aae3ba004
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc3" --jq .object.sha)" = fa8de584b8834ef9021cd4780842c86e7d3955f7
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/v0.8.0-rc4" --jq .object.sha)" = d963e85424e55fc29924f26c9f3352c9d20a54a5
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .draft)" = false
+          test "$(gh api "repos/$GH_REPO/pulls/8" --jq .merged)" = true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v0.7.0-public-verification
+          name: v0.8.0-public-verification
           path: |
             deliverables
             public-assets
@@ -154,5 +162,5 @@ jobs:
     needs: publish-final
     uses: ./.github/workflows/telegram-release.yml
     with:
-      release_tag: v0.7.0
+      release_tag: v0.8.0
     secrets: inherit

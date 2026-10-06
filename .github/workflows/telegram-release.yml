@@ -35,7 +35,8 @@ concurrency:
 jobs:
   notify:
     # Never resend on rerun, including after an ambiguous network failure.
-    if: ${{ github.run_attempt == 1 && (((github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (inputs.release_tag == 'v0.6.3' || inputs.release_tag == 'v0.6.4' || inputs.release_tag == 'v0.7.0'))) && github.ref == 'refs/heads/main') || (github.event_name == 'release' && !github.event.release.draft && !github.event.release.prerelease)) }}
+    # v0.8.0 uses the Final caller after public artifact verification, or one verified manual dispatch; release-event delivery is excluded to prevent early or duplicate posts.
+    if: ${{ github.run_attempt == 1 && (((github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (inputs.release_tag == 'v0.6.3' || inputs.release_tag == 'v0.6.4' || inputs.release_tag == 'v0.7.0' || inputs.release_tag == 'v0.8.0'))) && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.release.tag_name != 'v0.8.0' && !github.event.release.draft && !github.event.release.prerelease)) }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish once to the channel
