@@ -66,24 +66,42 @@ class DashboardViewportHostTest {
             host = AppWidgetHostView(activity).apply { setAppWidget(widgetId, provider) }
             activity.surface.addView(host, FrameLayout.LayoutParams(320.px(), 440.px()))
         } }
-        private fun layout() {
-            host.measure(View.MeasureSpec.makeMeasureSpec(320.px(), View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(440.px(), View.MeasureSpec.EXACTLY))
-            host.layout(0, 0, host.measuredWidth, host.measuredHeight)
-        }
         fun publish(state: DashboardState) {
             val remote = runBlocking { composer.compose(context, DpSize(320.dp, 440.dp)) {
                 GlanceTheme { DashboardContent(context, state, widgetId, DpSize(320.dp, 440.dp)) }
             }.remoteViews }
-            instrumentation.runOnMainSync { host.updateAppWidget(remote); layout() }
+            val parcel = android.os.Parcel.obtain()
+            val transported = try {
+                remote.writeToParcel(parcel, 0)
+                android.util.Log.i("ViewportContract", "widget=$widgetId tab=${state.selectedTabId} parcelBytes=${parcel.dataSize()}")
+                assertTrue("RemoteViews must fit the Binder transaction budget: ${parcel.dataSize()} bytes", parcel.dataSize() < 900_000)
+                parcel.setDataPosition(0)
+                android.widget.RemoteViews.CREATOR.createFromParcel(parcel)
+            } finally { parcel.recycle() }
+            instrumentation.runOnMainSync { host.updateAppWidget(transported) }
             settle()
             assertTrue("Host must contain real collections, not an error view", lists().isNotEmpty())
         }
         fun lists() = descendants(host).filterIsInstance<ListView>()
         fun visible() = lists().single { it.visibility == View.VISIBLE }
         fun settle() {
-            instrumentation.waitForIdleSync()
-            instrumentation.runOnMainSync { layout() }
+            // IdleSync does not wait for the next Choreographer layout frame. Observe the
+            // real attached-host frame instead of manually using stale measurements.
+            val frame = java.util.concurrent.CountDownLatch(1)
+            instrumentation.runOnMainSync {
+                host.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+                    override fun onPreDraw(): Boolean {
+                        val list = lists().singleOrNull { it.visibility == View.VISIBLE }
+                        if (list != null && list.childCount > 0 && !list.isLayoutRequested) {
+                            host.viewTreeObserver.removeOnPreDrawListener(this)
+                            frame.countDown()
+                        }
+                        return true
+                    }
+                })
+                host.requestLayout()
+            }
+            assertTrue("Attached host must complete layout with real list children", frame.await(10, java.util.concurrent.TimeUnit.SECONDS))
             instrumentation.waitForIdleSync()
         }
         fun scroll(position: Int, top: Int = -11): Anchor {
@@ -100,6 +118,7 @@ class DashboardViewportHostTest {
     }
     private fun Int.px() = (this * context.resources.displayMetrics.density).toInt()
     private fun withHost(block: (ViewportHostActivity) -> Unit) {
+        instrumentation.setInTouchMode(true)
         ActivityScenario.launch<ViewportHostActivity>(Intent(context, ViewportHostActivity::class.java)).use { scenario ->
             lateinit var activity: ViewportHostActivity
             scenario.onActivity { activity = it }
