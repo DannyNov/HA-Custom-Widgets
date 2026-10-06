@@ -3,7 +3,8 @@ from pathlib import Path
 base='703ac9e06273b7a192084b2b6e07204aae3ba004'
 root='app/src/main/java/com/danila/hacustomwidgets/dashboard/'
 changed=subprocess.check_output(['git','diff','--name-only',base,'HEAD','--','app/src/main']).decode().splitlines()
-assert set(changed)=={root+n+'.kt' for n in ('DashboardWidget','DashboardWidgetConfigActivity','MaintenanceContent')},changed
+assert set(changed)=={root+n+'.kt' for n in ('DashboardWidget','DashboardWidgetConfigActivity','MaintenanceContent','DashboardCollectionsRenderer','GlanceCollectionComposer')} | {
+    'app/src/main/res/layout/dashboard_collection_shell.xml','app/src/main/res/layout/dashboard_collection_list.xml'},changed
 def before(path): return subprocess.check_output(['git','show',base+':'+path]).decode()
 def after(path): return Path(path).read_text(encoding='utf-8')
 def header(s): return s[s.index('fun DashboardHeader('):s.index('@Composable\nprivate fun DashboardTabs(')].strip()
@@ -19,9 +20,14 @@ assert '★' not in s and 'Избран' not in s and 'Show Favorites' not in s
 for token in ('MainTabSettingsText.title','MainTabSettingsText.configure','MainTabSettingsText.select','MainTabVisibilitySetting(showFavorites, onShowFavorites)'):
     assert token in s,token
 meta=Path('app/build.gradle.kts').read_text()
-assert 'versionCode = 96' in meta and 'versionName = "0.8.0-rc3"' in meta
+assert 'versionCode = 97' in meta and 'versionName = "0.8.0-rc3"' in meta
 assert 'minSdk = 31' in meta and 'targetSdk = 36' in meta and 'androidx.glance:glance-appwidget:1.1.1' in meta
 audit=json.loads(Path('V080_RC3_VERSION_AUDIT.json').read_text())
-assert audit['maximum']==95 and audit['ciRuns']==499
+assert audit['maximum']==96 and audit['ciRuns']==503
 assert audit['missing']==['8ac8590fdd4c4df7a9d3bb5b31adc090f6860b2c']
-print('RC3 scope: Main settings terminology; mounted per-space Glance collections; unchanged header geometry and Maintenance behavior')
+renderer=after(root+'DashboardCollectionsRenderer.kt')
+assert 'if (id == selected)' in renderer and renderer.count('setRemoteAdapter(')==1
+assert 'addStableView' in renderer and '0x00e00000' in renderer
+assert 'setSelection' not in renderer and 'setScrollPosition' not in renderer
+assert 'reflection' in after(root+'GlanceCollectionComposer.kt')
+print('RC3 scope: Main terminology; persistent native collections with Glance 1.1.1 rows and active adapter updates; unchanged header geometry and Maintenance behavior')

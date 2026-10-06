@@ -13,3 +13,15 @@ class ViewportHostActivity : ComponentActivity() {
         setContentView(surface)
     }
 }
+
+object ViewportProbe {
+    val counts = java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.atomic.AtomicInteger>()
+}
+
+class ViewportProbeAction : androidx.glance.appwidget.action.ActionCallback {
+    override suspend fun onAction(context: android.content.Context, glanceId: androidx.glance.GlanceId,
+        parameters: androidx.glance.action.ActionParameters) {
+        val id = parameters[DashboardWidgetIdKey] ?: -1
+        ViewportProbe.counts.computeIfAbsent(id) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet()
+    }
+}

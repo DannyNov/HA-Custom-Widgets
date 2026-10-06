@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
+import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -23,6 +24,7 @@ import androidx.glance.visibility
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.AndroidRemoteViews
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
@@ -55,6 +57,9 @@ import com.danila.hacustomwidgets.data.model.HaCatalog
 import java.text.DateFormat
 import java.util.Date
 import java.time.Instant
+import kotlinx.coroutines.flow.map
+
+private data class DashboardRenderSnapshot(val state: DashboardState?, val collections: Map<DpSize, RemoteViews>)
 
 class DashboardWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Exact
@@ -63,11 +68,21 @@ class DashboardWidget : GlanceAppWidget() {
         val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
         val repository = (context.applicationContext as HaWidgetApplication).container.dashboards
         val states = repository.observe(appWidgetId)
+        val sizes = GlanceAppWidgetManager(context).getAppWidgetSizes(id).ifEmpty { listOf(DpSize(180.dp, 110.dp)) }
+        suspend fun render(state: DashboardState?) = DashboardRenderSnapshot(state,
+            if (state == null) emptyMap() else sizes.associateWith {
+                DashboardCollectionsRenderer.render(context, state, appWidgetId, it)
+            })
+        // First publication already contains the real shell. A temporary loading hierarchy
+        // during provider recreation would discard the launcher's retained collections.
+        val initial = render(states.value)
+        val prepared = states.map { render(it) }
         val started = System.currentTimeMillis()
         Log.d(TAG, "provideGlance started widgetId=$appWidgetId ts=$started")
         provideContent {
             val compositionStarted = SystemClock.elapsedRealtime()
-            val state by states.collectAsState()
+            val snapshot by prepared.collectAsState(initial)
+            val state = snapshot.state
             Log.d(
                 TAG,
                 "COMPOSITION_START processStartId=${DashboardDiagnostics.processStartId} widgetId=$appWidgetId " +
@@ -82,7 +97,8 @@ class DashboardWidget : GlanceAppWidget() {
                         "durationMs=${SystemClock.elapsedRealtime() - compositionStarted}",
                 )
             }
-            GlanceTheme { DashboardContent(context, state, appWidgetId, LocalSize.current) }
+            GlanceTheme { DashboardContent(context, state, appWidgetId, LocalSize.current,
+                snapshot.collections[LocalSize.current] ?: snapshot.collections.values.firstOrNull()) }
         }
     }
 }
@@ -100,6 +116,7 @@ internal fun DashboardContent(
     state: DashboardState?,
     appWidgetId: Int,
     size: DpSize,
+    collectionBody: RemoteViews?,
 ) {
     val width = size.width.value.toInt().coerceAtLeast(180)
     val height = size.height.value.toInt().coerceAtLeast(110)
@@ -120,40 +137,16 @@ internal fun DashboardContent(
         }
         DashboardTabs(state, appWidgetId, primary, secondary, accent)
         Spacer(GlanceModifier.height(6.dp))
-        // Keep one collection view per space in the host. Replacing the data of a single
-        // ListView destroys the previous space's viewport; visibility changes do not.
-        // System collections stay mounted even when hidden in configuration. Catalog order
-        // is independent of navigation order, so reordering tabs does not swap view IDs.
-        val collectionState = state.copy(config = state.config.copy(
-            showFavorites = true, scenariosEnabled = true, showMaintenance = true,
-            visibleSpaceIds = state.spaces.map { it.id },
-        ))
-        val collectionIds = listOf(MAIN_TAB_ID, SCENARIOS_TAB_ID, MAINTENANCE_TAB_ID, EMPTY_TAB_ID) +
-            state.spaces.map { it.id }.sorted()
-        Box(GlanceModifier.fillMaxWidth().defaultWeight()) {
-            DashboardCollections(collectionIds, collectionState, state.selectedTab.id,
-                appWidgetId, width, primary, secondary)
-        }
+        AndroidRemoteViews(requireNotNull(collectionBody), GlanceModifier.fillMaxWidth().defaultWeight())
     }
 }
 
 @Composable
-private fun DashboardCollections(
-    ids: List<String>, state: DashboardState, selected: String, appWidgetId: Int,
+internal fun DashboardSpaceList(
+    state: DashboardState, id: String, appWidgetId: Int,
     width: Int, primary: ColorProvider, secondary: ColorProvider,
 ) {
-    // Glance containers translate at most ten children. Partition without truncating spaces.
-    if (ids.size > 10) {
-        ids.chunked((ids.size + 9) / 10).forEach { group ->
-            Box(GlanceModifier.fillMaxSize()) {
-                DashboardCollections(group, state, selected, appWidgetId, width, primary, secondary)
-            }
-        }
-        return
-    }
-    ids.forEach { id ->
-        val modifier = GlanceModifier.fillMaxSize().visibility(
-            if (id == selected) Visibility.Visible else Visibility.Gone)
+        val modifier = GlanceModifier.fillMaxSize()
         if (id == MAINTENANCE_TAB_ID) {
             MaintenanceContent(state.maintenance, primary, secondary, modifier)
         } else {
@@ -192,7 +185,6 @@ private fun DashboardCollections(
                 }
             }
         }
-    }
 }
 
 @Composable
@@ -960,6 +952,7 @@ class DashboardWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val container = (context.applicationContext as HaWidgetApplication).container
         appWidgetIds.forEach(container.dashboards::delete)
+        appWidgetIds.forEach { DashboardCollectionsRenderer.forget(context, it) }
         container.dashboardEvents.stopIfUnused()
         super.onDeleted(context, appWidgetIds)
     }

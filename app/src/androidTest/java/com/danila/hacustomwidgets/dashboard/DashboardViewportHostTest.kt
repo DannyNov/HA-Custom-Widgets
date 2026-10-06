@@ -13,6 +13,7 @@ import android.widget.ListView
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceTheme
+import androidx.glance.action.clickable
 import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
 import androidx.glance.appwidget.GlanceRemoteViews
 import androidx.test.core.app.ActivityScenario
@@ -67,13 +68,17 @@ class DashboardViewportHostTest {
             activity.surface.addView(host, FrameLayout.LayoutParams(320.px(), 440.px()))
         } }
         fun publish(state: DashboardState) {
+            val body = runBlocking { DashboardCollectionsRenderer.render(context, state, widgetId, DpSize(320.dp, 440.dp)) }
             val remote = runBlocking { composer.compose(context, DpSize(320.dp, 440.dp)) {
-                GlanceTheme { DashboardContent(context, state, widgetId, DpSize(320.dp, 440.dp)) }
+                GlanceTheme { DashboardContent(context, state, widgetId, DpSize(320.dp, 440.dp), body) }
             }.remoteViews }
+            publishRemote(remote, state.selectedTabId)
+        }
+        fun publishRemote(remote: android.widget.RemoteViews, tab: String) {
             val parcel = android.os.Parcel.obtain()
             val transported = try {
                 remote.writeToParcel(parcel, 0)
-                android.util.Log.i("ViewportContract", "widget=$widgetId tab=${state.selectedTabId} parcelBytes=${parcel.dataSize()}")
+                android.util.Log.i("ViewportContract", "widget=$widgetId tab=$tab parcelBytes=${parcel.dataSize()}")
                 assertTrue("RemoteViews must fit the Binder transaction budget: ${parcel.dataSize()} bytes", parcel.dataSize() < 900_000)
                 parcel.setDataPosition(0)
                 android.widget.RemoteViews.CREATOR.createFromParcel(parcel)
@@ -81,6 +86,7 @@ class DashboardViewportHostTest {
             instrumentation.runOnMainSync { host.updateAppWidget(transported) }
             settle()
             assertTrue("Host must contain real collections, not an error view", lists().isNotEmpty())
+            assertEquals("Every space must have a distinct hierarchy-state key", lists().size, lists().map { it.id }.distinct().size)
         }
         fun lists() = descendants(host).filterIsInstance<ListView>()
         fun visible() = lists().single { it.visibility == View.VISIBLE }
@@ -105,6 +111,7 @@ class DashboardViewportHostTest {
             instrumentation.waitForIdleSync()
         }
         fun scroll(position: Int, top: Int = -11): Anchor {
+            instrumentation.setInTouchMode(true)
             instrumentation.runOnMainSync { visible().setSelectionFromTop(position, top) }
             settle()
             return anchor().also { assertTrue("Fixture must really scroll", visible().firstVisiblePosition > 0) }
@@ -213,8 +220,9 @@ class DashboardViewportHostTest {
         for (width in listOf(180, 230, 320)) for (scale in listOf(1f, 1.5f, 2f)) {
             val themed = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply { fontScale = scale })
             for (tab in listOf("area:r0", MAIN_TAB_ID, SCENARIOS_TAB_ID, MAINTENANCE_TAB_ID)) {
+                val body = DashboardCollectionsRenderer.render(themed, state.copy(selectedTabId = tab), 9301, DpSize(width.dp, 440.dp))
                 val remote = GlanceRemoteViews().compose(themed, DpSize(width.dp, 440.dp)) {
-                    GlanceTheme { DashboardContent(themed, state.copy(selectedTabId = tab), 9301, DpSize(width.dp, 440.dp)) }
+                    GlanceTheme { DashboardContent(themed, state.copy(selectedTabId = tab), 9301, DpSize(width.dp, 440.dp), body) }
                 }.remoteViews
                 instrumentation.runOnMainSync {
                     val view = remote.apply(themed, null)
@@ -235,5 +243,31 @@ class DashboardViewportHostTest {
         val rebound = Fixture(activity, 9301); rebound.publish(state)
         assertEquals(0, rebound.visible().firstVisiblePosition)
         // A completely new host has no provider-readable previous scroll state.
+    }
+    @Test fun nativeCollectionPreservesRealGlanceFillInActionTransport() = withHost { activity ->
+        val id = 9341; val viewId = 0x00e12345
+        ViewportProbe.counts.remove(id)
+        val items = runBlocking { composeGlanceCollection(context, id, viewId, DpSize(320.dp, 440.dp)) {
+            androidx.glance.appwidget.lazy.LazyColumn {
+                item(itemId = 941L) {
+                    androidx.glance.text.Text("Viewport action probe", modifier = androidx.glance.GlanceModifier.clickable(
+                            androidx.glance.appwidget.action.actionRunCallback<ViewportProbeAction>(
+                                androidx.glance.action.actionParametersOf(DashboardWidgetIdKey to id))))
+                }
+            }
+        } }
+        val native = android.widget.RemoteViews(context.packageName, com.danila.hacustomwidgets.R.layout.dashboard_collection_list, viewId).apply {
+            setPendingIntentTemplate(viewId, DashboardCollectionsRenderer.template(context))
+            setRemoteAdapter(viewId, items)
+        }
+        val fixture = Fixture(activity, id); fixture.publishRemote(native, "probe")
+        instrumentation.runOnMainSync {
+            val target = descendants(fixture.visible()).filterIsInstance<android.widget.TextView>().single { it.text.toString() == "Viewport action probe" }
+            assertTrue(target.performClick())
+        }
+        val deadline = android.os.SystemClock.uptimeMillis() + 5000
+        while ((ViewportProbe.counts[id]?.get() ?: 0) == 0 && android.os.SystemClock.uptimeMillis() < deadline) android.os.SystemClock.sleep(25)
+        assertEquals(1, ViewportProbe.counts[id]?.get())
+        assertFalse(ViewportProbe.counts.containsKey(-1))
     }
 }
