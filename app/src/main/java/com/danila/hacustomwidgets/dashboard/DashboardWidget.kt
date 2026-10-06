@@ -18,6 +18,8 @@ import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
+import androidx.glance.Visibility
+import androidx.glance.visibility
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -118,25 +120,57 @@ internal fun DashboardContent(
         }
         DashboardTabs(state, appWidgetId, primary, secondary, accent)
         Spacer(GlanceModifier.height(6.dp))
-        if (state.selectedTabId == MAINTENANCE_TAB_ID) {
-            MaintenanceContent(state.maintenance, primary, secondary, GlanceModifier.fillMaxWidth().defaultWeight())
-            return@Column
+        // Keep one collection view per space in the host. Replacing the data of a single
+        // ListView destroys the previous space's viewport; visibility changes do not.
+        // System collections stay mounted even when hidden in configuration. Catalog order
+        // is independent of navigation order, so reordering tabs does not swap view IDs.
+        val collectionState = state.copy(config = state.config.copy(
+            showFavorites = true, scenariosEnabled = true, showMaintenance = true,
+            visibleSpaceIds = state.spaces.map { it.id },
+        ))
+        val collectionIds = listOf(MAIN_TAB_ID, SCENARIOS_TAB_ID, MAINTENANCE_TAB_ID, EMPTY_TAB_ID) +
+            state.spaces.map { it.id }.sorted()
+        Box(GlanceModifier.fillMaxWidth().defaultWeight()) {
+            DashboardCollections(collectionIds, collectionState, state.selectedTab.id,
+                appWidgetId, width, primary, secondary)
         }
-        val sections = dashboardSections(state)
-        if (sections.isEmpty()) {
-            Text(
-                if (state.selectedTabId == MAIN_TAB_ID) tr("Add devices to the Main tab", "Добавьте устройства во вкладку «Главное»")
-                else if (state.selectedTabId == SCENARIOS_TAB_ID) tr("No available scenarios", "Нет доступных сценариев")
-                else if (state.selectedTabId == EMPTY_TAB_ID) tr("Choose visible tabs in Dashboard settings", "Выберите видимые вкладки в настройках Dashboard")
+    }
+}
+
+@Composable
+private fun DashboardCollections(
+    ids: List<String>, state: DashboardState, selected: String, appWidgetId: Int,
+    width: Int, primary: ColorProvider, secondary: ColorProvider,
+) {
+    // Glance containers translate at most ten children. Partition without truncating spaces.
+    if (ids.size > 10) {
+        ids.chunked((ids.size + 9) / 10).forEach { group ->
+            Box(GlanceModifier.fillMaxSize()) {
+                DashboardCollections(group, state, selected, appWidgetId, width, primary, secondary)
+            }
+        }
+        return
+    }
+    ids.forEach { id ->
+        val modifier = GlanceModifier.fillMaxSize().visibility(
+            if (id == selected) Visibility.Visible else Visibility.Gone)
+        if (id == MAINTENANCE_TAB_ID) {
+            MaintenanceContent(state.maintenance, primary, secondary, modifier)
+        } else {
+            val tabState = state.copy(selectedTabId = id)
+            val sections = if (id == EMPTY_TAB_ID) emptyList() else dashboardSections(tabState)
+            LazyColumn(modifier) {
+                if (sections.isEmpty()) item(itemId = stableItemId("empty:$id")) { Text(
+                if (id == MAIN_TAB_ID) tr("Add devices to the Main tab", "Добавьте устройства во вкладку «Главное»")
+                else if (id == SCENARIOS_TAB_ID) tr("No available scenarios", "Нет доступных сценариев")
+                else if (id == EMPTY_TAB_ID) tr("Choose visible tabs in Dashboard settings", "Выберите видимые вкладки в настройках Dashboard")
                 else tr("No available devices in this space", "В этом пространстве нет доступных устройств"),
                 style = TextStyle(color = secondary, fontSize = 13.sp),
-            )
-        } else {
-            LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                ) }
                 sections.forEach { section ->
                     if (section.title != null) {
                         item(itemId = stableItemId("section:${section.key}")) {
-                            SectionHeader(section, state, appWidgetId, primary, secondary)
+                            SectionHeader(section, tabState, appWidgetId, primary, secondary)
                         }
                     }
                     if (section.key !in state.collapsedSections) {
@@ -197,9 +231,11 @@ internal fun DashboardHeader(
             ),
             style = TextStyle(color = accent, fontSize = 18.sp),
         )
-        if (state?.config?.showMaintenance == true) {
+        if (state != null) {
             // Fits inside the original refresh/settings row; never sets its height.
-            Box(GlanceModifier.width(36.dp).height(20.dp).clickable(actionRunCallback<DashboardNavigateAction>(
+            Box(GlanceModifier.width(36.dp).height(20.dp)
+                .visibility(if (state.config.showMaintenance) Visibility.Visible else Visibility.Gone)
+                .clickable(actionRunCallback<DashboardNavigateAction>(
                 actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAINTENANCE_TAB_ID))), contentAlignment = Alignment.Center) {
                 Image(ImageProvider(if (state.maintenance.attention) R.drawable.ic_maintenance_attention else R.drawable.ic_maintenance),
                     contentDescription = tr("Maintenance", "Обслуживание"), modifier = GlanceModifier.width(20.dp).height(20.dp),
@@ -230,8 +266,9 @@ private fun DashboardTabs(
             .cornerRadius(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (state.config.showFavorites) Box(
-            modifier = GlanceModifier.width(48.dp).height(48.dp).clickable(
+        Box(
+            modifier = GlanceModifier.width(48.dp).height(48.dp)
+                .visibility(if (state.config.showFavorites) Visibility.Visible else Visibility.Gone).clickable(
                 actionRunCallback<DashboardNavigateAction>(
                     actionParametersOf(DashboardWidgetIdKey to appWidgetId, DashboardTabKey to MAIN_TAB_ID),
                 ),

@@ -112,6 +112,19 @@ class DashboardWidgetConfigActivity : ComponentActivity() {
     companion object { const val EXTRA_IN_APP_SETTINGS = "dashboard_in_app_settings" }
 }
 
+internal object MainTabSettingsText {
+    val title get() = tr("Main tab", "Вкладка «Главное»")
+    val configure get() = tr("Configure Main tab", "Настроить вкладку «Главное»")
+    val show get() = tr("Show “Main” tab", "Показывать вкладку «Главное»")
+    val select get() = tr("Select cards for the Main tab. Tap a device name to choose and order its parameters.",
+        "Отметьте карточки для вкладки «Главное». Нажмите название устройства, чтобы выбрать и упорядочить параметры.")
+}
+
+@Composable
+internal fun MainTabVisibilitySetting(show: Boolean, onShow: (Boolean) -> Unit) {
+    SettingSwitch(MainTabSettingsText.show, show, onShow)
+}
+
 internal enum class ConfigScreen { OVERVIEW, FAVORITES, ENTITIES, TIMER, SPACE_CARDS, GROUP_ORDER, SCENARIOS }
 
 internal data class DashboardGroupingLabelLayoutContract(
@@ -218,7 +231,7 @@ private fun DashboardConfigurator(
 
     val title = when (screen) {
         ConfigScreen.OVERVIEW -> tr("HA Dashboard settings", "Настройка HA Dashboard")
-        ConfigScreen.FAVORITES -> tr("Main tab", "Вкладка «Главное»")
+        ConfigScreen.FAVORITES -> MainTabSettingsText.title
         ConfigScreen.ENTITIES -> currentDevice?.title ?: tr("Device parameters", "Параметры устройства")
         ConfigScreen.TIMER -> tr("Auto-off timer", "Таймер автоотключения")
         ConfigScreen.SPACE_CARDS -> tr("Card order", "Порядок карточек")
@@ -497,10 +510,10 @@ private fun DashboardOverview(
                     }
                 }
         }
-        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text(tr("Configure Main tab", "Настроить вкладку «Главное»")) }
+        Button(onClick = onFavorites, modifier = Modifier.fillMaxWidth()) { Text(MainTabSettingsText.configure) }
         Button(onClick = onScenarios, modifier = Modifier.fillMaxWidth()) { Text(tr("Configure Scenarios", "Настроить Сценарии")) }
         SettingSwitch(tr("Show Maintenance", "Показывать «Обслуживание»"), showMaintenance, onShowMaintenance)
-        SettingSwitch(tr("Show Favorites tab", "Показывать вкладку «★ Избранное»"), showFavorites, onShowFavorites)
+        MainTabVisibilitySetting(showFavorites, onShowFavorites)
         SettingSwitch(tr("Show update time", "Показывать время обновления"), showUpdated, onShowUpdated)
         SettingSwitch(tr("Compact card density", "Компактная плотность карточек"), compact, onCompact)
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
@@ -571,7 +584,7 @@ private fun FavoriteCardsScreen(
     val byKey = filtered.associateBy { it.key }
     val ordered = favorites.mapNotNull(byKey::get) + filtered.filter { it.key !in favorites }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(tr("Select cards for ★ Main. Tap a device name to choose and order its parameters.", "Отметьте карточки для ★ Главного. Нажмите название устройства, чтобы выбрать и упорядочить параметры."))
+        Text(MainTabSettingsText.select)
         OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), label = { Text(tr("Search devices and entities", "Поиск устройств и сущностей")) }, singleLine = true)
         ReorderableList(
             items = ordered,

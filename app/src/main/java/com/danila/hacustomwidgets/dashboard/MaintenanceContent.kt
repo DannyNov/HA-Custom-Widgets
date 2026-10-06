@@ -19,13 +19,13 @@ import com.danila.hacustomwidgets.tr
 @Composable
 internal fun MaintenanceContent(snapshot: MaintenanceSnapshot, primary: ColorProvider, secondary: ColorProvider, modifier: GlanceModifier) {
     LazyColumn(modifier) {
-        if (!snapshot.catalogLoaded) item { Text(tr("Refresh to load Maintenance", "Обновите для загрузки обслуживания"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
-        if (!snapshot.repairsLoaded || snapshot.repairsError) item {
+        if (!snapshot.catalogLoaded) item(itemId = DashboardStatePolicy.stableCollectionId("maintenance:catalog")) { Text(tr("Refresh to load Maintenance", "Обновите для загрузки обслуживания"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
+        if (!snapshot.repairsLoaded || snapshot.repairsError) item(itemId = DashboardStatePolicy.stableCollectionId("maintenance:repairs-status")) {
             Text(if (snapshot.repairsError) tr("Repairs unavailable · refresh to retry", "Repairs недоступны · обновите для повтора")
                 else tr("Repairs have not loaded yet", "Repairs ещё не загружены"), style = TextStyle(color = secondary, fontSize = 12.sp))
         }
-        item { Text(tr("⚠ Requires attention", "⚠ Требуют внимания"), style = TextStyle(color = primary, fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = GlanceModifier.padding(vertical = 6.dp)) }
-        if (!snapshot.attention) item { Text(if (snapshot.catalogLoaded && snapshot.repairsLoaded && !snapshot.repairsError)
+        item(itemId = DashboardStatePolicy.stableCollectionId("maintenance:attention-title")) { Text(tr("⚠ Requires attention", "⚠ Требуют внимания"), style = TextStyle(color = primary, fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = GlanceModifier.padding(vertical = 6.dp)) }
+        if (!snapshot.attention) item(itemId = DashboardStatePolicy.stableCollectionId("maintenance:no-attention")) { Text(if (snapshot.catalogLoaded && snapshot.repairsLoaded && !snapshot.repairsError)
             tr("Nothing requires attention", "Ничего не требует внимания") else tr("No known items require attention", "Среди известных данных нет тревог"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
         snapshot.activeRepairs.forEach { issue -> item(itemId = DashboardStatePolicy.stableCollectionId("repair:${issue.domain}:${issue.issueId}")) {
             MaintenanceRow(issue.title, issue.detail, primary, secondary)
@@ -34,10 +34,10 @@ internal fun MaintenanceContent(snapshot: MaintenanceSnapshot, primary: ColorPro
             MaintenanceRow(entity.friendlyName, tr("Update available · review in Home Assistant", "Доступно обновление · проверьте в Home Assistant"), primary, secondary)
         } }
         snapshot.attentionBatteries.forEach { battery -> item(itemId = DashboardStatePolicy.stableCollectionId("battery:${battery.entity.entityId}")) { MaintenanceBatteryRow(battery, primary, secondary) } }
-        item { Text(tr("Batteries", "Батареи"), style = TextStyle(color = primary, fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = GlanceModifier.padding(vertical = 6.dp)) }
-        if (snapshot.otherBatteries.isEmpty()) item { Text(tr("No other batteries", "Других батарей нет"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
+        item(itemId = DashboardStatePolicy.stableCollectionId("maintenance:batteries-title")) { Text(tr("Batteries", "Батареи"), style = TextStyle(color = primary, fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = GlanceModifier.padding(vertical = 6.dp)) }
+        if (snapshot.otherBatteries.isEmpty()) item(itemId = DashboardStatePolicy.stableCollectionId("maintenance:no-batteries")) { Text(tr("No other batteries", "Других батарей нет"), style = TextStyle(color = secondary, fontSize = 12.sp)) }
         snapshot.otherBatteries.groupBy { it.area }.forEach { (area, batteries) ->
-            item { Text(area ?: tr("Unassigned", "Без помещения"), style = TextStyle(color = secondary, fontSize = 11.sp), modifier = GlanceModifier.padding(vertical = 4.dp)) }
+            item(itemId = DashboardStatePolicy.stableCollectionId("maintenance:area:$area")) { Text(area ?: tr("Unassigned", "Без помещения"), style = TextStyle(color = secondary, fontSize = 11.sp), modifier = GlanceModifier.padding(vertical = 4.dp)) }
             batteries.forEach { battery -> item(itemId = DashboardStatePolicy.stableCollectionId("battery:${battery.entity.entityId}")) { MaintenanceBatteryRow(battery, primary, secondary) } }
         }
     }
