@@ -8,7 +8,6 @@ import com.danila.hacustomwidgets.dashboard.DashboardStartupCoordinator
 import com.danila.hacustomwidgets.data.remote.HomeAssistantClient
 import com.danila.hacustomwidgets.data.security.SecureConnectionStore
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -50,26 +49,8 @@ class AppContainer(context: Context) {
                 val inspected = nativeServer.inspect(current.copy(token = accessTokens.token(current)), endpoint)
                 connectionStore.updateMetadata(current, inspected.server)
             }
-            val manager = appContext.getSystemService(android.net.ConnectivityManager::class.java)
-            if (manager.getNetworkCapabilities(network)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) != true) return@launch
-            val checked = mutableSetOf<String>()
-            kotlinx.coroutines.withTimeoutOrNull(12_000) {
-                discovery.discover().collect { servers ->
-                    val saved = connectionStore.load() ?: return@collect
-                    val instance = saved.server.instanceId ?: return@collect
-                    for (server in servers.filter { it.discoveryId == instance && checked.add(it.url) }) {
-                        if (runCatching { nativeServer.verifyRediscovered(saved, server.url) }.getOrDefault(false)) {
-                            synchronized(com.danila.hacustomwidgets.data.security.sessionLock) {
-                                val latest = connectionStore.load()?.takeIf { it == saved } ?: return@synchronized
-                                val route = com.danila.hacustomwidgets.data.security.ServerRoute(server.url, com.danila.hacustomwidgets.data.security.RouteKind.INTERNAL)
-                                connectionStore.updateMetadata(latest, latest.server.copy(routes =
-                                    (listOf(route) + latest.server.routes).distinctBy { it.url }.take(10)))
-                            }
-                            connections.networkChanged()
-                        }
-                    }
-                }
-            }
+            // Unknown mDNS addresses require explicit user confirmation. A matching TXT UUID
+            // is only a discovery hint, not proof authorizing disclosure of session secrets.
         }
     }
 }

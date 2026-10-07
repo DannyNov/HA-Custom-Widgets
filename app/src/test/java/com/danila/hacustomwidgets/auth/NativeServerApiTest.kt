@@ -13,9 +13,9 @@ class NativeServerApiTest {
             server.enqueue(MockResponse().setBody("""{"components":["mobile_app"],"location_name":"Home"}"""))
             server.enqueue(MockResponse().setResponseCode(201).setBody("""{"webhook_id":"new-webhook","remote_ui_url":"https://home.ui.nabu.casa"}"""))
             server.enqueue(MockResponse().setResponseCode(404))
-            server.enqueue(MockResponse().setBody("""{"instance_id":"instance","remote_ui_url":"https://home.ui.nabu.casa"}"""))
+            server.enqueue(MockResponse().setBody("""{"hass_device_id":"instance","remote_ui_url":"https://home.ui.nabu.casa"}"""))
             val saved = api.inspect(oauthConnection(base), base)
-            assertEquals("new-webhook", saved.server.webhookId); assertEquals("instance", saved.server.instanceId)
+            assertEquals("new-webhook", saved.server.webhookId); assertEquals("instance", saved.server.registrationDeviceId)
             assertNotNull(saved.server.deviceId)
             assertTrue(saved.server.routes.contains(ServerRoute("https://home.ui.nabu.casa", RouteKind.CLOUD)))
             server.takeRequest(); val registration = server.takeRequest()
@@ -42,9 +42,9 @@ class NativeServerApiTest {
             val base = server.url("/").toString().trimEnd('/')
             val c = oauthConnection(base).copy(server = ServerMetadata(webhookId = "native-secret"))
             server.enqueue(MockResponse().setBody("""{"location_name":"Home","components":["mobile_app"],"internal_url":"http://ha.local:8123","external_url":"https://home.example.com"}"""))
-            server.enqueue(MockResponse().setBody("""{"instance_id":"stable-instance","remote_ui_url":"https://example.ui.nabu.casa"}"""))
+            server.enqueue(MockResponse().setBody("""{"hass_device_id":"stable-instance","remote_ui_url":"https://example.ui.nabu.casa"}"""))
             val inspected = NativeServerApi().inspect(c, base)
-            assertEquals("stable-instance", inspected.server.instanceId); assertEquals("Home", inspected.server.name)
+            assertEquals("stable-instance", inspected.server.registrationDeviceId); assertEquals("Home", inspected.server.name)
             assertTrue(inspected.server.routes.contains(ServerRoute("http://ha.local:8123", RouteKind.INTERNAL)))
             assertTrue(inspected.server.routes.contains(ServerRoute("https://home.example.com", RouteKind.EXTERNAL)))
             assertTrue(inspected.server.routes.contains(ServerRoute("https://example.ui.nabu.casa", RouteKind.CLOUD)))
@@ -58,28 +58,45 @@ class NativeServerApiTest {
             val base = server.url("/").toString().trimEnd('/')
             server.enqueue(MockResponse().setBody("""{"location_name":"Home","components":[],"internal_url":null,"external_url":null}"""))
             val inspected = NativeServerApi().inspect(oauthConnection(base), base)
-            assertNull(inspected.server.instanceId); assertNull(inspected.server.webhookId)
+            assertNull(inspected.server.registrationDeviceId); assertNull(inspected.server.webhookId)
             assertTrue(inspected.server.routes.none { it.kind == RouteKind.CLOUD || it.kind == RouteKind.EXTERNAL })
             assertEquals(1, server.requestCount)
         }
     }
-    @Test fun rediscoveryRequiresSameInstanceAndStoredRegistration() {
+    @Test fun rediscoveryNeverSendsSecretsToUnknownAddressesEvenWithLegacyIdentity() {
         MockWebServer().use { server ->
             val base = server.url("/").toString().trimEnd('/')
             val c = oauthConnection().copy(server = ServerMetadata(instanceId = "same", webhookId = "native-secret"))
             val native = NativeServerApi()
-            server.enqueue(MockResponse().setBody("""{"instance_id":"other"}""")); assertFalse(native.verifyRediscovered(c, base))
-            server.enqueue(MockResponse().setBody("""{"instance_id":"same"}""")); assertTrue(native.verifyRediscovered(c, base))
-            assertFalse(native.verifyRediscovered(c.copy(server = ServerMetadata()), base)); assertEquals(2, server.requestCount)
+            assertFalse(native.canReuseDiscovered(c, base))
+            assertFalse(native.canReuseDiscovered(c.copy(server = c.server.copy(registrationDeviceId = "same")), base))
+            assertTrue(native.canReuseDiscovered(c, c.baseUrl))
+            assertEquals(0, server.requestCount)
         }
     }
-    @Test fun metadataInspectionRejectsDifferentInstance() {
+    @Test fun metadataInspectionRejectsDifferentRegistration() {
         MockWebServer().use { server ->
             val base = server.url("/").toString().trimEnd('/')
-            val c = oauthConnection(base).copy(server = ServerMetadata(instanceId = "same", webhookId = "native-secret"))
+            val c = oauthConnection(base).copy(server = ServerMetadata(registrationDeviceId = "same", webhookId = "native-secret"))
             server.enqueue(MockResponse().setBody("""{"components":["mobile_app"]}"""))
-            server.enqueue(MockResponse().setBody("""{"instance_id":"other"}"""))
+            server.enqueue(MockResponse().setBody("""{"hass_device_id":"other"}"""))
             assertThrows(IllegalArgumentException::class.java) { NativeServerApi().inspect(c, base) }
         }
     }
+    @Test fun realNativePayloadWithoutInstanceIdMigratesLegacyMetadata() {
+        MockWebServer().use { server ->
+            val base = server.url("/").toString().trimEnd('/')
+            val c = oauthConnection(base).copy(server = ServerMetadata(instanceId = "legacy-unused", webhookId = "native-secret"))
+            server.enqueue(MockResponse().setBody("""{"components":["mobile_app"],"internal_url":null,"external_url":null}"""))
+            server.enqueue(MockResponse().setBody("""{"hass_device_id":"registration-device","location_name":"Home","entities":{}}"""))
+            val inspected = NativeServerApi().inspect(c, base)
+            assertEquals("registration-device", inspected.server.registrationDeviceId)
+            assertEquals("legacy-unused", inspected.server.instanceId)
+            assertTrue(inspected.server.routes.contains(ServerRoute(base, RouteKind.DISCOVERED)))
+            assertFalse(inspected.server.routes.any { it.kind == RouteKind.INTERNAL })
+            assertEquals(inspected.server, ServerMetadata.fromJson(inspected.server.toJson()))
+            assertEquals(c.sessionId, inspected.sessionId)
+        }
+    }
+
 }

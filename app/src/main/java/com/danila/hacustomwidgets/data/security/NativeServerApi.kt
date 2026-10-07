@@ -44,7 +44,7 @@ class NativeServerApi(
         add(config.optString("external_url").takeUnless { config.isNull("external_url") }, RouteKind.EXTERNAL)
         var webhook = old.webhookId
         val device = old.deviceId ?: UUID.randomUUID().toString()
-        var instance = old.instanceId
+        var registrationDevice = old.registrationDeviceId
         var cloud: String? = null
         val components = config.optJSONArray("components")
         val mobileAvailable = components != null && (0 until components.length()).any { components.optString(it) == "mobile_app" }
@@ -71,16 +71,16 @@ class NativeServerApi(
                         }
                     }
                     val resolved = requireNotNull(nativeConfig)
-                    val received = resolved.optString("instance_id").takeIf { it.isNotBlank() }
-                    require(instance == null || received == instance) { "Home Assistant instance mismatch" }
-                    instance = received ?: instance
+                    val received = resolved.optString("hass_device_id").takeUnless { resolved.isNull("hass_device_id") || it.isBlank() }
+                    require(registrationDevice == null || received == registrationDevice) { "Home Assistant registration mismatch" }
+                    registrationDevice = received ?: registrationDevice
                     cloud = resolved.optString("remote_ui_url").takeUnless { resolved.isNull("remote_ui_url") } ?: cloud
                 }
             } catch (_: IOException) { /* Retain known metadata, expose unavailable remote access in UI. */ }
         }
         add(cloud, RouteKind.CLOUD)
         routes.add(ServerRoute(endpoint, RouteKind.DISCOVERED))
-        return connection.copy(server = old.copy(instanceId = instance,
+        return connection.copy(server = old.copy(registrationDeviceId = registrationDevice,
             name = config.optString("location_name", "Home Assistant"),
             routes = (routes + old.routes).distinctBy { it.url }.take(10), webhookId = webhook, deviceId = device,
             lastWorkingUrl = endpoint, lastSuccessAt = System.currentTimeMillis()))
@@ -90,9 +90,25 @@ class NativeServerApi(
         "/api/webhook/" + okhttp3.HttpUrl.Builder().scheme("https").host("localhost").addPathSegment(webhook).build().encodedPath.removePrefix("/"),
         null, JSONObject().put("type", "get_config"))
 
-    fun verifyRediscovered(connection: HomeAssistantConnection, endpoint: String): Boolean {
-        val expected = connection.server.instanceId ?: return false
-        val webhook = connection.server.webhookId ?: return false
-        return nativeConfig(endpoint, webhook).optString("instance_id") == expected
+    fun canReuseDiscovered(connection: HomeAssistantConnection, endpoint: String): Boolean {
+        // mDNS UUID/name/IP and /api/config are not authenticated instance identity.
+        // Never send a bearer or webhook secret to a newly advertised DHCP address.
+        return RouteTrustPolicy.isKnown(connection, endpoint)
     }
+
+    fun acceptDiscovered(connection: HomeAssistantConnection, endpoint: String, userConfirmed: Boolean): HomeAssistantConnection {
+        val url = OAuthPolicy.normalizeUrl(endpoint)
+        require(userConfirmed || RouteTrustPolicy.isKnown(connection, url)) { "Confirm this Home Assistant address first" }
+        val inspected = inspect(connection, url)
+        return inspected.copy(server = inspected.server.copy(
+            routes = (inspected.server.routes + ServerRoute(url, RouteKind.DISCOVERED)).distinctBy { it.url },
+            // Adding a fallback must not displace a working primary endpoint.
+            lastWorkingUrl = connection.server.lastWorkingUrl,
+            lastSuccessAt = connection.server.lastSuccessAt))
+    }
+}
+
+object RouteTrustPolicy {
+    fun isKnown(connection: HomeAssistantConnection, endpoint: String): Boolean =
+        endpoint == connection.baseUrl || connection.server.routes.any { it.url == endpoint }
 }

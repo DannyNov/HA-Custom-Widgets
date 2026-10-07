@@ -117,14 +117,22 @@ class MainActivity : ComponentActivity() {
                                 savedConnection.value = container.connectionStore.load()
                                 authStatus.value = tr("Home Assistant is available", "Home Assistant –¥–æ—Å—Ç—É–ø–µ–Ω")
                             },
+                            onDiscovered = { input ->
+                                val current = container.connectionStore.load() ?: error("Home Assistant not configured")
+                                withContext(Dispatchers.IO) {
+                                    val token = container.accessTokens.token(current)
+                                    val inspected = container.nativeServer.acceptDiscovered(current.copy(token = token), input, userConfirmed = true)
+                                    container.connectionStore.updateMetadata(current, inspected.server)
+                                }
+                                container.connections.networkChanged()
+                                savedConnection.value = container.connectionStore.load()
+                                authStatus.value = tr("Local fallback saved", "ÀÓÍ‡Î¸Ì˚È ÂÁÂ‚Ì˚È ‡‰ÂÒ ÒÓı‡Ì∏Ì")
+                            },
                             onExternal = { input ->
                                 val url = OAuthPolicy.normalizeUrl(input)
                                 require(url.startsWith("https://")) { "–î–ª—è —É–¥–∞–ª—ë–Ω–Ω–æ–≥–æ –¥–æ—Å—Ç—É–ø–∞ –Ω—É–∂–µ–Ω HTTPS / Remote access requires HTTPS" }
                                 val current = container.connectionStore.load() ?: error("Home Assistant not configured")
                                 withContext(Dispatchers.IO) {
-                                    if (current.server.instanceId != null && current.server.webhookId != null) {
-                                        require(container.nativeServer.verifyRediscovered(current, url)) { "–≠—Ç–æ –¥—Ä—É–≥–æ–π Home Assistant / Home Assistant instance mismatch" }
-                                    }
                                     val token = container.accessTokens.token(current)
                                     val inspected = container.nativeServer.inspect(current.copy(token = token), url)
                                     container.connectionStore.updateMetadata(current, inspected.server.copy(routes =

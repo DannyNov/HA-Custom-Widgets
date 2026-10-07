@@ -97,4 +97,42 @@ class OAuthFlowTest {
             auth.logout(localOnly = true); assertNull(store.load())
         }
     }
+    @Test fun oauthFromDiscoveredLanRetainsDiscoveredAlongsideExternalWithoutInstanceId() {
+        listOf("null", "\"\"").forEach { internal ->
+            MockWebServer().use { server ->
+                val base = server.url("/").toString().trimEnd('/')
+                val remote = "https://home.example.com"
+                val store = AuthTestStore()
+                server.enqueue(tokens())
+                server.enqueue(MockResponse().setBody("""{"components":[],"internal_url":$internal,"external_url":"$remote"}"""))
+                val native = NativeServerApi()
+                val auth = flow(store, OAuthTransport(), native::inspect)
+                auth.complete(callback(auth.begin(base)))
+                val c = store.load()!!
+                assertTrue(c.server.routes.contains(ServerRoute(base, RouteKind.DISCOVERED)))
+                assertTrue(c.server.routes.contains(ServerRoute(remote, RouteKind.EXTERNAL)))
+                assertFalse(c.server.routes.any { it.kind == RouteKind.INTERNAL })
+                assertNull(c.server.instanceId)
+                assertTrue(c.isOAuth)
+            }
+        }
+    }
+
+    @Test fun explicitLocalTrustIsRequiredBeforeAnyCredentialsLeaveKnownRoutes() {
+        MockWebServer().use { server ->
+            val lan = server.url("/").toString().trimEnd('/')
+            val c = oauthConnection().copy(server = ServerMetadata(lastWorkingUrl = "https://ha.example.com"))
+            val api = NativeServerApi()
+            assertThrows(IllegalArgumentException::class.java) { api.acceptDiscovered(c, lan, false) }
+            assertEquals(0, server.requestCount)
+            server.enqueue(MockResponse().setBody("""{"components":[],"internal_url":null,"external_url":"https://ha.example.com"}"""))
+            val saved = api.acceptDiscovered(c, lan, true)
+            assertTrue(saved.server.routes.contains(ServerRoute(lan, RouteKind.DISCOVERED)))
+            assertEquals(c.server.lastWorkingUrl, saved.server.lastWorkingUrl)
+            assertEquals(c.sessionId, saved.sessionId)
+            assertEquals(c.refreshToken, saved.refreshToken)
+            assertEquals("Bearer " + c.token, server.takeRequest().getHeader("Authorization"))
+        }
+    }
+
 }
