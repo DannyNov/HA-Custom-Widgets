@@ -1,0 +1,9 @@
+{
+  "versionName": "0.9.0",
+  "versionCode": 108,
+  "previousMaximum": 107,
+  "previousLatest": "v0.8.0",
+  "auditedRuns": 584,
+  "auditedCommits": 208,
+  "physicallyApprovedSHA": "cdd4c0ae87c0f3d3b6946dce6c22f338fab1fa48"
+}

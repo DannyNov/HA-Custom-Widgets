@@ -9,7 +9,7 @@ it now runs in a detached worktree, like the other historical guards.
 
 Current HEAD runs `verify-current-project.py` and its regression tests:
 strict UTF-8, replacement/control/mojibake detection, well-formed XML,
-package `com.danila.hacustomwidgets`, version 0.8.0/107, minSdk 31,
+package `com.danila.hacustomwidgets`, version 0.9.0/108, minSdk 31,
 compile/target SDK 36, and preservation of the 31 upgrade and API 31/36 host
 matrices. Unit, instrumentation and upgrade jobs remain enabled. This check
 does not freeze future source bytes or replace functional tests.

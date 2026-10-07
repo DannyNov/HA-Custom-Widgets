@@ -73,14 +73,16 @@
 
 - Android 12 (API 31) или новее;
 - доступный с телефона сервер Home Assistant;
-- Long-Lived Access Token Home Assistant.
+- учётная запись Home Assistant для входа через OAuth (существующие Long-Lived Access Tokens также поддерживаются).
 
 ## Установка
 
 1. Откройте [последний релиз на GitHub](https://github.com/DannyNov/HA-Custom-Widgets/releases/latest) и скачайте APK (`HAWidgets-v*.apk`) из раздела **Assets**.
 2. Разрешите установку APK для браузера или файлового менеджера, из которого открываете файл.
 3. Установите APK и откройте **HA Custom Widgets**.
-4. Укажите адрес Home Assistant и Long-Lived Access Token, затем нажмите **«Проверить и сохранить»**.
+4. Найдите Home Assistant в локальной сети или укажите его адрес и войдите через Home Assistant OAuth. Существующие подключения с LLAT поддерживаются; переход на OAuth добровольный.
+
+OAuth-подключения автоматически обновляют токены и переключаются между настроенным внешним и доверенным локальным адресом. Удалённый доступ, включая Nabu Casa Cloud, зависит от конфигурации Home Assistant и сети. Android App Links возвращают в приложение после входа.
 5. Удерживайте пустое место на домашнем экране Android, откройте **«Виджеты»**, найдите **HA Custom Widgets** и перетащите **HA Dashboard** на домашний экран.
 6. Настройте Dashboard и измените его размер при необходимости.
 

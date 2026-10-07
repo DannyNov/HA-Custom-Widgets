@@ -73,14 +73,16 @@ The Home Assistant connection (server address and access token) is shared by all
 
 - Android 12 (API 31) or later;
 - a Home Assistant instance reachable from the phone;
-- a Home Assistant Long-Lived Access Token.
+- a Home Assistant account for OAuth sign-in (existing Long-Lived Access Tokens remain supported).
 
 ## Installation
 
 1. Open the [latest GitHub Release](https://github.com/DannyNov/HA-Custom-Widgets/releases/latest) and download the APK (`HAWidgets-v*.apk`) from **Assets**.
 2. Allow APK installation from the browser or file manager used to open it.
 3. Install the APK and open **HA Custom Widgets**.
-4. Enter the Home Assistant URL and Long-Lived Access Token, then select **Check and save**.
+4. Discover Home Assistant on your local network or enter its URL, then sign in through Home Assistant OAuth. Existing LLAT connections remain supported and can migrate voluntarily.
+
+OAuth connections refresh tokens automatically and can switch between configured external and trusted LAN addresses. Remote access, including Nabu Casa Cloud, depends on your Home Assistant and network configuration. Android App Links return you to the app after sign-in.
 5. Touch and hold an empty area of the Android Home screen, open **Widgets**, find **HA Custom Widgets**, and drag **HA Dashboard** to the Home screen.
 6. Configure the Dashboard and resize it as needed.
 

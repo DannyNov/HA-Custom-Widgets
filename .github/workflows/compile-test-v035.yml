@@ -1,4 +1,4 @@
-name: v0.8.0 Final compile and tests
+name: Android compile and regression tests
 
 on:
   push:
@@ -86,7 +86,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, 0))
           print("TEST_RESULT " + " ".join(f"{key}={value}" for key, value in totals.items()))
-          if totals["tests"] < 506 or totals["failures"] or totals["errors"] or totals["skipped"]:
+          if totals["tests"] < 551 or totals["failures"] or totals["errors"] or totals["skipped"]:
               raise SystemExit(1)
           PY
       - uses: actions/upload-artifact@v4

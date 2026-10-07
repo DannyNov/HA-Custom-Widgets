@@ -27,7 +27,7 @@ def main():
             count += 1
     build = Path('app/build.gradle.kts').read_text(encoding='utf-8')
     for setting, value in [('minSdk', '31'), ('targetSdk', '36'), ('compileSdk', '36'),
-                           ('versionCode', '107'), ('versionName', '"0.8.0"'),
+                           ('versionCode', '108'), ('versionName', '"0.9.0"'),
                            ('applicationId', '"com.danila.hacustomwidgets"')]:
         if not re.search(r'\b' + setting + r'\s*=\s*' + re.escape(value) + r'\s*$', build, re.M):
             raise ValueError(f'Unexpected {setting}; update supported policy explicitly')
