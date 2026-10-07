@@ -111,6 +111,7 @@ class MainActivity : ComponentActivity() {
                             onCancel = { container.oauth.cancel(); pendingLogin.value = false; authStatus.value = "" },
                             onLogout = { localOnly ->
                                 withContext(Dispatchers.IO) { container.oauth.logout(localOnly) }
+                                refreshPendingLogin()
                                 savedConnection.value = null
                                 container.dashboardEvents.connectionChanged()
                                 authStatus.value = tr("Home Assistant disconnected. Widget settings kept.", "Home Assistant отключён. Настройки виджетов сохранены.")
