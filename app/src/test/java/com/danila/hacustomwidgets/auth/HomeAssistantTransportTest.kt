@@ -86,12 +86,18 @@ class HomeAssistantTransportTest {
     @Test fun registryAndRepairsWebSocketsRefreshRejectedTokensAndReconnect() = runBlocking {
         MockWebServer().use { server ->
             val opens = AtomicInteger(); val observedTokens = mutableListOf<String>()
+            val closed = java.util.concurrent.CountDownLatch(4)
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     if (request.path == "/api/states") return MockResponse().setBody("[]")
                     val number = opens.incrementAndGet()
                     return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
-                        override fun onOpen(socket: WebSocket, response: Response) { socket.send("""{"type":"auth_required"}""") }
+                        override fun onOpen(socket: WebSocket, response: Response) {
+                            socket.send("""{"type":"auth_required"}""")
+                        }
+                        override fun onClosing(socket: WebSocket, code: Int, reason: String) { socket.close(code, reason) }
+                        override fun onClosed(socket: WebSocket, code: Int, reason: String) { closed.countDown() }
+                        override fun onFailure(socket: WebSocket, error: Throwable, response: Response?) { closed.countDown() }
                         override fun onMessage(socket: WebSocket, text: String) {
                             val json = JSONObject(text)
                             if (json.getString("type") == "auth") {
@@ -108,10 +114,16 @@ class HomeAssistantTransportTest {
             val c = oauthConnection(server.url("/").toString().trimEnd('/')); val store = AuthTestStore(c); var refreshes = 0
             val manager = AccessTokenManager(store, { refreshes++; it.copy(token = "new-$refreshes") }, { 100 })
             val client = HomeAssistantClient(accessTokens = manager)
-            assertTrue(client.getCatalog(c).groups.isEmpty())
-            assertTrue(client.getRepairs(c).isEmpty())
-            assertEquals(2, refreshes); assertEquals(4, opens.get())
-            assertEquals(listOf("access-secret", "new-1", "new-1", "new-2"), observedTokens)
+            try {
+                assertTrue(client.getCatalog(c).groups.isEmpty())
+                assertTrue(client.getRepairs(c).isEmpty())
+                assertEquals(2, refreshes); assertEquals(4, opens.get())
+                assertEquals(listOf("access-secret", "new-1", "new-1", "new-2"), observedTokens)
+            } finally {
+                // Wait for server WebSocket tasks before MockWebServer closes its queue.
+                // Otherwise a racing client cancellation can make shutdown fail after PASS.
+                assertTrue("Mock WebSockets did not terminate", closed.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            }
         }
     }
 }
