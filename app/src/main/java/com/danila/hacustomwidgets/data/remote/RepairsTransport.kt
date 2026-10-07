@@ -13,7 +13,12 @@ import org.json.JSONArray
 import java.io.IOException
 
 /** Read-only snapshot; separate bounded request socket, same HA connection/token. */
-internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantConnection): List<RepairIssue> {
+internal class WebSocketUnauthorized(val rejected: String) : IOException("Home Assistant authentication rejected")
+
+internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantConnection,
+    accessToken: (HomeAssistantConnection) -> String = { it.token },
+    onAuthenticated: (String) -> Unit = {},
+): List<RepairIssue> {
     val result = CompletableDeferred<List<RepairIssue>>()
     val base = connection.baseUrl.toHttpUrl()
     val url = base.newBuilder().addPathSegments("api/websocket").build().toString()
@@ -21,7 +26,12 @@ internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantC
     var issues = emptyList<RepairIssue>()
     var titles = emptyMap<String, String>()
     val listedIssues = java.util.concurrent.atomic.AtomicReference<List<RepairIssue>?>(null)
-    val socket = http.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
+    var sentToken = ""
+    var socketEndpoint = connection.baseUrl
+    val socket = http.newWebSocket(Request.Builder().url(url).tag(HomeAssistantConnection::class.java, connection).build(), object : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            socketEndpoint = response.request.url.toString().removeSuffix("/api/websocket")
+        }
         fun translation(socket: WebSocket, id: Int, language: String) {
             socket.send(JSONObject().put("id", id).put("type", "frontend/get_translations").put("language", language)
                 .put("category", "issues").put("integration", JSONArray(issues.map { it.domain }.distinct())).toString())
@@ -30,9 +40,9 @@ internal suspend fun fetchRepairs(http: OkHttpClient, connection: HomeAssistantC
             runCatching {
                 val message = JSONObject(text)
                 when (message.optString("type")) {
-                    "auth_required" -> webSocket.send(JSONObject().put("type", "auth").put("access_token", connection.token).toString())
-                    "auth_invalid" -> throw IOException("HA authentication failed")
-                    "auth_ok" -> webSocket.send(JSONObject().put("id", 1).put("type", "repairs/list_issues").toString())
+                    "auth_required" -> { sentToken = accessToken(connection); webSocket.send(JSONObject().put("type", "auth").put("access_token", sentToken).toString()) }
+                    "auth_invalid" -> throw WebSocketUnauthorized(sentToken)
+                    "auth_ok" -> { onAuthenticated(socketEndpoint); webSocket.send(JSONObject().put("id", 1).put("type", "repairs/list_issues").toString()) }
                     "result" -> when (message.getInt("id")) {
                         1 -> {
                             if (!message.optBoolean("success")) throw IOException("Repairs API unavailable")

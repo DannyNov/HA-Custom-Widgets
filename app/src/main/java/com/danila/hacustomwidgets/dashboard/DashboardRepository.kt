@@ -94,7 +94,7 @@ class DashboardRepository(context: Context) {
 
     private fun brightnessConnectionId(): String? = timerConnection.load()?.let {
         java.security.MessageDigest.getInstance("SHA-256")
-            .digest((it.baseUrl + "\u0000" + it.token).toByteArray())
+            .digest((if (it.isOAuth) it.sessionId else it.baseUrl + "\u0000" + it.token).toByteArray())
             .joinToString("") { byte -> "%02x".format(byte) }
     }
 

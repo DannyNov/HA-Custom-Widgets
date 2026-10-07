@@ -60,20 +60,82 @@ import androidx.compose.foundation.Image
 import android.graphics.Bitmap
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.danila.hacustomwidgets.data.security.OAuthPolicy
+import com.danila.hacustomwidgets.data.security.RouteKind
+import com.danila.hacustomwidgets.data.security.ServerRoute
 
 class MainActivity : ComponentActivity() {
     private val appContainer get() = (application as HaWidgetApplication).container
     private val realtimeGranted = mutableStateOf(false)
+    private val savedConnection = mutableStateOf<HomeAssistantConnection?>(null)
+    private val authStatus = mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = appContainer
+        savedConnection.value = container.connectionStore.load()
+        if (container.connectionStore.hasUnreadableCredentials()) authStatus.value = tr(
+            "Stored credentials cannot be decrypted. Sign in again; widget settings are kept.",
+            "Не удалось расшифровать сохранённый доступ. Войдите заново; настройки виджетов сохранены.")
         realtimeGranted.value = RealtimeNotificationAccess.isGranted(this)
         setContent {
             HaCustomWidgetsTheme {
                 ConnectionScreen(
-                    initialUrl = container.connectionStore.load()?.baseUrl.orEmpty(),
-                    hasStoredToken = container.connectionStore.load() != null,
+                    initialUrl = savedConnection.value?.baseUrl.orEmpty(),
+                    hasStoredToken = savedConnection.value != null,
+                    authPanel = {
+                        AuthPanel(savedConnection.value, authStatus.value, container.discovery,
+                            onLogin = { url ->
+                                val links = getSystemService(android.content.pm.verify.domain.DomainVerificationManager::class.java)
+                                    .getDomainVerificationUserState(packageName)
+                                check(links?.isLinkHandlingAllowed == true &&
+                                    links.hostToStateMap["dannynov.github.io"] == android.content.pm.verify.domain.DomainVerificationUserState.DOMAIN_STATE_VERIFIED) {
+                                    tr("Secure sign-in is not activated for this build. The project owner must publish the App Links verification file, then reinstall or verify links in Android settings.",
+                                        "Безопасный вход пока не активирован для этой сборки. Владелец проекта должен разместить файл проверки App Links; после этого нужно переустановить приложение или проверить ссылки в настройках Android.")
+                                }
+                                val authorize = withContext(Dispatchers.IO) { container.oauth.begin(url) }
+                                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authorize)).addCategory(Intent.CATEGORY_BROWSABLE)) }
+                                catch (_: android.content.ActivityNotFoundException) {
+                                    withContext(Dispatchers.IO) { container.oauth.cancel() }
+                                    error(tr("Install a browser to sign in", "Для входа нужен браузер"))
+                                }
+                                authStatus.value = tr("Finish signing in in the browser", "Завершите вход в браузере")
+                            },
+                            onCancel = { container.oauth.cancel() },
+                            onLogout = { localOnly ->
+                                withContext(Dispatchers.IO) { container.oauth.logout(localOnly) }
+                                savedConnection.value = null
+                                container.dashboardEvents.connectionChanged()
+                                authStatus.value = tr("Home Assistant disconnected. Widget settings kept.", "Home Assistant отключён. Настройки виджетов сохранены.")
+                            },
+                            onCheck = {
+                                val connection = container.connectionStore.load() ?: error("Home Assistant not configured")
+                                container.client.testConnection(connection)
+                                savedConnection.value = container.connectionStore.load()
+                                authStatus.value = tr("Home Assistant is available", "Home Assistant доступен")
+                            },
+                            onExternal = { input ->
+                                val url = OAuthPolicy.normalizeUrl(input)
+                                require(url.startsWith("https://")) { "Для удалённого доступа нужен HTTPS / Remote access requires HTTPS" }
+                                val current = container.connectionStore.load() ?: error("Home Assistant not configured")
+                                withContext(Dispatchers.IO) {
+                                    if (current.server.instanceId != null && current.server.webhookId != null) {
+                                        require(container.nativeServer.verifyRediscovered(current, url)) { "Это другой Home Assistant / Home Assistant instance mismatch" }
+                                    }
+                                    val token = container.accessTokens.token(current)
+                                    val inspected = container.nativeServer.inspect(current.copy(token = token), url)
+                                    container.connectionStore.updateMetadata(current, inspected.server.copy(routes =
+                                        (listOf(ServerRoute(url, RouteKind.EXTERNAL)) + inspected.server.routes).distinctBy { it.url }))
+                                }
+                                container.connections.networkChanged()
+                                savedConnection.value = container.connectionStore.load()
+                                authStatus.value = tr("Remote address verified and saved", "Внешний адрес проверен и сохранён")
+                            },
+                        )
+                    },
                     realtimeGranted = realtimeGranted.value,
                     dashboards = container.dashboards.all().map { it.appWidgetId to dashboardLabel(it.appWidgetId, container.dashboards.get(it.appWidgetId)) },
                     onOpenDashboardSettings = { widgetId ->
@@ -88,22 +150,53 @@ class MainActivity : ComponentActivity() {
                             .onFailure { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
                     },
                     onConnect = { url, token ->
+                        val previous = container.connectionStore.load()
+                        val normalized = OAuthPolicy.normalizeUrl(url)
+                        require(previous == null || previous.baseUrl == normalized) { "Сначала отключите прежний сервер / Disconnect the previous server first" }
                         val effectiveToken = token.ifBlank {
                             container.connectionStore.load()?.token.orEmpty()
                         }
-                        val connection = HomeAssistantConnection(url.trim().trimEnd('/'), effectiveToken)
+                        val connection = if (token.isBlank() && previous != null) previous else HomeAssistantConnection(normalized, effectiveToken)
                         container.client.testConnection(connection)
-                        container.connectionStore.save(connection.baseUrl, connection.token)
-                        container.dashboardEvents.ensureStarted("CONNECTION_SAVED")
+                        if (!connection.isOAuth) container.connectionStore.save(connection.baseUrl, connection.token)
+                        savedConnection.value = container.connectionStore.load()
+                        container.dashboardEvents.connectionChanged()
                         container.client.getEntities(connection).size
                     },
                 )
+            }
+        }
+        handleOAuthIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOAuthIntent(intent)
+    }
+
+    private fun handleOAuthIntent(incoming: Intent) {
+        if (incoming.action != Intent.ACTION_VIEW) return
+        val uri = incoming.data?.toString() ?: return
+        incoming.data = null // Avoid replay on Activity recreation; pending state is also consumed durably.
+        lifecycleScope.launch {
+            authStatus.value = tr("Completing sign-in…", "Завершаю вход…")
+            try {
+                withContext(Dispatchers.IO) { appContainer.oauth.complete(uri) }
+                savedConnection.value = appContainer.connectionStore.load()
+                appContainer.connections.networkChanged()
+                appContainer.dashboardEvents.connectionChanged()
+                authStatus.value = tr("Connected. Your widgets and settings are kept.", "Подключено. Виджеты и настройки сохранены.")
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                authStatus.value = error.message ?: tr("Sign-in failed; try again", "Вход не завершён; повторите попытку")
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
+        savedConnection.value = appContainer.connectionStore.load()
         val granted = RealtimeNotificationAccess.isGranted(this)
         realtimeGranted.value = granted
         Log.i(
@@ -120,13 +213,14 @@ class MainActivity : ComponentActivity() {
 private fun ConnectionScreen(
     initialUrl: String,
     hasStoredToken: Boolean,
+    authPanel: @Composable () -> Unit,
     realtimeGranted: Boolean,
     dashboards: List<Pair<Int, String>>,
     onOpenDashboardSettings: (Int) -> Unit,
     onEnableRealtime: () -> Unit,
     onConnect: suspend (String, String) -> Int,
 ) {
-    var url by remember { mutableStateOf(initialUrl) }
+    var url by remember(initialUrl) { mutableStateOf(initialUrl) }
     var token by remember { mutableStateOf("") }
     var status by remember {
         mutableStateOf(if (hasStoredToken) tr("Connection saved. You can add a widget.", "Подключение сохранено. Можно добавить виджет.") else tr("Connection is not configured yet", "Подключение ещё не настроено"))
@@ -136,6 +230,7 @@ private fun ConnectionScreen(
     var chooseDashboard by remember { mutableStateOf(false) }
     var showSupport by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showLegacy by remember { mutableStateOf(false) }
     if (showAbout) AboutDialog(onDismiss = { showAbout = false })
     val scope = rememberCoroutineScope()
 
@@ -164,6 +259,9 @@ private fun ConnectionScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(tr("Home Assistant connection", "Подключение к Home Assistant"), style = MaterialTheme.typography.headlineSmall)
+            authPanel()
+            TextButton(onClick = { showLegacy = !showLegacy }) { Text(tr("Advanced: existing Long-Lived Access Token", "Дополнительно: Long-Lived Access Token")) }
+            if (showLegacy) {
             Text(
                 tr("Enter an external or local server address and a Long-Lived Access Token. The token is encrypted with Android Keystore and is never stored in source code.",
                     "Введите внешний или локальный адрес сервера и Long-Lived Access Token. Токен шифруется ключом Android Keystore и не записывается в исходный код."),
@@ -202,6 +300,7 @@ private fun ConnectionScreen(
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(status, modifier = Modifier.padding(16.dp))
+            }
             }
             Text(tr("Real-time updates", "Real-time обновления"), style = MaterialTheme.typography.titleMedium)
             Card(modifier = Modifier.fillMaxWidth()) {

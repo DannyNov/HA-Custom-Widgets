@@ -54,7 +54,7 @@ class HaWidgetApplication : Application() {
         (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
             .registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    container.dashboardEvents.connectivityChanged()
+                    container.networkChanged(network)
                 }
             })
     }

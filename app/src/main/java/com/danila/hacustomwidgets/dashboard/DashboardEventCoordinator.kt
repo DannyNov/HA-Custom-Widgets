@@ -421,6 +421,10 @@ class DashboardEventCoordinator(
     }
 
     var onTransportInvalidated: () -> Unit = {}
+    fun connectionChanged() {
+        invalidateGeneration("connection_changed", reconnect = connectionStore.load() != null)
+        ensureStarted("CONNECTION_CHANGED")
+    }
     private fun invalidateGeneration(reason: String, reconnect: Boolean) {
         onTransportInvalidated()
         val socket = synchronized(stateLock) {

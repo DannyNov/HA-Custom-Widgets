@@ -43,7 +43,7 @@ interface StateChangedWebSocketListener {
 enum class EntitySubscriptionMode { SUBSCRIBE_ENTITIES, STATE_CHANGED }
 
 class HomeAssistantClient(
-    private val http: OkHttpClient = OkHttpClient.Builder()
+    http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(25, TimeUnit.SECONDS)
@@ -51,11 +51,63 @@ class HomeAssistantClient(
         // no application ping/watchdog loop: NotificationListenerService owns process lifetime.
         .pingInterval(60, TimeUnit.SECONDS)
         .build(),
+    private val accessTokens: com.danila.hacustomwidgets.data.security.AccessTokenManager? = null,
+    private val connections: com.danila.hacustomwidgets.data.security.HAConnectionManager? = null,
 ) {
+    private val http = http.newBuilder().followRedirects(false).followSslRedirects(false)
+        .retryOnConnectionFailure(false)
+        .addInterceptor { chain ->
+            val original = chain.request()
+            val connection = original.tag(HomeAssistantConnection::class.java)
+            if (connection == null) chain.proceed(original) else {
+                fun send(token: String): Response {
+                    var last: IOException? = null
+                    val attempts = if (original.method == "GET" && connections != null) 5 else 1
+                    repeat(attempts) {
+                        val endpoint = connections?.resolve(connection) ?: connection.baseUrl
+                        val base = connection.baseUrl.toHttpUrl()
+                        val target = endpoint.toHttpUrl()
+                        val suffix = original.url.encodedPath.removePrefix(base.encodedPath.trimEnd('/'))
+                        val url = target.newBuilder().encodedPath(target.encodedPath.trimEnd('/') + suffix)
+                            .encodedQuery(original.url.encodedQuery).build()
+                        try {
+                            val response = chain.proceed(original.newBuilder().url(url)
+                                .header("Authorization", "Bearer $token").build())
+                            if (response.isSuccessful) connections?.succeeded(connection, endpoint)
+                            return response
+                        } catch (error: IOException) {
+                            connections?.failed(endpoint, error)
+                            if (!com.danila.hacustomwidgets.data.security.HAConnectionManager.isNetworkFailure(error)) throw error
+                            last = error
+                        }
+                    }
+                    throw last ?: IOException("Home Assistant unavailable")
+                }
+                val token = accessToken(connection)
+                val response = send(token)
+                if (response.code != 401 || !connection.isOAuth || accessTokens == null) response else {
+                    response.close()
+                    val renewed = accessTokens.token(connection, rejected = token)
+                    // Exactly one replay, only after an authentication rejection, never on timeouts/5xx.
+                    send(renewed).also { if (it.code == 401) accessTokens.rejectSession(connection, renewed) }
+                }
+            }
+        }.build()
+    private fun accessToken(connection: HomeAssistantConnection) = accessTokens?.token(connection) ?: connection.token
+    private val pendingWebSocketRefresh = java.util.concurrent.ConcurrentHashMap<String, String>()
     // An obsolete brightness target must not be replayed by transport recovery.
-    private val brightnessHttp = http.newBuilder().retryOnConnectionFailure(false).build()
+    private val brightnessHttp = this.http.newBuilder().retryOnConnectionFailure(false).build()
 
-    suspend fun getRepairs(connection: HomeAssistantConnection) = fetchRepairs(http, connection)
+    suspend fun getRepairs(connection: HomeAssistantConnection): List<com.danila.hacustomwidgets.dashboard.RepairIssue> {
+        val success: (String) -> Unit = { endpoint -> connections?.succeeded(connection, endpoint) }
+        return try { fetchRepairs(http, connection, ::accessToken, success) }
+        catch (error: WebSocketUnauthorized) {
+            if (!connection.isOAuth || accessTokens == null) throw error
+            withContext(Dispatchers.IO) { accessTokens.token(connection, error.rejected) }
+            try { fetchRepairs(http, connection, ::accessToken, success) }
+            catch (second: WebSocketUnauthorized) { accessTokens.rejectSession(connection, second.rejected); throw second }
+        }
+    }
 
     fun subscribeMaintenanceEvents(socket: WebSocket, firstId: Int) {
         maintenanceRegistryEvents.forEachIndexed { i, event ->
@@ -159,6 +211,7 @@ class HomeAssistantClient(
         serviceHttp.newCall(
             Request.Builder()
                 .url(connection.baseUrl + "/api/services/$domain/$service")
+                .tag(HomeAssistantConnection::class.java, connection)
                 .header("Authorization", "Bearer ${connection.token}")
                 .header("Accept", "application/json")
                 .post(body)
@@ -172,10 +225,13 @@ class HomeAssistantClient(
         connection: HomeAssistantConnection,
         listener: StateChangedWebSocketListener,
     ): WebSocket {
-        val request = Request.Builder().url(webSocketUrl(connection)).build()
+        val request = Request.Builder().url(webSocketUrl(connection)).tag(HomeAssistantConnection::class.java, connection).build()
         val compressedParsers = linkedMapOf<Int, CompressedEntitySubscriptionParser>()
+        var sentToken = ""
+        var socketEndpoint = connection.baseUrl
         return http.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                socketEndpoint = response.request.url.toString().removeSuffix("/api/websocket")
                 listener.onOpen(webSocket)
             }
 
@@ -186,17 +242,30 @@ class HomeAssistantClient(
                     listener.onMessage(webSocket, type)
                     when (type) {
                         "auth_required" -> {
+                            sentToken = accessToken(connection)
                             listener.onAuthRequired(webSocket)
                             webSocket.send(JSONObject()
                                 .put("type", "auth")
-                                .put("access_token", connection.token)
+                                .put("access_token", sentToken)
                                 .toString())
                         }
                         "auth_invalid" -> {
+                            if (connection.isOAuth && accessTokens != null) {
+                                if (pendingWebSocketRefresh[connection.authenticationId] == sentToken) {
+                                    accessTokens.rejectSession(connection, sentToken)
+                                    throw com.danila.hacustomwidgets.data.security.ReauthorizationRequired()
+                                }
+                                pendingWebSocketRefresh[connection.authenticationId] = accessTokens.token(connection, sentToken)
+                                throw IOException("Home Assistant session refreshed; reconnect")
+                            }
                             listener.onAuthInvalid(webSocket)
                             throw IOException("Токен отклонён Home Assistant")
                         }
-                        "auth_ok" -> listener.onAuthOk(webSocket, message.optString("ha_version"))
+                        "auth_ok" -> {
+                            pendingWebSocketRefresh.remove(connection.authenticationId)
+                            connections?.succeeded(connection, socketEndpoint)
+                            listener.onAuthOk(webSocket, message.optString("ha_version"))
+                        }
                         "result" -> {
                             val error = message.optJSONObject("error")?.optString("message")
                             listener.onSubscriptionResult(
@@ -226,6 +295,7 @@ class HomeAssistantClient(
                         }
                     }
                 }.onFailure {
+                    if (it is com.danila.hacustomwidgets.data.security.ReauthorizationRequired) listener.onAuthInvalid(webSocket)
                     listener.onFailure(webSocket, it)
                     webSocket.close(1002, "invalid response")
                 }
@@ -253,27 +323,42 @@ class HomeAssistantClient(
     fun unsubscribe(socket: WebSocket, commandId: Int, subscriptionId: Int): Boolean =
         socket.send(unsubscribeCommand(commandId, subscriptionId))
 
-    private suspend fun getRegistries(connection: HomeAssistantConnection): RegistrySnapshot =
+    private suspend fun getRegistries(connection: HomeAssistantConnection): RegistrySnapshot = try {
+        getRegistriesOnce(connection)
+    } catch (error: WebSocketUnauthorized) {
+        if (!connection.isOAuth || accessTokens == null) throw error
+        withContext(Dispatchers.IO) { accessTokens.token(connection, error.rejected) }
+        try { getRegistriesOnce(connection) }
+        catch (second: WebSocketUnauthorized) { accessTokens.rejectSession(connection, second.rejected); throw second }
+    }
+
+    private suspend fun getRegistriesOnce(connection: HomeAssistantConnection): RegistrySnapshot =
         withContext(Dispatchers.IO) {
             withTimeout(20_000) {
                 val result = CompletableDeferred<RegistrySnapshot>()
-                val request = Request.Builder().url(webSocketUrl(connection)).build()
+                val request = Request.Builder().url(webSocketUrl(connection)).tag(HomeAssistantConnection::class.java, connection).build()
                 var devices = emptyList<HaDevice>()
                 var entities = emptyMap<String, RegistryEntity>()
                 var areas = emptyList<HaArea>()
+                var sentToken = ""
+                var socketEndpoint = connection.baseUrl
                 val socket = http.newWebSocket(request, object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        socketEndpoint = response.request.url.toString().removeSuffix("/api/websocket")
+                    }
                     override fun onMessage(webSocket: WebSocket, text: String) {
                         runCatching {
                             val message = JSONObject(text)
                             when (message.optString("type")) {
-                                "auth_required" -> webSocket.send(
+                                "auth_required" -> { sentToken = accessToken(connection); webSocket.send(
                                     JSONObject()
                                         .put("type", "auth")
-                                        .put("access_token", connection.token)
+                                        .put("access_token", sentToken)
                                         .toString(),
-                                )
-                                "auth_invalid" -> throw IOException("Токен отклонён Home Assistant")
-                                    "auth_ok" -> webSocket.send(command(DEVICE_REQUEST_ID, "config/device_registry/list"))
+                                ) }
+                                "auth_invalid" -> throw WebSocketUnauthorized(sentToken)
+                                "auth_ok" -> { connections?.succeeded(connection, socketEndpoint)
+                                    webSocket.send(command(DEVICE_REQUEST_ID, "config/device_registry/list")) }
                                 "result" -> when (message.optInt("id")) {
                                     DEVICE_REQUEST_ID -> {
                                         ensureSuccessful(message)
@@ -398,6 +483,7 @@ class HomeAssistantClient(
     private fun execute(connection: HomeAssistantConnection, path: String) = http.newCall(
         Request.Builder()
             .url(connection.baseUrl + path)
+            .tag(HomeAssistantConnection::class.java, connection)
             .header("Authorization", "Bearer ${connection.token}")
             .header("Accept", "application/json")
             .get()
