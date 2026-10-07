@@ -39,6 +39,7 @@ jobs:
     if: ${{ github.run_attempt == 1 && (((github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (inputs.release_tag == 'v0.6.3' || inputs.release_tag == 'v0.6.4' || inputs.release_tag == 'v0.7.0' || inputs.release_tag == 'v0.8.0'))) && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.release.tag_name != 'v0.8.0' && !github.event.release.draft && !github.event.release.prerelease)) }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - name: Publish once to the channel
         uses: actions/github-script@v7
         env:
@@ -84,11 +85,6 @@ jobs:
                 throw new Error('Telegram request failed. Inspect the channel before any manual retry; delivery may have succeeded.');
               }
             }
-            const chat = await telegram('getChat', {chat_id: chatId});
-            if (chat.type !== 'channel' || (chat.username || '').toLowerCase() !== 'hacustomwidgets') {
-              core.setFailed('Destination must be the HACustomWidgets channel.');
-              return;
-            }
             // Only an explicitly curated announcement may become Telegram prose.
             // This transforms only the Telegram copy, never the GitHub Release.
             const withoutUrls = text => text
@@ -98,31 +94,24 @@ jobs:
             const releaseName = withoutUrls(release.name || tag).trim();
             const title = (releaseName.includes(tag) ? releaseName : `${releaseName} (${tag})`).slice(0, 300);
             const footer = `\n\nGitHub Release: ${release.html_url}`;
-            // Require exactly one correctly ordered pair; never fall back to full release prose.
-            const source = release.body || '';
-            const startMarker = '<!-- telegram:start -->';
-            const endMarker = '<!-- telegram:end -->';
-            const start = source.indexOf(startMarker);
-            const end = source.indexOf(endMarker);
-            const validBlock = start >= 0 && end > start
-              && source.indexOf(startMarker, start + startMarker.length) === -1
-              && source.indexOf(endMarker, end + endMarker.length) === -1;
-            const announcement = validBlock
-              ? withoutUrls(source.slice(start + startMarker.length, end)).trim() : '';
-            const fallback = 'RU: Новая версия опубликована.\n\nEN: A new release is available.';
-            // Fail closed to a short fallback for oversized or diagnostic blocks.
-            const diagnostics = /build identity|package\s*:|versioncode|minSdk|targetSdk|certificate|(?:commit|APK|source)\s*(?:SHA|:)|SHA[-\s]?256|\bCI\s*:|(?:unit|regression|host)\s+tests?|test\s+counts?/i;
-            const body = announcement && announcement.length <= 1200 && !diagnostics.test(announcement)
-              ? announcement : fallback;
+            const { announcement: validateAnnouncement } = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/telegram-announcement.cjs');
+            let body;
+            try { body = validateAnnouncement(release.body || ''); }
+            catch (error) { core.setFailed(error.message + ' Nothing sent.'); return; }
             // Plain text, one Release URL, with no Markdown/HTML parsing.
             const message = `${title}\n\n${body}${footer}`;
             if (message.length > 2000) {
               core.setFailed('Announcement exceeds the short-message limit; nothing sent.');
               return;
             }
+            const chat = await telegram('getChat', {chat_id: chatId});
+            if (chat.type !== 'channel' || (chat.username || '').toLowerCase() !== 'hacustomwidgets') {
+              core.setFailed('Destination must be the HACustomWidgets channel.');
+              return;
+            }
             const replacing = process.env.REPLACE_V061_MESSAGE_4 === 'true';
             if (replacing) {
-              if (!manual || tag !== 'v0.6.1' || !announcement || body === fallback) {
+              if (!manual || tag !== 'v0.6.1' || !body) {
                 core.setFailed('Replacement requires manual v0.6.1 with a valid short announcement.');
                 return;
               }

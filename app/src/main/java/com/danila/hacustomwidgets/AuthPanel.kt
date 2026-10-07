@@ -15,6 +15,8 @@ internal fun AuthPanel(
     connection: HomeAssistantConnection?,
     status: String,
     discovery: HomeAssistantDiscovery,
+    pendingLogin: Boolean,
+    legacyContent: @Composable () -> Unit,
     onLogin: suspend (String) -> Unit,
     onCancel: () -> Unit,
     onLogout: suspend (Boolean) -> Unit,
@@ -29,6 +31,7 @@ internal fun AuthPanel(
     var address by remember(connection?.baseUrl) { mutableStateOf(connection?.baseUrl.orEmpty()) }
     var external by remember { mutableStateOf("") }
     var advanced by remember { mutableStateOf(false) }
+    var diagnostics by remember { mutableStateOf(false) }
     var dismissedMigration by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -66,33 +69,20 @@ internal fun AuthPanel(
         TextButton(enabled = !busy && !searching, onClick = { scan++ }) { Text(tr("Search again", "Повторить поиск")) }
         TextButton(onClick = { manual = !manual }) { Text(tr("Enter address manually", "Ввести адрес вручную")) }
     } else {
-        Text(connection.server.name, style = MaterialTheme.typography.titleMedium)
-        Text(if (connection.isOAuth) {
-            if (connection.token.isEmpty()) tr("Sign in again", "Требуется повторный вход")
-            else tr("Home Assistant sign-in saved", "Вход в Home Assistant сохранён")
-        } else tr("Existing token connection is active", "Существующее подключение по токену сохранено"))
-        if (!connection.isOAuth && !dismissedMigration) Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-            Text(tr("A new sign-in method is available. Your dashboards and settings will be kept.",
-                "Доступен новый способ входа через Home Assistant. Виджеты и настройки сохранятся."))
-            Button(enabled = !busy, onClick = { login(connection.baseUrl) }) { Text(tr("Switch to Home Assistant sign-in", "Перейти на новый способ")) }
-            TextButton(onClick = { dismissedMigration = true }) { Text(tr("Later", "Позже")) }
-        } }
-        if (connection.isOAuth) TextButton(enabled = !busy, onClick = { login(connection.server.lastWorkingUrl ?: connection.baseUrl) }) {
+        Text(if (connection.isOAuth && connection.token.isEmpty()) tr("Sign in again", "Требуется повторный вход")
+            else tr("Home Assistant connected", "Home Assistant подключён"), style = MaterialTheme.typography.titleMedium)
+        val current = connection.server.routes.firstOrNull { it.url == connection.server.lastWorkingUrl }
+        Text(when (current?.kind) {
+            RouteKind.EXTERNAL, RouteKind.CLOUD -> tr("Currently using: remote connection", "Сейчас используется: удалённое подключение")
+            RouteKind.INTERNAL, RouteKind.DISCOVERED -> tr("Currently using: local network", "Сейчас используется: локальная сеть")
+            null -> tr("Connection mode will appear after a successful check", "Режим подключения появится после успешной проверки")
+        })
+        TextButton(enabled = !busy, onClick = { login(connection.server.lastWorkingUrl ?: connection.baseUrl) }) {
             Text(tr("Sign in again", "Войти повторно"))
         }
         TextButton(enabled = !busy, onClick = { action { onCheck() } }) { Text(tr("Check connection", "Проверить подключение")) }
-        if (connection.server.routes.none { it.kind == RouteKind.EXTERNAL || it.kind == RouteKind.CLOUD }) {
-            Text(tr("Home Assistant did not provide a remote address.", "Home Assistant не сообщил внешний адрес."))
-            OutlinedTextField(external, { external = it }, label = { Text(tr("External HTTPS address", "Внешний HTTPS-адрес")) }, singleLine = true)
-            TextButton(enabled = !busy && external.isNotBlank(), onClick = { action { onExternal(external) } }) { Text(tr("Save remote access", "Сохранить удалённый доступ")) }
-            TextButton(onClick = { message = tr("Local network only", "Работа только в локальной сети") }) { Text(tr("Local network only", "Только локальная сеть")) }
-        }
-        OutlinedTextField(localAddress, { localAddress = it }, label = { Text(tr("Local fallback address", "Локальный резервный адрес")) }, singleLine = true)
-        TextButton(enabled = !busy && localAddress.isNotBlank(), onClick = { confirmLocal = true }) {
-            Text(tr("Add local fallback", "Добавить локальный резервный адрес"))
-        }
-        TextButton(onClick = { advanced = !advanced }) { Text(tr("Connection details", "Диагностика подключения")) }
-        if (advanced) {
+        TextButton(onClick = { diagnostics = !diagnostics }) { Text(tr("Connection diagnostics", "Диагностика подключения")) }
+        if (diagnostics) {
             val current = connection.server.routes.firstOrNull { it.url == connection.server.lastWorkingUrl }
             Text(tr("Last working route", "Последний рабочий маршрут") + ": " + when (current?.kind) {
                 RouteKind.CLOUD -> "Home Assistant Cloud"
@@ -107,6 +97,28 @@ internal fun AuthPanel(
         }
         TextButton(enabled = !busy, onClick = { logout = true }) { Text(tr("Disconnect Home Assistant", "Отключить Home Assistant")) }
     }
+    TextButton(onClick = { advanced = !advanced }) { Text(tr("Advanced", "Дополнительно")) }
+    if (advanced) {
+        if (connection != null) {
+        if (!connection.isOAuth && !dismissedMigration) Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
+            Text(tr("A new sign-in method is available. Your dashboards and settings will be kept.",
+                "Доступен новый способ входа через Home Assistant. Виджеты и настройки сохранятся."))
+            Button(enabled = !busy, onClick = { login(connection.baseUrl) }) { Text(tr("Switch to Home Assistant sign-in", "Перейти на новый способ")) }
+            TextButton(onClick = { dismissedMigration = true }) { Text(tr("Later", "Позже")) }
+        } }
+        if (connection.server.routes.none { it.kind == RouteKind.EXTERNAL || it.kind == RouteKind.CLOUD }) {
+            Text(tr("Home Assistant did not provide a remote address.", "Home Assistant не сообщил внешний адрес."))
+            OutlinedTextField(external, { external = it }, label = { Text(tr("External HTTPS address", "Внешний HTTPS-адрес")) }, singleLine = true)
+            TextButton(enabled = !busy && external.isNotBlank(), onClick = { action { onExternal(external) } }) { Text(tr("Save remote access", "Сохранить удалённый доступ")) }
+            TextButton(onClick = { message = tr("Local network only", "Работа только в локальной сети") }) { Text(tr("Local network only", "Только локальная сеть")) }
+        }
+        OutlinedTextField(localAddress, { localAddress = it }, label = { Text(tr("Local fallback address", "Локальный резервный адрес")) }, singleLine = true)
+        TextButton(enabled = !busy && localAddress.isNotBlank(), onClick = { confirmLocal = true }) {
+            Text(tr("Add local fallback", "Добавить локальный резервный адрес"))
+        }
+        }
+        legacyContent()
+    }
     if (manual && connection == null) {
         OutlinedTextField(address, { address = it }, label = { Text(tr("Home Assistant address", "Адрес Home Assistant")) }, singleLine = true)
         Button(enabled = !busy && address.isNotBlank(), onClick = { login(address) }) { Text(tr("Sign in to Home Assistant", "Войти в Home Assistant")) }
@@ -114,7 +126,7 @@ internal fun AuthPanel(
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (status.isNotBlank()) Text(status)
     if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error)
-    TextButton(enabled = !busy, onClick = { onCancel(); message = tr("Pending sign-in cancelled", "Ожидающий вход отменён") }) {
+    if (pendingLogin) TextButton(enabled = !busy, onClick = { onCancel(); message = tr("Pending sign-in cancelled", "Ожидающий вход отменён") }) {
         Text(tr("Cancel pending sign-in", "Отменить ожидающий вход"))
     }
     if (httpLogin != null) AlertDialog(onDismissRequest = { httpLogin = null },

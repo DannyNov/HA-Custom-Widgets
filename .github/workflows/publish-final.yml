@@ -108,6 +108,8 @@ jobs:
           printf 'sourceSHA=%s\ngatedSHA=%s\nciRun=%s\nsignedRun=%s\n' "$SOURCE_SHA" "$GATED_SHA" "$CI_RUN" "$SIGNED_RUN" >> deliverables/build-info.txt
           printf 'preflightMaximum=106\nphysicalBaseSHA=d963e85424e55fc29924f26c9f3352c9d20a54a5\n' >> deliverables/build-info.txt
           (cd deliverables && sha256sum HAWidgets-v0.8.0.apk HAWidgets-v0.8.0.aab > sha256.txt)
+      - name: Validate final Telegram copy before any publication
+        run: node .github/scripts/telegram-announcement.cjs "RELEASE_NOTES_${TAG}.md"
       - name: Publish public Final release and verify public downloads
         run: |
           set -euo pipefail

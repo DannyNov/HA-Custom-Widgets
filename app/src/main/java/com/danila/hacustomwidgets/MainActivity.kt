@@ -70,8 +70,9 @@ import com.danila.hacustomwidgets.data.security.ServerRoute
 class MainActivity : ComponentActivity() {
     private val appContainer get() = (application as HaWidgetApplication).container
     private val realtimeGranted = mutableStateOf(false)
-    private val savedConnection = mutableStateOf<HomeAssistantConnection?>(null)
+    private val savedConnection = mutableStateOf<HomeAssistantConnection?>(null, androidx.compose.runtime.neverEqualPolicy())
     private val authStatus = mutableStateOf("")
+    private val pendingLogin = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,8 +87,9 @@ class MainActivity : ComponentActivity() {
                 ConnectionScreen(
                     initialUrl = savedConnection.value?.baseUrl.orEmpty(),
                     hasStoredToken = savedConnection.value != null,
-                    authPanel = {
+                    authPanel = { legacyContent ->
                         AuthPanel(savedConnection.value, authStatus.value, container.discovery,
+                            pendingLogin = pendingLogin.value, legacyContent = legacyContent,
                             onLogin = { url ->
                                 val links = getSystemService(android.content.pm.verify.domain.DomainVerificationManager::class.java)
                                     .getDomainVerificationUserState(packageName)
@@ -97,14 +99,16 @@ class MainActivity : ComponentActivity() {
                                         "Безопасный вход пока не активирован для этой сборки. Владелец проекта должен разместить файл проверки App Links; после этого нужно переустановить приложение или проверить ссылки в настройках Android.")
                                 }
                                 val authorize = withContext(Dispatchers.IO) { container.oauth.begin(url) }
+                                pendingLogin.value = true
                                 try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authorize)).addCategory(Intent.CATEGORY_BROWSABLE)) }
                                 catch (_: android.content.ActivityNotFoundException) {
                                     withContext(Dispatchers.IO) { container.oauth.cancel() }
+                                    pendingLogin.value = false
                                     error(tr("Install a browser to sign in", "Для входа нужен браузер"))
                                 }
                                 authStatus.value = tr("Finish signing in in the browser", "Завершите вход в браузере")
                             },
-                            onCancel = { container.oauth.cancel() },
+                            onCancel = { container.oauth.cancel(); pendingLogin.value = false; authStatus.value = "" },
                             onLogout = { localOnly ->
                                 withContext(Dispatchers.IO) { container.oauth.logout(localOnly) }
                                 savedConnection.value = null
@@ -115,7 +119,7 @@ class MainActivity : ComponentActivity() {
                                 val connection = container.connectionStore.load() ?: error("Home Assistant not configured")
                                 container.client.testConnection(connection)
                                 savedConnection.value = container.connectionStore.load()
-                                authStatus.value = tr("Home Assistant is available", "Home Assistant доступен")
+                                authStatus.value = ""
                             },
                             onDiscovered = { input ->
                                 val current = container.connectionStore.load() ?: error("Home Assistant not configured")
@@ -194,16 +198,21 @@ class MainActivity : ComponentActivity() {
                 savedConnection.value = appContainer.connectionStore.load()
                 appContainer.connections.networkChanged()
                 appContainer.dashboardEvents.connectionChanged()
-                authStatus.value = tr("Connected. Your widgets and settings are kept.", "Подключено. Виджеты и настройки сохранены.")
+                authStatus.value = ""
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 authStatus.value = error.message ?: tr("Sign-in failed; try again", "Вход не завершён; повторите попытку")
-            }
+            } finally { refreshPendingLogin() }
         }
+    }
+
+    private fun refreshPendingLogin() {
+        pendingLogin.value = appContainer.connectionStore.readSecret("pending_oauth") != null
     }
 
     override fun onResume() {
         super.onResume()
+        refreshPendingLogin()
         savedConnection.value = appContainer.connectionStore.load()
         val granted = RealtimeNotificationAccess.isGranted(this)
         realtimeGranted.value = granted
@@ -221,7 +230,7 @@ class MainActivity : ComponentActivity() {
 private fun ConnectionScreen(
     initialUrl: String,
     hasStoredToken: Boolean,
-    authPanel: @Composable () -> Unit,
+    authPanel: @Composable (@Composable () -> Unit) -> Unit,
     realtimeGranted: Boolean,
     dashboards: List<Pair<Int, String>>,
     onOpenDashboardSettings: (Int) -> Unit,
@@ -238,7 +247,6 @@ private fun ConnectionScreen(
     var chooseDashboard by remember { mutableStateOf(false) }
     var showSupport by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
-    var showLegacy by remember { mutableStateOf(false) }
     if (showAbout) AboutDialog(onDismiss = { showAbout = false })
     val scope = rememberCoroutineScope()
 
@@ -267,9 +275,7 @@ private fun ConnectionScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(tr("Home Assistant connection", "Подключение к Home Assistant"), style = MaterialTheme.typography.headlineSmall)
-            authPanel()
-            TextButton(onClick = { showLegacy = !showLegacy }) { Text(tr("Advanced: existing Long-Lived Access Token", "Дополнительно: Long-Lived Access Token")) }
-            if (showLegacy) {
+            authPanel {
             Text(
                 tr("Enter an external or local server address and a Long-Lived Access Token. The token is encrypted with Android Keystore and is never stored in source code.",
                     "Введите внешний или локальный адрес сервера и Long-Lived Access Token. Токен шифруется ключом Android Keystore и не записывается в исходный код."),

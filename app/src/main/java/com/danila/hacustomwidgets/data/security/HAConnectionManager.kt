@@ -22,9 +22,10 @@ class HAConnectionManager(
         .readTimeout(2, TimeUnit.SECONDS).callTimeout(3, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build()
     private val probeEndpoint: (String) -> Unit = probe ?: { url ->
-        // Reachability only. Candidates come from authenticated HA metadata or explicit user input.
-        probeHttp.newCall(Request.Builder().url(url + "/api/").build()).execute().use {
-            if (it.code !in setOf(200, 401)) throw EndpointStatusException(it.code)
+        // Public frontend only: unauthenticated /api/ produces failed-login events in HA.
+        // Never send credentials or follow redirects. Authenticated requests verify HA access.
+        probeHttp.newCall(Request.Builder().url(url.trimEnd('/') + "/").build()).execute().use {
+            if (it.code !in 200..399) throw EndpointStatusException(it.code)
         }
     }
 

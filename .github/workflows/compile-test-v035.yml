@@ -61,6 +61,10 @@ jobs:
           (cd "$approved_final" && python3 .github/scripts/verify-v080-final-scope.py)
           python3 -m unittest discover -s .github/scripts -p 'test_project_checks.py'
           python3 .github/scripts/verify-current-project.py
+      - name: Validate release preparation and Telegram regression tests
+        run: |
+          node --test .github/scripts/test-telegram-announcement.cjs
+          node .github/scripts/telegram-announcement.cjs RELEASE_NOTES_v0.9.1.md
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
