@@ -56,7 +56,11 @@ jobs:
           approved_rc4="$RUNNER_TEMP/v080-rc4"
           git worktree add --detach "$approved_rc4" d963e85424e55fc29924f26c9f3352c9d20a54a5
           (cd "$approved_rc4" && python3 .github/scripts/verify-v080-rc4-scope.py)
-          python3 .github/scripts/verify-v080-final-scope.py
+          approved_final="$RUNNER_TEMP/v080-final"
+          git worktree add --detach "$approved_final" fe0b01267f09478ebaee1e40ae82a3c930bd45b8
+          (cd "$approved_final" && python3 .github/scripts/verify-v080-final-scope.py)
+          python3 -m unittest discover -s .github/scripts -p 'test_project_checks.py'
+          python3 .github/scripts/verify-current-project.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

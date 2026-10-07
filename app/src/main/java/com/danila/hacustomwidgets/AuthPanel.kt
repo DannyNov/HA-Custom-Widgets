@@ -87,9 +87,9 @@ internal fun AuthPanel(
             TextButton(enabled = !busy && external.isNotBlank(), onClick = { action { onExternal(external) } }) { Text(tr("Save remote access", "РЎРѕС…СЂР°РЅРёС‚СЊ СѓРґР°Р»С‘РЅРЅС‹Р№ РґРѕСЃС‚СѓРї")) }
             TextButton(onClick = { message = tr("Local network only", "Р Р°Р±РѕС‚Р° С‚РѕР»СЊРєРѕ РІ Р»РѕРєР°Р»СЊРЅРѕР№ СЃРµС‚Рё") }) { Text(tr("Local network only", "РўРѕР»СЊРєРѕ Р»РѕРєР°Р»СЊРЅР°СЏ СЃРµС‚СЊ")) }
         }
-        OutlinedTextField(localAddress, { localAddress = it }, label = { Text(tr("Local fallback address", "Локальный резервный адрес")) }, singleLine = true)
+        OutlinedTextField(localAddress, { localAddress = it }, label = { Text(tr("Local fallback address", "Р›РѕРєР°Р»СЊРЅС‹Р№ СЂРµР·РµСЂРІРЅС‹Р№ Р°РґСЂРµСЃ")) }, singleLine = true)
         TextButton(enabled = !busy && localAddress.isNotBlank(), onClick = { confirmLocal = true }) {
-            Text(tr("Add local fallback", "Добавить локальный резервный адрес"))
+            Text(tr("Add local fallback", "Р”РѕР±Р°РІРёС‚СЊ Р»РѕРєР°Р»СЊРЅС‹Р№ СЂРµР·РµСЂРІРЅС‹Р№ Р°РґСЂРµСЃ"))
         }
         TextButton(onClick = { advanced = !advanced }) { Text(tr("Connection details", "Р”РёР°РіРЅРѕСЃС‚РёРєР° РїРѕРґРєР»СЋС‡РµРЅРёСЏ")) }
         if (advanced) {
@@ -124,11 +124,11 @@ internal fun AuthPanel(
         confirmButton = { TextButton(onClick = { val url = httpLogin!!; httpLogin = null; action { onLogin(url) } }) { Text(tr("Continue", "РџСЂРѕРґРѕР»Р¶РёС‚СЊ")) } },
         dismissButton = { TextButton(onClick = { httpLogin = null }) { Text(tr("Cancel", "РћС‚РјРµРЅР°")) } })
     if (confirmLocal) AlertDialog(onDismissRequest = { confirmLocal = false },
-        title = { Text(tr("Trust this Home Assistant address?", "Доверять этому адресу Home Assistant?")) },
+        title = { Text(tr("Trust this Home Assistant address?", "Р”РѕРІРµСЂСЏС‚СЊ СЌС‚РѕРјСѓ Р°РґСЂРµСЃСѓ Home Assistant?")) },
         text = { Text(tr("Confirm that $localAddress belongs to the same Home Assistant. Your saved access will be sent there. HTTP exposes it on the local network. An address advertised by discovery alone is not proof.",
-            "Подтвердите, что $localAddress принадлежит тому же Home Assistant. На этот адрес будет отправлен сохранённый доступ. HTTP передаёт его открыто в локальной сети. Одного обнаружения адреса недостаточно для проверки.")) },
-        confirmButton = { TextButton(onClick = { confirmLocal = false; action { onDiscovered(localAddress) } }) { Text(tr("Trust and check", "Доверять и проверить")) } },
-        dismissButton = { TextButton(onClick = { confirmLocal = false }) { Text(tr("Cancel", "Отмена")) } })
+            "РџРѕРґС‚РІРµСЂРґРёС‚Рµ, С‡С‚Рѕ $localAddress РїСЂРёРЅР°РґР»РµР¶РёС‚ С‚РѕРјСѓ Р¶Рµ Home Assistant. РќР° СЌС‚РѕС‚ Р°РґСЂРµСЃ Р±СѓРґРµС‚ РѕС‚РїСЂР°РІР»РµРЅ СЃРѕС…СЂР°РЅС‘РЅРЅС‹Р№ РґРѕСЃС‚СѓРї. HTTP РїРµСЂРµРґР°С‘С‚ РµРіРѕ РѕС‚РєСЂС‹С‚Рѕ РІ Р»РѕРєР°Р»СЊРЅРѕР№ СЃРµС‚Рё. РћРґРЅРѕРіРѕ РѕР±РЅР°СЂСѓР¶РµРЅРёСЏ Р°РґСЂРµСЃР° РЅРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РґР»СЏ РїСЂРѕРІРµСЂРєРё.")) },
+        confirmButton = { TextButton(onClick = { confirmLocal = false; action { onDiscovered(localAddress) } }) { Text(tr("Trust and check", "Р”РѕРІРµСЂСЏС‚СЊ Рё РїСЂРѕРІРµСЂРёС‚СЊ")) } },
+        dismissButton = { TextButton(onClick = { confirmLocal = false }) { Text(tr("Cancel", "РћС‚РјРµРЅР°")) } })
     if (logout) AlertDialog(onDismissRequest = { logout = false },
         title = { Text(tr("Disconnect Home Assistant?", "РћС‚РєР»СЋС‡РёС‚СЊ Home Assistant?")) },
         text = { Text(tr("OAuth access will be revoked. Widget settings stay on this device. Legacy tokens must be revoked in your HA profile. If HA is offline, local removal leaves server credentials valid.",

@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 container.connections.networkChanged()
                                 savedConnection.value = container.connectionStore.load()
-                                authStatus.value = tr("Local fallback saved", "Ëîêàëüíûé ðåçåðâíûé àäðåñ ñîõðàí¸í")
+                                authStatus.value = tr("Local fallback saved", "Ð›Ð¾ÐºÐ°Ð»ÑŒÐ½Ñ‹Ð¹ Ñ€ÐµÐ·ÐµÑ€Ð²Ð½Ñ‹Ð¹ Ð°Ð´Ñ€ÐµÑ ÑÐ¾Ñ…Ñ€Ð°Ð½Ñ‘Ð½")
                             },
                             onExternal = { input ->
                                 val url = OAuthPolicy.normalizeUrl(input)
