@@ -136,6 +136,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          retention-days: 7
           name: v0.7.0-rc4-public-verification
           path: |
             deliverables
