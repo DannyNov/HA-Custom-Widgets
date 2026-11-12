@@ -141,4 +141,6 @@ jobs:
           path: |
             deliverables
             public-assets
+            !public-assets/*.apk
+            !public-assets/*.aab
           if-no-files-found: error
