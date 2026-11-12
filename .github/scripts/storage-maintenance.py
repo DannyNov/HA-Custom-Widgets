@@ -27,7 +27,7 @@ def pages(path,key=None):
     raise RuntimeError("pagination safety cap")
 def download(url,dest,auth=False):
     # Do not forward credentials to signed storage redirects.
-    headers={"Accept":"application/octet-stream"}
+    headers={"Accept":"application/vnd.github+json" if "/actions/artifacts/" in url else "application/octet-stream"}
     if auth: headers["Authorization"]="Bearer "+TOKEN
     class Redirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,req,fp,code,msg,hdrs,newurl):
@@ -134,9 +134,14 @@ with tempfile.TemporaryDirectory() as tmp:
     (out/"kept.json").write_text(json.dumps(kept,indent=2))
     (out/"releases-verified.json").write_text(json.dumps(release_evidence,indent=2))
     (out/"protected-runs.json").write_text(json.dumps(sorted(protected)))
+    print("KEPT_REASONS",json.dumps({reason:sum(a["reason"]==reason for a in kept) for reason in set(a["reason"] for a in kept)}),flush=True)
     print("PLAN_SUMMARY",json.dumps({"apply":APPLY,"before_count":len(artifacts),"before_bytes":sum(a["size_in_bytes"] for a in artifacts),"candidate_count":len(plan),"candidate_bytes":sum(a["bytes"] for a in plan),"kept_count":len(kept),"protected_runs":sorted(protected),"scanned_files":scan_count,"verified_release_binaries":len(verified)}),flush=True)
     deleted=[]
     if APPLY:
+        approval=json.loads(Path(".github/storage-cleanup-approved.json").read_text())
+        approved_ids=set(approval["ids"])
+        plan=[a for a in plan if a["id"] in approved_ids]
+        assert sum(a["bytes"] for a in plan)<=approval["bytes"]
         assert len(protected)>=4 and len(verified)>=2 and scan_count>=5
         for a in plan:
             api(f"repos/{REPO}/actions/artifacts/{a['id']}","DELETE")
