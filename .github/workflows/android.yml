@@ -84,7 +84,7 @@ jobs:
           cp "$apk" app/build/outputs/apk/release/HAWidgets-v0.9.1.apk
       - uses: actions/upload-artifact@v4
         with:
-          retention-days: 30
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 30 || 7 }}
           name: HA-Custom-Widgets-v0.9.1-release
           path: |
             app/build/outputs/apk/release/HAWidgets-v0.9.1.apk
