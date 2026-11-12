@@ -1,0 +1,34 @@
+name: Actions storage maintenance
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete only proven release duplicates and obsolete reports
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: actions-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify releases and audit artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY: ${{ inputs.apply }}
+        run: python3 .github/scripts/storage-maintenance.py
+      - name: Preserve audit evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: actions-storage-audit-${{ github.run_id }}
+          path: storage-audit/
+          retention-days: 7
+          if-no-files-found: error
