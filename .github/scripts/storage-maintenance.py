@@ -42,6 +42,59 @@ def digest(path):
     with open(path,"rb") as f:
         while chunk:=f.read(1024*1024):h.update(chunk)
     return h.hexdigest()
+
+if APPLY:
+    out=Path("storage-audit");out.mkdir(exist_ok=True)
+    approval=json.loads(Path(".github/storage-cleanup-approved.json").read_text())
+    approved=set(approval["ids"]);protected=set(approval["protected_runs"])
+    proofs={a["id"]:a for a in approval["verified_release_copies"]}
+    runs=pages(f"repos/{REPO}/actions/runs","workflow_runs")
+    runmap={r["id"]:r for r in runs}
+    seen=set()
+    for branch in pages(f"repos/{REPO}/branches"):
+        tree=api(f"repos/{REPO}/git/trees/{branch['commit']['sha']}?recursive=1")
+        assert not tree.get("truncated")
+        for item in tree["tree"]:
+            p=item["path"]
+            if item["type"]!="blob" or not p.startswith(".github/") or item["sha"] in seen:continue
+            if not p.endswith((".yml",".yaml",".py",".cjs",".js",".sh",".json")) or "storage-maintenance" in p or "storage-cleanup-approved" in p:continue
+            seen.add(item["sha"])
+            blob=api(f"repos/{REPO}/git/blobs/{item['sha']}")
+            text=base64.b64decode(blob["content"]).decode("utf8")
+            protected.update(int(n) for n in re.findall(r"(?<![0-9])[0-9]{11,12}(?![0-9])",text) if int(n) in runmap)
+    arts=pages(f"repos/{REPO}/actions/artifacts","artifacts")
+    releases=pages(f"repos/{REPO}/releases")
+    bytag={r["tag_name"]:r for r in releases}
+    before={"count":len(arts),"bytes":sum(a["size_in_bytes"] for a in arts)}
+    deleted=[]
+    for a in arts:
+        if a["id"] not in approved:continue
+        assert a["workflow_run"]["id"] not in protected
+        proof=proofs.get(a["id"])
+        if proof:
+            assert a["name"]==proof["name"] and a["size_in_bytes"]==proof["bytes"] and a["workflow_run"]["head_sha"]==proof["sha"]
+            for binary in proof["matches"]:
+                release=bytag[binary["tag"]];assert not release["draft"]
+                asset=next(x for x in release["assets"] if x["name"]==binary["name"])
+                assert asset["digest"]=="sha256:"+binary["sha256"] and asset["size"]==binary["bytes"]
+        else:
+            assert re.fullmatch(r"v[0-9.]+-(?:test-results|glance-api-[0-9]+|upgrade-.+|rc[0-9]+-host-api-[0-9]+)",a["name"])
+        api(f"repos/{REPO}/actions/artifacts/{a['id']}","DELETE")
+        row={"id":a["id"],"name":a["name"],"bytes":a["size_in_bytes"],"run":a["workflow_run"]["id"]}
+        deleted.append(row)
+        (out/"deleted.json").write_text(json.dumps(deleted,indent=2))
+        print("DELETED_APPROVED",json.dumps(row),flush=True)
+    for attempt in range(5):
+        after=pages(f"repos/{REPO}/actions/artifacts?verify={time.time_ns()}","artifacts")
+        if not any(a["id"] in approved for a in after):break
+        time.sleep(2)
+    else:raise AssertionError("Approved artifact IDs remain after cleanup")
+    assert all(a["id"] in {x["id"] for x in after} for a in arts if a["workflow_run"]["id"] in protected and not a["expired"])
+    final={"before":before,"deleted_count":len(deleted),"deleted_bytes":sum(a["bytes"] for a in deleted),"remaining_count":len(after),"remaining_bytes":sum(a["size_in_bytes"] for a in after),"protected_runs":sorted(protected),"scanned_files":len(seen)}
+    (out/"summary.json").write_text(json.dumps(final,indent=2))
+    print("FINAL_APPROVED_SUMMARY",json.dumps(final),flush=True)
+    raise SystemExit(0)
+
 out=Path("storage-audit");out.mkdir(exist_ok=True)
 runs=pages(f"repos/{REPO}/actions/runs","workflow_runs")
 runmap={r["id"]:r for r in runs}
