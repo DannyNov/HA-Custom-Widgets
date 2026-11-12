@@ -236,6 +236,8 @@ jobs:
           path: |
             deliverables
             public-assets
+            !public-assets/*.apk
+            !public-assets/*.aab
             exact-gate-jobs.json
             exact-gate-all-attempts.json
           if-no-files-found: error
